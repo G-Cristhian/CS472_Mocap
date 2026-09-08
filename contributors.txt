@@ -1,0 +1,7 @@
+CS472 Group 7 : Motion Capture Project Contributors
+Document Format: Name [email]
+
+Directions: Our first deliverable is to add our names and emails into this document then commit then push. 
+
+Contributor List: 
+Cristhian Gutierrez-Cortes [gutiec17@unlv.nevada.edu]
