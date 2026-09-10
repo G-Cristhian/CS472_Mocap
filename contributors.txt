@@ -6,3 +6,4 @@ Directions: Our first deliverable is to add our names and emails into this docum
 Contributor List: 
 Cristhian Gutierrez-Cortes [gutiec17@unlv.nevada.edu]
 Andrew Yang [yanga7@unlv.nevada.edu]
+Jeremiah D. Monteverde [montej21@unlv.nevada.edu]
