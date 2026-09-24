@@ -1,0 +1,62 @@
+# Hybrid Mocap — frontend
+
+A navigable React prototype of every screen in `refs/Hybrid-Mocap-Screens.pdf`. All data is mocked
+in `src/lib/data.ts`; there are no backend calls yet.
+
+## Run it
+
+```bash
+cd frontend
+npm install
+npm run dev      # http://localhost:5173
+```
+
+Other scripts: `npm run build` (production bundle into `dist/`), `npm run preview` (serve the
+build), `npm run typecheck`.
+
+## Screens
+
+| Route | Deck page | What it covers |
+| --- | --- | --- |
+| `/` | 1–3 | Home. All three concepts from the deck, switchable in the “Home layout” strip: **A — Cards**, **B — Hero**, **C — Minimal**. Shareable as `/?layout=b`. |
+| `/record` | 4 | Capture setup, camera monitor grid, connection alert, calibration toast. `Cameras` tab lists the rig. |
+| `/projects` | 5 | Project browser with search, “only my projects”, sort, grid/list views. |
+| `/projects/:projectId` | 6 | Project workspace: clip list, skeleton viewport, transport bar, and the Rig / Streaming / Export inspector. |
+| `/library` | 7 | Motion Library with source filters and grid/list views. |
+| `/settings/:section` | 8 | Settings. `accessibility` is the screen in the deck; `devices`, `calibration` and `api` are the other three sections in the sidebar. |
+
+Anything not routed falls through to a friendly not-found page.
+
+## What is interactive
+
+- Every nav link, card, breadcrumb and back link routes for real.
+- **Record** — start/stop a take (the timer runs), switch Quad / Split / Single layouts, reconnect
+  camera 3, dismiss the alert and the toast.
+- **Project workspace** — pick a take, click a joint in the viewport or a part in the Rig list (they
+  stay in sync), toggle the legend to dim a motion source, scrub and play the transport, add a take,
+  switch to the Streaming and Export tabs.
+- **Settings → Accessibility** — text size, letter/word spacing, line height, link underlines and
+  reduced motion are applied live to every screen and persisted to `localStorage` on *Save changes*.
+  “Freeze the 3D viewport” changes how the workspace viewport starts.
+- **New project** creates a real (in-memory) project and opens its workspace.
+
+## Layout of the code
+
+```
+src/
+  app/          router, app shell, settings + studio state providers
+  components/   TopNav, shared UI (buttons live in CSS, cards, badges, icons, modal/toast)
+  features/     one folder per screen: home, record, projects, library, settings
+  lib/data.ts   mock projects, clips, cameras, rig parts, devices
+  styles/       tokens.css (colours, radii, accessibility variables) + global.css
+  types/        shared types
+```
+
+Colours, radii and the accessibility variables all live in `src/styles/tokens.css` — change the
+brand there, not in the feature files. The app name in the nav is still the deck’s `[APP NAME]`
+placeholder (`src/components/layout/TopNav.tsx`).
+
+## Not built yet
+
+Live video in the camera tiles, a real 3D viewport (the skeleton is SVG), auth, and any backend
+wiring.

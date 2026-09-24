@@ -1,0 +1,60 @@
+.modal__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 11, 18, 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 100;
+  padding: 24px;
+}
+.modal {
+  width: min(480px, 100%);
+  background: var(--surface);
+  border-radius: var(--r-xl);
+  padding: 28px;
+  box-shadow: var(--shadow-lg);
+}
+.modal h2 {
+  font-size: calc(24px * var(--font-scale));
+}
+.modal__sub {
+  color: var(--muted);
+  margin-top: 6px;
+  margin-bottom: 22px;
+}
+.modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 26px;
+}
+
+/* toast */
+.toast {
+  position: fixed;
+  left: 24px;
+  bottom: 24px;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--ink);
+  color: #fff;
+  border-radius: var(--r-md);
+  padding: 12px 12px 12px 18px;
+  box-shadow: var(--shadow-lg);
+  font-size: calc(14px * var(--font-scale));
+}
+.toast .btn {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+.toast .iconbtn {
+  color: rgba(255, 255, 255, 0.7);
+  width: 32px;
+  height: 32px;
+}
+.toast .iconbtn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}

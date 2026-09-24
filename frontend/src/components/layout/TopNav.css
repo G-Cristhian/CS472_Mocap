@@ -1,0 +1,139 @@
+.topnav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 0 32px;
+  height: 72px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.topnav__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.topnav__brand:hover {
+  text-decoration: none;
+}
+.topnav__links {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+}
+.topnav__link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 16px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.topnav__link:hover {
+  color: var(--ink);
+  text-decoration: none;
+}
+.topnav__link.is-active {
+  color: var(--ink);
+  font-weight: 700;
+}
+.topnav__link.is-active::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -1px;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--purple);
+}
+.topnav__search {
+  margin-left: auto;
+  width: min(430px, 34vw);
+}
+.topnav__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--purple);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.topnav__menu {
+  position: absolute;
+  top: 66px;
+  right: 24px;
+  width: 300px;
+  padding: 18px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
+  z-index: 50;
+}
+.topnav__menu h4 {
+  font-size: calc(15px * var(--font-scale));
+  margin-bottom: 10px;
+}
+.topnav__menu dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 14px;
+  font-size: calc(13px * var(--font-scale));
+  color: var(--muted);
+}
+.topnav__menu dt {
+  font-family: var(--font-mono);
+  color: var(--ink);
+}
+.topnav__menu dd {
+  margin: 0;
+}
+.menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  color: var(--ink);
+}
+.menu-item:hover {
+  background: var(--surface-2);
+  text-decoration: none;
+}
+@media (max-width: 1080px) {
+  .topnav {
+    padding: 0 16px;
+    gap: 12px;
+  }
+  .topnav__search {
+    display: none;
+  }
+}
+@media (max-width: 720px) {
+  .topnav__link {
+    padding: 0 10px;
+    font-size: calc(14px * var(--font-scale));
+  }
+}

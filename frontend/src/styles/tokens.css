@@ -1,0 +1,72 @@
+/* Design tokens taken from refs/Hybrid-Mocap-Screens.pdf */
+:root {
+  /* Brand */
+  --purple: #6d4aff;
+  --purple-strong: #5b34f0;
+  --purple-soft: #8b6dff;
+  --blue: #5b8cff;
+  --blue-strong: #3f6fe8;
+  --pink: #e31c79;
+  --pink-strong: #c41266;
+  --orange: #f26722;
+  --amber: #f5a623;
+
+  /* Tints used for thumbnails and row backgrounds */
+  --purple-50: #eeebff;
+  --blue-50: #e8effd;
+  --pink-50: #fdecf3;
+  --orange-50: #fdefe2;
+  --amber-50: #fdf3dc;
+
+  /* Neutrals */
+  --ink: #0b0b12;
+  --ink-2: #2b2b38;
+  --muted: #6b6b7b;
+  --muted-2: #9a9aa8;
+  --line: #e4e4ec;
+  --line-soft: #f0f0f5;
+  --surface: #ffffff;
+  --surface-2: #f7f7fa;
+  --viewport: #0a0a0c;
+  --viewport-2: #15151c;
+
+  /* Shape */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+  --r-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(11, 11, 18, 0.06);
+  --shadow-md: 0 6px 20px rgba(11, 11, 18, 0.08);
+  --shadow-lg: 0 18px 48px rgba(11, 11, 18, 0.14);
+
+  /* Accessibility settings screen writes these live */
+  --font-scale: 1;
+  --letter-spacing: 0em;
+  --word-spacing: 0.05em;
+  --line-height: 1.6;
+  --motion-scale: 1;
+
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Accessibility: reduced / no interface animation */
+:root[data-motion='reduced'] * {
+  animation-duration: 0.001ms !important;
+  transition-duration: 60ms !important;
+}
+:root[data-motion='none'] * {
+  animation: none !important;
+  transition: none !important;
+}
+:root[data-underline-links='true'] a {
+  text-decoration: underline;
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -1,0 +1,178 @@
+/* Layout switcher strip — lets the team compare the three home designs in the deck */
+.variants {
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface-2);
+}
+.variants__inner {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 12px 40px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.variants__label {
+  font-size: calc(12.5px * var(--font-scale));
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.variants__note {
+  color: var(--muted-2);
+  font-size: calc(13px * var(--font-scale));
+}
+
+/* ---------- Variant A ---------- */
+.homeA__title {
+  font-size: calc(52px * var(--font-scale));
+  max-width: 18ch;
+}
+.homeA__sub {
+  margin-top: 14px;
+  color: var(--muted);
+  max-width: 46ch;
+  font-size: calc(16px * var(--font-scale));
+}
+.homeA__actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 30px;
+  flex-wrap: wrap;
+}
+.homeA__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+/* ---------- Variant B ---------- */
+.homeB__hero {
+  background: var(--purple);
+  color: #fff;
+}
+.homeB__heroInner {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 56px 40px 60px;
+  display: flex;
+  align-items: center;
+  gap: 48px;
+}
+.homeB__heroInner h1 {
+  font-size: calc(58px * var(--font-scale));
+  max-width: 12ch;
+}
+.homeB__heroInner p {
+  margin-top: 20px;
+  max-width: 44ch;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: calc(16.5px * var(--font-scale));
+}
+.homeB__heroActions {
+  display: flex;
+  gap: 14px;
+  margin-top: 32px;
+  flex-wrap: wrap;
+}
+.homeB__art {
+  margin-left: auto;
+  width: 380px;
+  height: 290px;
+  border-radius: var(--r-xl);
+  background: rgba(0, 0, 0, 0.18);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.homeB__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---------- Variant C ---------- */
+.homeC {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 72px 40px 80px;
+}
+.homeC__title {
+  font-size: calc(52px * var(--font-scale));
+  font-weight: 400;
+  margin-top: 14px;
+}
+.homeC__title b {
+  font-weight: 800;
+}
+.homeC__status {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: calc(16px * var(--font-scale));
+}
+.homeC__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.homeC__actions {
+  display: flex;
+  gap: 12px;
+}
+.ctable {
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.ctable__row {
+  display: grid;
+  grid-template-columns: 64px 2fr 1.2fr 0.8fr 1fr 60px;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+  color: inherit;
+}
+.ctable__row:hover {
+  text-decoration: none;
+  background: var(--surface-2);
+}
+.ctable__name {
+  font-size: calc(19px * var(--font-scale));
+  font-weight: 700;
+}
+.ctable__cell {
+  color: var(--muted);
+  font-size: calc(14.5px * var(--font-scale));
+}
+.ctable__tag {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 1000px) {
+  .homeB__art {
+    display: none;
+  }
+  .homeB__heroInner,
+  .homeC,
+  .variants__inner {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .ctable__row {
+    grid-template-columns: 48px 1fr 60px;
+  }
+  .ctable__row .ctable__cell {
+    display: none;
+  }
+}
