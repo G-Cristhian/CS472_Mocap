@@ -4,13 +4,15 @@ import numpy as np
 from aniposelib.cameras import Camera, CameraGroup
 from extract_2d import LANDMARK_NAMES
 
+import config
+
 
 class PersonCalibrationError(Exception):
     pass
 
 # function to create camera matrix using the image's size + camera's horizontal fov!
 #   typically: phones = 60-75 degrees on main lens, webcams = 60-80
-def guess_intrinsics(size, fov_deg=65.0):
+def guess_intrinsics(size, fov_deg=config.DEFAULT_HFOV_DEG):
     width, height = size
     f = (width / 2.0) / np.tan(np.radians(fov_deg) / 2.0)
 
@@ -23,8 +25,12 @@ def guess_intrinsics(size, fov_deg=65.0):
 #   grabs measurments of each camera from sizes field
 #   grabs body length measurements from scale _segment
 #   grabs a camera matrix per camera if known (iPhone case), or guesses from fov_deg, from intrinsics
-def calibrate_from_person(points, sizes, scale_segment, fov_deg=65.0, intrinsics=None,
-                          refine_intrinsics=False, min_correspondences=200, min_pnp_points=50):
+#   grabs MediaPipe visibility per landmark from confidence: only config.CALIBRATION_JOINTS seen with
+#     at least config.CALIB_MIN_CONFIDENCE are used to place the cameras (face/finger landmarks jitter)
+def calibrate_from_person(points, sizes, scale_segment, fov_deg=config.DEFAULT_HFOV_DEG, intrinsics=None,
+                          confidence=None, refine_intrinsics=False,
+                          min_correspondences=config.CALIB_MIN_CORRESPONDENCES,
+                          min_pnp_points=config.CALIB_MIN_PNP_POINTS):
     n_cams = points.shape[0]
     if n_cams < 2:
         raise ValueError("person calibration needs at least 2 cameras")
@@ -34,7 +40,7 @@ def calibrate_from_person(points, sizes, scale_segment, fov_deg=65.0, intrinsics
         intrinsics = [guess_intrinsics(size, fov_deg) for size in sizes]
     
     cameras = [Camera(name=f"cam{c}", size=sizes[c], matrix=intrinsics[c]) for c in range(n_cams)]
-    flat = points.reshape(n_cams, -1, 2)
+    flat = _calibration_points(points, confidence).reshape(n_cams, -1, 2)
 
     # start from the pair of cameras that saw the most distinct landmarks together
     pairs = [(a, b) for a in range(n_cams) for b in range(a + 1, n_cams)]
@@ -105,13 +111,25 @@ def calibrate_from_person(points, sizes, scale_segment, fov_deg=65.0, intrinsics
     info = {
         "method": "person",
         "start_pair": (a, b),
-        "correspondences": int((np.sum(~np.isnan(flat[:, :, 0]), axis=0) >= 2).sum()),
+        "correspondences": int((np.sum(~np.isnan(flat[:, :, 0]), axis=0) >= 2).sum()),  # calibration points
         "inlier_ratio": inlier_ratio,
         "reprojection_error_px": error,
         "scale": float(scale),
     }
 
     return cgroup, info
+
+# function to keep only the points worth calibrating from: stable body joints, seen confidently
+#   everything else becomes NaN, so it is simply ignored by the steps above
+def _calibration_points(points, confidence):
+    keep = np.zeros(points.shape[2], dtype=bool)
+    keep[[LANDMARK_NAMES.index(name) for name in config.CALIBRATION_JOINTS]] = True
+    calib = points.copy()
+    calib[:, :, ~keep] = np.nan
+    if confidence is not None:
+        calib[confidence < config.CALIB_MIN_CONFIDENCE] = np.nan
+    return calib
+
 
 # function to count distinct positions seen by both cameras
 #   on a grid of 1% of image width
@@ -132,7 +150,7 @@ def _relative_pose(pa, pb, Ka, Kb):
     nb = cv2.undistortPoints(pb[both].reshape(-1, 1, 2), Kb, None)
 
     # RANSAC throws out bad landmark matches
-    thresh = 3.0 / Ka[0, 0]
+    thresh = config.RANSAC_REPROJ_THRESHOLD_PX / Ka[0, 0]
     E, mask = cv2.findEssentialMat(na, nb, focal=1.0, pp=(0.0, 0.0),
                                    method=cv2.RANSAC, prob=0.999, threshold=thresh)
     

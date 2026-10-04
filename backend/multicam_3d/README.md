@@ -11,6 +11,8 @@ Calibration uses the person's own landmarks by default. A printed ChArUco board 
 - `board_calibration.py`: fallback calibration from a ChArUco board
 - `iphone_camera.py`: iPhone-only, detects iPhone videos and reads each lens's focal length from the video metadata
 - `triangulate.py`: 2D from all cameras to 3D, plus JSON output
+- `smooth.py`: fills short gaps and removes jitter from the 3D landmarks
+- `config.py`: every tunable number (confidence thresholds, calibration joints, smoothing), names match `backend/mocap_pipeline/config.py`
 
 ---
 # Requirements
@@ -19,7 +21,21 @@ $ python -m pip install -r requirements.txt
 ```
 On Linux without a desktop, MediaPipe also needs `libegl1` (`sudo apt install libegl1`).
 
-Put `MODEL_FILEPATH=...pose_landmarker_heavy.task` in a `.env` file, or pass `--model`.
+The MediaPipe model defaults to the one the repo ships in `backend/landmarks_from_image_test/models/`. To use another, put `MODEL_FILEPATH=...pose_landmarker_heavy.task` in a `.env` file, or pass `--model`.
+
+---
+# How this maps to the team pipeline outline (`backend/mocap_pipeline`)
+| Outline stage | Here |
+|---|---|
+| stage1 `detect.py` (2D joints, real timestamps, rotation flag, NaN for missing) | `extract_2d.py` |
+| stage2 `sync.py` (clap, shared clock) | `extract_2d.stack_cameras_by_time` / `stack_cameras`, clap time given by hand with `--sync` |
+| stage2 `calibrate.py` (calibration from the performer's joints) | `calibrate_person.py`, plus `board_calibration.py` as a fallback |
+| stage2 `scale_floor.py` | scale from one measured body length (`--scale`); no floor or Y-up yet |
+| stage2 `triangulate.py` (2+ cameras, confidence, drop one bad view) | `triangulate.py` |
+| stage2 `smooth.py` (fill gaps up to 10 frames, low-pass) | `smooth.py` |
+| stage3 rig / BVH, placement tool | not here yet |
+
+Like the outline, calibration only uses the 12 stable body joints (shoulders to ankles) seen with at least 0.8 confidence, and triangulation ignores views below 0.5.
 
 ---
 # Camera setup: front arc
@@ -85,4 +101,6 @@ Film the board with every camera (one board video per camera), moving it around 
 ```
 [{"t": 0.0, "landmarks": {"NOSE": {"x": 0.12, "y": -0.65, "z": 3.1}, "LEFT_EYE_INNER": null, ...}}, ...]
 ```
-Meters, in camera 0's frame (x right, y down, z away from camera 0). `null` means fewer than 2 cameras saw the landmark in that frame (or the views didn't agree).
+Meters, in camera 0's frame (x right, y down, z away from camera 0). `null` means fewer than 2 cameras saw the landmark in that frame (or the views didn't agree), for longer than the 10 frames that get filled in.
+
+Gaps of up to 10 frames are filled in and every landmark is lightly smoothed (Savitzky-Golay, 7 frames). Add `--no-smooth` for the raw triangulated points.

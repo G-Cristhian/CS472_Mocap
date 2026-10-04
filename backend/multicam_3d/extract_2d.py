@@ -5,6 +5,8 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
+import config
+
 # names of the 33 MediaPipe pose landmarks, in index order
 
 # names of 33 MediaPipe pose landmarks
@@ -17,7 +19,7 @@ N_LANDMARKS = len(LANDMARK_NAMES)
 
 # function that runs MediaPipe on every frame of a camera's video!
 #   returns pixel coords with NaN where landmark is missing / not visible enough
-def extract_2d(video_path, model_path, min_visibility=0.5, video_times=False):
+def extract_2d(video_path, model_path, min_visibility=config.TRIANGULATION_MIN_CONFIDENCE, video_times=False):
     cap = cv2.VideoCapture(str(video_path))
 
     if not cap.isOpened():
@@ -93,26 +95,31 @@ def extract_2d(video_path, model_path, min_visibility=0.5, video_times=False):
 
 # function that stacks cameras into the expected array format for aniposelib
 #   offset shifts a camera by whole frames if videos started at different times!
+#   RETURNS points (n_cams, n_frames, 33, 2) and confidence (n_cams, n_frames, 33), MediaPipe visibility 0-1
 def stack_cameras(results, offsets=None):
     offsets = offsets or [0] * len(results)
-    trimmed = [r["points"][o:] for r, o in zip(results, offsets)]
-    n_frames = min(len(t) for t in trimmed)
-    return np.stack([t[:n_frames] for t in trimmed])
+    n_frames = min(len(r["points"]) - o for r, o in zip(results, offsets))
+    points = np.stack([r["points"][o:o + n_frames] for r, o in zip(results, offsets)])
+    confidence = np.stack([r["visibility"][o:o + n_frames] for r, o in zip(results, offsets)])
+    return points, confidence
 
 # function to match frames across cameras by time rather than by frame number
 #   using variable frame rate for iPhones
 #   calculating for mixed cameras (where frame rates don't match exactly)
 #   camera with lowest frame rate is reference to ensure a match for every camera
-#   RETURNS points in (n_cams, n_frames, 33, 2) format, and reference times in seconds (0 is sync moment)
+#   RETURNS points in (n_cams, n_frames, 33, 2) format, confidence (n_cams, n_frames, 33),
+#   and reference times in seconds (0 is sync moment)
 def stack_cameras_by_time(results, sync_times):
     ref = min(range(len(results)), key=lambda c: results[c]["fps"])
     ref_times = results[ref]["times"] - sync_times[ref]
     keep = np.ones(len(ref_times), dtype=bool)
     matched = []
+    matched_conf = []
 
     for c, (r, sync) in enumerate(zip(results, sync_times)):
         if c == ref:
             matched.append(r["points"])
+            matched_conf.append(r["visibility"])
             continue
 
         times = r["times"] - sync
@@ -130,9 +137,12 @@ def stack_cameras_by_time(results, sync_times):
         gap = np.abs(times[idx] - ref_times)
 
         points = r["points"][idx].copy()
+        conf = r["visibility"][idx].copy()
         
         # no frame within half a frame of the reference time, likely a dropped frame
         points[gap > 0.5 / r["fps"]] = np.nan
+        conf[gap > 0.5 / r["fps"]] = 0.0
         matched.append(points)
+        matched_conf.append(conf)
 
-    return np.stack(matched)[:, keep], ref_times[keep]
+    return np.stack(matched)[:, keep], np.stack(matched_conf)[:, keep], ref_times[keep]

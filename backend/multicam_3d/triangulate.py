@@ -3,9 +3,11 @@ import numpy as np
 
 from extract_2d import LANDMARK_NAMES
 
+import config
+
 # function that turns 2D landmarks into 3D
 #   RETURNS (n_frames, 33, 3) in calibration's units (meters), NaN where point couldn't be placed
-def triangulate_3d(cgroup, points, max_error_px=15.0):
+def triangulate_3d(cgroup, points, max_error_px=config.MAX_REPROJECTION_ERROR_PX):
     n_cams, n_frames, n_lm, _ = points.shape
     p2ds = points.reshape(n_cams, -1, 2)
     p3ds = cgroup.triangulate(p2ds)

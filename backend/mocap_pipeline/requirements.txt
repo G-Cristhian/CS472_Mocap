@@ -1,0 +1,7 @@
+mediapipe
+aniposelib
+opencv-contrib-python
+python-dotenv
+numpy
+scipy
+av

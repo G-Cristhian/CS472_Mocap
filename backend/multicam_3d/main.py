@@ -8,23 +8,30 @@ from extract_2d import extract_2d, stack_cameras, stack_cameras_by_time, LANDMAR
 from calibrate_person import calibrate_from_person, guess_intrinsics, PersonCalibrationError
 from iphone_camera import is_iphone_video, iphone_intrinsics, IPhoneMetadataError, MODEL_KEY
 from triangulate import triangulate_3d, save_json
+from smooth import fill_gaps, smooth
+
+import config
+from config import MIN_CAMERAS, MAX_CAMERAS
 
 load_dotenv()
 
-MIN_CAMERAS, MAX_CAMERAS = 2, 4
+# default model: MODEL_FILEPATH in .env, otherwise the one the repo ships (config.POSE_MODEL_PATH)
+DEFAULT_MODEL = os.path.expanduser(os.getenv("MODEL_FILEPATH", "")) or \
+    str((Path(__file__).parent / config.POSE_MODEL_PATH).resolve())
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Multi-camera (2-4) MediaPipe -> 3D landmarks")
     parser.add_argument("videos", nargs="+", help="motion video from each camera (cam0 cam1 ...), 2 to 4 videos")
-    parser.add_argument("--model", default=os.path.expanduser(os.getenv("MODEL_FILEPATH", "")),
-                        help="pose_landmarker .task file (or MODEL_FILEPATH in .env)")
+    parser.add_argument("--model", default=DEFAULT_MODEL,
+                        help="pose_landmarker .task file (default: MODEL_FILEPATH in .env, or the model in "
+                             "backend/landmarks_from_image_test/models)")
     parser.add_argument("--scale", nargs=3, metavar=("LANDMARK_A", "LANDMARK_B", "METERS"),
                         default=["LEFT_SHOULDER", "RIGHT_SHOULDER", "0.36"],
                         help="a body length measured on the subject, sets real-world units")
     parser.add_argument("--camera", nargs="+", choices=["auto", "iphone", "webcam"], default=["auto"],
                         help="camera type, one for all or one per video. auto: iPhone if the video has "
                              "Apple's focal length metadata, otherwise webcam (any non-iPhone camera, uses --fov)")
-    parser.add_argument("--fov", nargs="+", type=float, default=[65.0],
+    parser.add_argument("--fov", nargs="+", type=float, default=[config.DEFAULT_HFOV_DEG],
                         help="horizontal field of view in degrees of the non-iPhone cameras, one for all or one per video")
     parser.add_argument("--offsets", nargs="+", type=int, default=None,
                         help="frames to skip at the start of each video to sync them (all-webcam setups only)")
@@ -34,10 +41,12 @@ def parse_args():
     parser.add_argument("--calibration", default="calibration.toml",
                         help="calibration file, reused if it exists")
     parser.add_argument("--recalibrate", action="store_true", help="ignore an existing calibration file")
-    parser.add_argument("--max-error", type=float, default=10.0,
+    parser.add_argument("--max-error", type=float, default=config.CALIB_MAX_ERROR_PX,
                         help="person calibration above this reprojection error (px) falls back to ChArUco")
     parser.add_argument("--charuco-videos", nargs="+", default=None,
                         help="board video from each camera, used only if person calibration fails")
+    parser.add_argument("--no-smooth", action="store_true",
+                        help="skip filling short gaps and smoothing the 3D landmarks")
     parser.add_argument("--out", default="out3d.json")
     args = parser.parse_args()
 
@@ -93,16 +102,16 @@ def camera_intrinsics(args, types, sizes):
 
     return intrinsics
 
-def calibrate(args, points, sizes, intrinsics):
+def calibrate(args, points, confidence, sizes, intrinsics):
     name_a, name_b, length = args.scale
     if name_a not in LANDMARK_NAMES or name_b not in LANDMARK_NAMES:
         raise SystemExit(f"--scale landmarks must be MediaPipe names, e.g. LEFT_SHOULDER")
 
     try:
         cgroup, info = calibrate_from_person(points, sizes, (name_a, name_b, float(length)),
-                                             intrinsics=intrinsics)
+                                             intrinsics=intrinsics, confidence=confidence)
         print(f"Person calibration: {info['reprojection_error_px']:.2f} px error, "
-              f"{info['correspondences']} matched landmarks, started from cameras {info['start_pair']}")
+              f"{info['correspondences']} matched calibration points, started from cameras {info['start_pair']}")
         if info["reprojection_error_px"] <= args.max_error:
             return cgroup
         reason = f"error {info['reprojection_error_px']:.2f} px is above --max-error {args.max_error}"
@@ -143,9 +152,9 @@ def main():
     times = None
 
     if by_time:
-        points, times = stack_cameras_by_time(results, args.sync)
+        points, confidence, times = stack_cameras_by_time(results, args.sync)
     else:
-        points = stack_cameras(results, args.offsets)
+        points, confidence = stack_cameras(results, args.offsets)
 
     sizes = [r["size"] for r in results]
 
@@ -159,11 +168,15 @@ def main():
             raise SystemExit(f"{calib_path} has {len(cgroup.cameras)} cameras but {len(args.videos)} videos "
                              f"were given, add --recalibrate")
     else:
-        cgroup = calibrate(args, points, sizes, camera_intrinsics(args, types, sizes))
+        cgroup = calibrate(args, points, confidence, sizes, camera_intrinsics(args, types, sizes))
         cgroup.dump(str(calib_path))
         print(f"Saved calibration to {calib_path}")
 
     p3ds = triangulate_3d(cgroup, points)
+
+    # clean-up: fill short gaps, then remove jitter
+    if not args.no_smooth:
+        p3ds = smooth(fill_gaps(p3ds))
     save_json(p3ds, results[0]["fps"], args.out, times=times)
     print(f"Saved {len(p3ds)} frames of 3D landmarks to {args.out}")
 
