@@ -6,10 +6,11 @@ Suggested format: one .npz per object (numpy arrays) with scalar and string
 fields stored alongside. JSON is fine for CameraRig since it is small and
 people will want to read it.
 """
+from __future__ import annotations
+
 import json
 import numpy as np
 
-from __future__ import annotations
 from .joints import MEDIAPIPE_JOINTS
 from .schemas import Camera, CameraRig, Keypoints2D, Pose3D, SyncResult
 

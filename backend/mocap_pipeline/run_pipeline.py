@@ -7,19 +7,24 @@ Command line entry point: runs every stage in order.
 This file is the one place that knows the order of the stages. When the web
 backend is built later, it should call run() rather than repeat this logic.
 """
+from __future__ import annotations
 import argparse
 import os
 import numpy as np
 
-from __future__ import annotations
 from pathlib import Path
 from . import config, io
 from .stage1_keypoints import detect
 from .stage2_reconstruct import calibrate, scale_floor, smooth, sync, triangulate
+from .stage3_rig import bvh_writer, rotations, skeleton
 from .stage2_reconstruct.iphone_camera import (is_iphone_video, iphone_intrinsics, IPhoneMetadataError,
                                                MODEL_KEY)
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
+# where results go unless --out / --calibration say otherwise (created when needed)
+OUTPUT_DIR = BACKEND_DIR / "output"
+DEFAULT_OUT = OUTPUT_DIR / "out3d.json"
+DEFAULT_CALIBRATION = OUTPUT_DIR / "calibration.json"
 
 
 def default_model_path() -> str:
@@ -55,7 +60,9 @@ def camera_intrinsics(keypoints, video_paths, types, fovs):
                 continue
             except IPhoneMetadataError as e:
                 print(f"{e}\nFalling back to --fov {fov} for this camera")
+
         intrinsics.append(calibrate.initial_intrinsics(kp.width, kp.height, fov))
+
     return intrinsics
 
 
@@ -71,8 +78,10 @@ def calibrate_cameras(keypoints, video_paths, types, fovs, max_error_px, charuco
         error = float(np.mean(list(rig.reprojection_error_px.values())))
         print("Calibration from the performer: " + ", ".join(
             f"{cid} {e:.2f} px" for cid, e in rig.reprojection_error_px.items()))
+        
         if error <= max_error_px:
             return rig, False
+        
         reason = f"error {error:.2f} px is above --max-error {max_error_px}"
     except calibrate.CalibrationError as e:
         reason = str(e)
@@ -82,22 +91,29 @@ def calibrate_cameras(keypoints, video_paths, types, fovs, max_error_px, charuco
         boards = " ".join(f"cam{c}_board.mp4" for c in range(len(video_paths)))
         raise SystemExit(f"Calibration from the performer failed ({reason}).\n"
                          f"Record the ChArUco board with every camera and rerun with --charuco-videos {boards}")
+    
     print(f"Calibration from the performer failed ({reason}), falling back to the ChArUco board")
+
     from .stage2_reconstruct.board_calibration import calibrate_from_board
+
     cgroup, info = calibrate_from_board(charuco_videos)
     calibrate._move_origin_to(cgroup, 0)
     print(f"ChArUco calibration: {info['reprojection_error_px']:.2f} px error")
+
     return calibrate.group_to_rig(cgroup, ids, {"board": info["reprojection_error_px"]}), True
 
 
 def run(video_paths: list[str], out_path: str, performer_height_m: float | None = None,
         model_path: str | None = None, camera: list[str] | None = None, fov: list[float] | None = None,
-        clap_times: list[float] | None = None, calibration_path: str = "calibration.json",
+        clap_times: list[float] | None = None, calibration_path: str = str(DEFAULT_CALIBRATION),
         recalibrate: bool = False, max_error_px: float = config.CALIB_MAX_ERROR_PX,
-        charuco_videos: list[str] | None = None, smoothing: bool = True) -> None:
+        charuco_videos: list[str] | None = None, smoothing: bool = True, bvh: bool = True) -> None:
+    
     n = len(video_paths)
+
     if not config.MIN_CAMERAS <= n <= config.MAX_CAMERAS:
         raise ValueError(f"Give {config.MIN_CAMERAS} to {config.MAX_CAMERAS} videos, one per camera (got {n}).")
+    
     model_path = model_path or default_model_path()
     camera = camera or ["auto"] * n
     fov = fov or [config.DEFAULT_HFOV_DEG] * n
@@ -110,6 +126,7 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
     for video in video_paths:
         print(f"Detecting joints in {video}")
         keypoints.append(detect.detect_video(video, model_path))
+
     # camera ids must be unique (two videos can share a file name in different folders)
     if len({kp.camera_id for kp in keypoints}) < n:
         for c, kp in enumerate(keypoints):
@@ -120,6 +137,7 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
         sync_result, keypoints = sync.synchronise(video_paths, keypoints, clap_times)
     except sync.ClapNotFoundError as e:
         raise SystemExit(f"{e}\nGive the clap time in each video by hand with --sync T0 T1 ... (seconds)")
+    
     print("Clap at " + ", ".join(f"{cid} {t:.3f} s" for cid, t in sync_result.clap_time_s.items()))
 
     # Stage 2b: where the cameras are, then real-world units, floor and Y up.
@@ -127,36 +145,52 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
     if calib_path.exists() and not recalibrate:
         print(f"Using existing calibration {calib_path}")
         rig = io.load_rig(str(calib_path))
+
         if len(rig.cameras) != n:
             raise SystemExit(f"{calib_path} has {len(rig.cameras)} cameras but {n} videos were given, "
                              f"add --recalibrate")
+        
     else:
         if performer_height_m is None:
             raise SystemExit("--height-m (performer height in metres) is needed to calibrate")
+        
         rig, from_board = calibrate_cameras(keypoints, video_paths, types, fov, max_error_px, charuco_videos)
         rough_pose = triangulate.triangulate_sequence(keypoints, rig)
+
         # a board calibration is already in metres, it only needs the floor and Y up
         rig = scale_floor.make_metric(rig, rough_pose, performer_height_m, rescale=not from_board)
+        calib_path.parent.mkdir(parents=True, exist_ok=True)
         io.save_rig(rig, str(calib_path))
+
         print(f"Saved calibration to {calib_path}")
 
     # Stage 2c: final 3D joints.
     pose = triangulate.triangulate_sequence(keypoints, rig)
+    
     if smoothing:
         pose = smooth.smooth(smooth.fill_gaps(pose))
+
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     io.save_pose3d_json(pose, out_path, sync_result.common_timestamps)
     print(f"Saved {len(pose.points)} frames of 3D joints to {out_path}")
 
-    # Stage 3: skeleton rig file. Still the outline's placeholders (they raise
-    # NotImplementedError), so not called yet. Once filled in:
-    #   rig_positions = skeleton.rig_joint_positions(pose)
-    #   offsets = skeleton.rest_pose_offsets(skeleton.bone_lengths(rig_positions))
-    #   root_positions, local_rotations = rotations.solve_rotations(rig_positions, offsets)
-    #   euler = rotations.to_euler_degrees(local_rotations)
-    #   bvh_writer.write_bvh(bvh_path, offsets, root_positions, euler, pose.fps)
+    # Stage 3: skeleton rig file (.bvh next to the JSON, same name).
+    if bvh:
+        bvh_path = Path(out_path).with_suffix(".bvh")
+        export_bvh(pose, str(bvh_path))
+        print(f"Saved skeleton animation to {bvh_path}")
 
     # TODO: save every intermediate result with io.py next to out_path so a
     # failed run can be inspected and resumed from the last good stage.
+
+
+def export_bvh(pose, bvh_path: str) -> None:
+    """Stage 3: Pose3D -> H36M skeleton with fixed bone lengths -> joint rotations -> .bvh."""
+    rig_positions = skeleton.rig_joint_positions(pose)
+    offsets = skeleton.rest_pose_offsets(skeleton.bone_lengths(rig_positions))
+    root_positions, local_rotations = rotations.solve_rotations(rig_positions, offsets)
+    euler = rotations.to_euler_degrees(local_rotations, bvh_writer.ROTATION_ORDER)
+    bvh_writer.write_bvh(bvh_path, offsets, root_positions, euler, pose.fps)
 
 
 def per_camera(parser, name, values, n):
@@ -176,7 +210,8 @@ def main() -> None:
                         help="One video per camera, 2 to 4, each starting with a clap. The first is the reference camera.")
     parser.add_argument("--height-m", type=float, default=None,
                         help="Performer height in metres; sets the real-world scale (needed when calibrating).")
-    parser.add_argument("--out", default="out3d.json", help="Output JSON path (3D joints per frame).")
+    parser.add_argument("--out", default=str(DEFAULT_OUT),
+                        help="Output JSON path (3D joints per frame). Default: backend/output/out3d.json")
     parser.add_argument("--model", default=None,
                         help="pose_landmarker .task file (default: MODEL_FILEPATH in .env, or the repo's model)")
     parser.add_argument("--camera", nargs="+", choices=["auto", "iphone", "webcam"], default=["auto"],
@@ -186,13 +221,16 @@ def main() -> None:
                         help="Horizontal field of view in degrees of the non-iPhone cameras, one for all or one per video.")
     parser.add_argument("--sync", nargs="+", type=float, default=None,
                         help="Clap time in seconds in each video, one per video. Default: found from the audio.")
-    parser.add_argument("--calibration", default="calibration.json", help="Calibration file, reused if it exists.")
+    parser.add_argument("--calibration", default=str(DEFAULT_CALIBRATION),
+                        help="Calibration file, reused if it exists. Default: backend/output/calibration.json")
     parser.add_argument("--recalibrate", action="store_true", help="Ignore an existing calibration file.")
     parser.add_argument("--max-error", type=float, default=config.CALIB_MAX_ERROR_PX,
                         help="Calibration above this reprojection error (px) falls back to the ChArUco board.")
     parser.add_argument("--charuco-videos", nargs="+", default=None,
                         help="Board video from each camera, used only if calibration from the performer fails.")
     parser.add_argument("--no-smooth", action="store_true", help="Skip gap filling and smoothing.")
+    parser.add_argument("--no-bvh", action="store_true",
+                        help="Skip the skeleton animation (.bvh written next to the --out JSON).")
     args = parser.parse_args()
 
     n = len(args.videos)
@@ -206,7 +244,8 @@ def main() -> None:
     run(args.videos, args.out, performer_height_m=args.height_m, model_path=args.model,
         camera=per_camera(parser, "--camera", args.camera, n), fov=per_camera(parser, "--fov", args.fov, n),
         clap_times=args.sync, calibration_path=args.calibration, recalibrate=args.recalibrate,
-        max_error_px=args.max_error, charuco_videos=args.charuco_videos, smoothing=not args.no_smooth)
+        max_error_px=args.max_error, charuco_videos=args.charuco_videos, smoothing=not args.no_smooth,
+        bvh=not args.no_bvh)
 
 
 if __name__ == "__main__":

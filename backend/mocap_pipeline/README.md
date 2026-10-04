@@ -9,13 +9,15 @@ Videos from 2 to 4 cameras (iPhones and webcams can be mixed), each starting wit
 ```
 $ cd backend
 $ python -m pip install -r mocap_pipeline/requirements.txt
-$ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV cam2.mp4 --height-m 1.75 --out take01.json
+$ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV cam2.mp4 --height-m 1.75
 ```
 On Linux without a desktop, MediaPipe also needs `libegl1` (`sudo apt install libegl1`).
 
 The MediaPipe model defaults to the one in `backend/landmarks_from_image_test/models/`. `MODEL_FILEPATH` in a `.env` file or `--model` overrides it.
 
-The calibration is saved to `calibration.json` and reused on the next run; add `--recalibrate` if a camera moved or the number of cameras changed.
+Results go to `backend/output/` (created automatically, ignored by git), wherever you run the command from: the 3D joints to `out3d.json`, the skeleton animation to `out3d.bvh` (same name as the JSON, `--no-bvh` to skip it) and the calibration to `calibration.json`. `--out take01.json` / `--calibration ...` save somewhere else instead (missing folders are created).
+
+The calibration is reused on the next run; add `--recalibrate` if a camera moved or the number of cameras changed.
 
 ---
 # Stages
@@ -29,7 +31,9 @@ The calibration is saved to `calibration.json` and reused on the next run; add `
 | 2b | `stage2_reconstruct/scale_floor.py` | metres from the performer's height, floor at Y = 0, Y up |
 | 2c | `stage2_reconstruct/triangulate.py` | 3D joints from every camera that saw them, drops one bad view |
 | 2c | `stage2_reconstruct/smooth.py` | fills gaps up to 10 frames, light smoothing |
-| 3 | `stage3_rig/` | skeleton and BVH: still the outline's placeholders |
+| 3a | `stage3_rig/skeleton.py` | 33 MediaPipe joints to the 17-joint H36M skeleton, fixed bone lengths, T-pose |
+| 3b | `stage3_rig/rotations.py` | each joint's rotation per frame |
+| 3c | `stage3_rig/bvh_writer.py` | writes the .bvh |
 | - | `placement/` | camera placement tool: still the outline's placeholders |
 
 All tunable numbers are in `config.py`.
@@ -61,8 +65,20 @@ $ python -m mocap_pipeline.run_pipeline cam0.mp4 cam1.mp4 --height-m 1.75 --reca
 
 ---
 # Output
-The `--out` JSON is a list of frames on the shared 30 fps timeline:
+`backend/output/out3d.json` (or the `--out` path) is a list of frames on the shared 30 fps timeline:
 ```
 [{"t": 0.0, "landmarks": {"NOSE": {"x": 0.12, "y": 1.62, "z": -0.3}, "LEFT_EYE_INNER": null, ...}}, ...]
 ```
 `t` is seconds after the clap. Metres; Y up with the floor at Y = 0; Z points from the performer towards camera 0; X is to the right as seen from camera 0; the origin is on the floor in the middle of where the performer walked. `null` means fewer than 2 cameras saw the joint (for longer than the 10 frames that get filled in).
+
+---
+# Skeleton animation (.bvh)
+The `.bvh` holds the 17-joint Human3.6M (H36M) skeleton: Hip (root), hips, knees, ankles, Spine, Thorax, Neck, Head, shoulders, elbows, wrists. Centimetres, Y up, character facing +Z; rotation channels Z X Y. It opens in Blender (File > Import > Motion Capture (.bvh)) and three.js's BVHLoader (the frontend viewer).
+
+- MediaPipe has no spine, neck or top of head, so they are approximated (see `joints.RIG_JOINT_SOURCES`): Spine halfway between hips and shoulders, Neck halfway between shoulders and ears, Head 2/3 of the shoulder-to-ear distance above the ears.
+- Bone lengths are fixed for the whole take: the median over all frames, left and right averaged.
+- Frames where a joint is missing are filled from the neighbouring frames.
+- Twist along a limb can't be measured from joint positions, so arm twist follows the body's up direction and leg twist the hip line.
+
+Stage 3 is based on [video2bvh](https://github.com/KevinLTT/video2bvh) (`bvh_skeleton/h36m_skeleton.py`, `bvh_helper.py`, `math3d.py`), MIT License, Copyright (c) 2020 KevinLTT. Its skeleton, bone-length rules, per-joint orientation rules and BVH writer were adapted to our Y-up data, with the rotation maths done by scipy. The license text is in the header of each `stage3_rig` file.
+

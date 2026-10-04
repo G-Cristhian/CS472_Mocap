@@ -28,47 +28,62 @@ CALIBRATION_JOINTS = [
     "LEFT_KNEE", "RIGHT_KNEE", "LEFT_ANKLE", "RIGHT_ANKLE",
 ]
 
-# Rig joint -> the MediaPipe joints it is computed from (average of the list).
+# Stage 3 rig: the 17-joint Human3.6M (H36M) skeleton, as used by video2bvh
+# (github.com/KevinLTT/video2bvh, bvh_skeleton/h36m_skeleton.py, MIT License).
+#
+# Rig joint -> how it is computed from the MediaPipe joints: a list is the
+# average of those joints, a dict is a weighted sum (weights add up to 1).
 # Stage 3 (skeleton.py) uses this to build the rig's joint positions.
+# Approximations (MediaPipe has no spine, neck or top-of-head landmarks):
+#   Spine = halfway between the hip centre and the shoulder centre (thorax)
+#   Neck  = halfway between the thorax and the centre of the ears
+#   Head  = top of the head: the centre of the ears, raised along the
+#           thorax-to-ears line by 2/3 of that distance (~12 cm on an adult)
 RIG_JOINT_SOURCES = {
-    "Hips":          ["LEFT_HIP", "RIGHT_HIP"],
-    "Chest":         ["LEFT_SHOULDER", "RIGHT_SHOULDER"],
-    "Head":          ["LEFT_EAR", "RIGHT_EAR"],
+    "Hip":           ["LEFT_HIP", "RIGHT_HIP"],
+    "RightHip":      ["RIGHT_HIP"],
+    "RightKnee":     ["RIGHT_KNEE"],
+    "RightAnkle":    ["RIGHT_ANKLE"],
+    "LeftHip":       ["LEFT_HIP"],
+    "LeftKnee":      ["LEFT_KNEE"],
+    "LeftAnkle":     ["LEFT_ANKLE"],
+    "Spine":         ["LEFT_HIP", "RIGHT_HIP", "LEFT_SHOULDER", "RIGHT_SHOULDER"],
+    "Thorax":        ["LEFT_SHOULDER", "RIGHT_SHOULDER"],
+    "Neck":          ["LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_EAR", "RIGHT_EAR"],
+    "Head":          {"LEFT_EAR": 5 / 6, "RIGHT_EAR": 5 / 6,
+                      "LEFT_SHOULDER": -1 / 3, "RIGHT_SHOULDER": -1 / 3},
     "LeftShoulder":  ["LEFT_SHOULDER"],
     "LeftElbow":     ["LEFT_ELBOW"],
     "LeftWrist":     ["LEFT_WRIST"],
     "RightShoulder": ["RIGHT_SHOULDER"],
     "RightElbow":    ["RIGHT_ELBOW"],
     "RightWrist":    ["RIGHT_WRIST"],
-    "LeftHip":       ["LEFT_HIP"],
-    "LeftKnee":      ["LEFT_KNEE"],
-    "LeftAnkle":     ["LEFT_ANKLE"],
-    "LeftToe":       ["LEFT_FOOT_INDEX"],
-    "RightHip":      ["RIGHT_HIP"],
-    "RightKnee":     ["RIGHT_KNEE"],
-    "RightAnkle":    ["RIGHT_ANKLE"],
-    "RightToe":      ["RIGHT_FOOT_INDEX"],
 }
 
 # Rig joint -> its parent. None marks the root. Order matters: a parent always
 # appears before its children, which is the order BVH needs.
 RIG_PARENTS = {
-    "Hips": None,
-    "Chest": "Hips",
-    "Head": "Chest",
-    "LeftShoulder": "Chest",
-    "LeftElbow": "LeftShoulder",
-    "LeftWrist": "LeftElbow",
-    "RightShoulder": "Chest",
-    "RightElbow": "RightShoulder",
-    "RightWrist": "RightElbow",
-    "LeftHip": "Hips",
-    "LeftKnee": "LeftHip",
-    "LeftAnkle": "LeftKnee",
-    "LeftToe": "LeftAnkle",
-    "RightHip": "Hips",
+    "Hip": None,
+    "RightHip": "Hip",
     "RightKnee": "RightHip",
     "RightAnkle": "RightKnee",
-    "RightToe": "RightAnkle",
+    "LeftHip": "Hip",
+    "LeftKnee": "LeftHip",
+    "LeftAnkle": "LeftKnee",
+    "Spine": "Hip",
+    "Thorax": "Spine",
+    "Neck": "Thorax",
+    "Head": "Neck",
+    "LeftShoulder": "Thorax",
+    "LeftElbow": "LeftShoulder",
+    "LeftWrist": "LeftElbow",
+    "RightShoulder": "Thorax",
+    "RightElbow": "RightShoulder",
+    "RightWrist": "RightElbow",
 }
 RIG_JOINTS = list(RIG_PARENTS)
+
+# Rig joints written as a BVH "End Site" (a position only, no rotation of its
+# own), like video2bvh's HeadEndSite. Other leaf joints (ankles, wrists) get an
+# End Site added after them, 0.4 x their own bone length long.
+RIG_END_SITES = ["Head"]

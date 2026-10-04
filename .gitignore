@@ -4,3 +4,6 @@ random_media/
 
 # Hidden macOS file
 .DS_Store
+
+# Pipeline results (3D joints, calibration)
+backend/output/

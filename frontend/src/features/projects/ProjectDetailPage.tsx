@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useSettings } from '@/app/SettingsProvider'
 import { useStudio } from '@/app/StudioProvider'
@@ -14,8 +14,14 @@ import {
 } from '@/components/ui/Icons'
 import { rigParts, takes as seedTakes } from '@/lib/data'
 import type { Source } from '@/types'
-import { SkeletonViewport, SOURCE_COLOR } from './SkeletonViewport'
+import { SOURCE_COLOR } from './SkeletonViewport'
+import type { MotionInfo } from '@/features/viewer/MotionViewport'
 import './projects.css'
+
+// the 3D viewer pulls in three.js, so it loads only when a project is opened
+const MotionViewport = lazy(() =>
+  import('@/features/viewer/MotionViewport').then((m) => ({ default: m.MotionViewport })),
+)
 
 const LEGEND: { source: Source; label: string }[] = [
   { source: 'suit', label: 'Suit-driven' },
@@ -46,25 +52,29 @@ export function ProjectDetailPage() {
   const [hidden, setHidden] = useState<Source[]>([])
   const [playing, setPlaying] = useState(false)
   const [frozen, setFrozen] = useState(settings.freezeViewport)
-  const [position, setPosition] = useState(9)
+  const [position, setPosition] = useState(0)
+  const [motion, setMotion] = useState<MotionInfo | null>(null)
   const [rotation, setRotation] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
 
   const take = takes.find((t) => t.id === activeTake) ?? takes[0]
   const length = useMemo(() => {
+    // the loaded file's length; the mocked take length until one loads
+    if (motion) return motion.duration
     const [m, s] = (take?.duration ?? '0:24').split(':').map(Number)
     return m * 60 + s
-  }, [take])
+  }, [take, motion])
 
   useEffect(() => setFrozen(settings.freezeViewport), [settings.freezeViewport])
 
+  // with a file loaded the 3D viewport runs the clock; this is only the fallback
   useEffect(() => {
-    if (!playing) return
+    if (!playing || motion) return
     const id = window.setInterval(() => {
       setPosition((p) => (p + 1 > length ? 0 : p + 1))
     }, 1000)
     return () => window.clearInterval(id)
-  }, [playing, length])
+  }, [playing, length, motion])
 
   if (!project) {
     return (
@@ -81,10 +91,12 @@ export function ProjectDetailPage() {
   }
 
   const part = rigParts.find((p) => p.id === selectedPart)!
-  const clock = (n: number) =>
-    `${Math.floor(n / 60)
+  const clock = (seconds: number) => {
+    const n = Math.floor(seconds)
+    return `${Math.floor(n / 60)
       .toString()
       .padStart(2, '0')}:${(n % 60).toString().padStart(2, '0')}`
+  }
 
   return (
     <>
@@ -159,7 +171,9 @@ export function ProjectDetailPage() {
             <p className="devices">
               4 cameras · 1 suit
               <br />
-              60 fps · 2,164 frames
+              {motion
+                ? `${Math.round(motion.fps)} fps · ${motion.frames.toLocaleString()} frames`
+                : '60 fps · 2,164 frames'}
             </p>
           </section>
         </aside>
@@ -185,13 +199,21 @@ export function ProjectDetailPage() {
               ))}
             </div>
 
-            <SkeletonViewport
-              parts={rigParts}
-              selectedId={selectedPart}
-              onSelect={setSelectedPart}
-              hidden={hidden}
-              playing={playing && !frozen}
-            />
+            <Suspense fallback={<span style={{ color: 'var(--muted-2)' }}>Loading the 3D viewer…</span>}>
+              <MotionViewport
+                parts={rigParts}
+                selectedId={selectedPart}
+                onSelect={setSelectedPart}
+                hidden={hidden}
+                playing={playing && !frozen}
+                time={position}
+                onTimeChange={setPosition}
+                onMotionLoaded={(info) => {
+                  setMotion(info)
+                  setPosition(0)
+                }}
+              />
+            </Suspense>
 
             {frozen && (
               <div className="viewport__frozen">
@@ -225,6 +247,7 @@ export function ProjectDetailPage() {
               type="range"
               min={0}
               max={length}
+              step={motion ? 0.01 : 1}
               value={position}
               aria-label="Playhead"
               onChange={(e) => setPosition(Number(e.target.value))}
