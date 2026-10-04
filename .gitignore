@@ -1,0 +1,6 @@
+# Secrets and local media
+.env
+random_media/
+
+# Hidden macOS file
+.DS_Store
