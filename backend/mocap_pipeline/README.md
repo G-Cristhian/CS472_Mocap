@@ -40,7 +40,7 @@ $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --resume --recalibrate
 
 `--stop-after keypoints|sync|calibrate|triangulate` runs up to that stage, writes its file and stops, so one person can hand another the data for the next stage without sharing the videos. The files load with `mocap_pipeline.io` (`load_keypoints`, `load_sync`, `load_rig`, `load_pose3d`).
 
-Tests (no videos or model needed): `cd backend && python -m pytest tests`.
+Tests (no videos or model needed): `cd backend && python -m pytest tests`. Stages 2 and 3 are checked against a synthetic performer with exactly known joints, seen by virtual phones in the protocol's camera arc (`tests/synthetic_scene.py`); `python -m tests.evaluate_synthetic` prints the error of every stage for several camera layouts and noise levels, and `--bvh out.bvh` writes the result for the viewer.
 
 ---
 # Recording a session
