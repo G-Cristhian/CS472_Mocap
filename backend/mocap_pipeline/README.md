@@ -11,7 +11,7 @@ $ cd backend
 $ python -m pip install -r mocap_pipeline/requirements.txt
 $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV cam2.mp4 --height-m 1.75
 ```
-On Linux without a desktop, MediaPipe also needs `libegl1` (`sudo apt install libegl1`).
+On Linux without a desktop, MediaPipe also needs the GL libraries: `sudo apt install libegl1 libgles2 libgl1`.
 
 The MediaPipe model defaults to the one in `backend/landmarks_from_image_test/models/`. `MODEL_FILEPATH` in a `.env` file or `--model` overrides it.
 
@@ -41,6 +41,14 @@ $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --resume --recalibrate
 `--stop-after keypoints|sync|calibrate|triangulate` runs up to that stage, writes its file and stops, so one person can hand another the data for the next stage without sharing the videos. The files load with `mocap_pipeline.io` (`load_keypoints`, `load_sync`, `load_rig`, `load_pose3d`).
 
 Tests (no videos or model needed): `cd backend && python -m pytest tests`.
+
+---
+# Recording a session
+How to set up the phones, the room and the performer, and what to record, is in [`docs/field-test-protocol.md`](../../docs/field-test-protocol.md). Before leaving the venue, check the files of each take (resolution, frame rate, audio, iPhone lens metadata, clap found) with
+```
+$ python -m mocap_pipeline.check_videos take01/*
+```
+It takes seconds and says which files the pipeline cannot use.
 
 ---
 # Stages
