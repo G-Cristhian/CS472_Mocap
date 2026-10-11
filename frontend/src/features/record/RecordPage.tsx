@@ -131,6 +131,13 @@ export function RecordPage() {
               <div className="note">
                 <InfoIcon />
                 <span>
+                  After the clap, <b>stand still and upright, facing the cameras, for a couple of
+                  seconds</b>. This measures your height; without it the take can't be processed.
+                </span>
+              </div>
+              <div className="note">
+                <InfoIcon />
+                <span>
                   These apply to new recordings only. <b>You can change this later</b> — nothing here
                   is locked in once you hit record.
                 </span>
