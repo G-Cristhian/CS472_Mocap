@@ -184,7 +184,7 @@ def test_sync_resamples_mixed_frame_rates_onto_one_clock():
         exact, _ = project(scene.truth(times), cam, scene.width, scene.height)
         d = np.linalg.norm(k.points - exact, axis=-1)
         assert np.nanmean(d) < 0.5            # linear interpolation between frames
-        assert np.nanmax(d) < 20.0            # the fastest punch frames, 30 fps camera off the grid
+        assert np.nanmax(d) < 8.0             # the fastest punch frames, 30 fps camera off the grid (measured 4 px)
         assert np.isnan(d).mean() < 0.005
 
 

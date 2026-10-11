@@ -108,8 +108,9 @@ def _body(theta_l, theta_r, knee_l, knee_r, abduction, flex_r, elbow_l, elbow_r)
         d_fore = _rx(-elbow) @ d_upper
         elbow_pos = shoulder + UPPER_ARM * d_upper
         wrist = elbow_pos + FOREARM * d_fore
-        n = np.cross(d_fore, [0, 0, 1.0])
-        n = _unit(n) if np.linalg.norm(n) > 1e-6 else np.array([1.0, 0, 0])
+        # a hand that turns smoothly with the forearm: the reference direction is skewed
+        # so the forearm never lines up with it and the hand never flips
+        n = _unit(np.cross(d_fore, _unit([1.0, 2.0, 3.0])))
         put(f"{side}_ELBOW", elbow_pos)
         put(f"{side}_WRIST", wrist)
         put(f"{side}_INDEX", wrist + 0.09 * d_fore + 0.02 * n)
