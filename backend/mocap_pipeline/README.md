@@ -20,6 +20,29 @@ Results go to `backend/output/` (created automatically, ignored by git), whereve
 The calibration is reused on the next run; add `--recalibrate` if a camera moved or the number of cameras changed.
 
 ---
+# Rerunning and debugging
+Every stage saves its result next to the `--out` file, named after it. For the default `out3d.json`:
+
+| File | Stage | What is in it |
+|---|---|---|
+| `out3d.keypoints.<camera>.npz` | 1 | one per camera: raw 2D joints, confidence and frame times, plus a fingerprint of the source video |
+| `out3d.sync.json` | 2a | the clap time in each video and the shared 30 fps timeline |
+| `calibration.json` | 2b | the cameras (already reused on the next run, see above) |
+| `out3d.pose.npz` | 2c | the 3D joints before smoothing |
+
+`--resume` loads these instead of recomputing: MediaPipe is skipped for a video whose keypoints file exists and whose video has not changed (size and modification time are checked), the clap search is skipped when the sync file exists, and triangulation is skipped when the pose file is newer than the calibration, sync and keypoints files. Smoothing and the `.bvh` always run, so tuning them is a quick `--resume` away:
+```
+$ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --height-m 1.75            # full run, minutes
+$ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --resume --no-smooth       # seconds
+$ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --resume --recalibrate     # redo calibration only
+```
+`--sync` given by hand wins over the saved clap times; a changed `calibration.json` makes the pose file stale automatically.
+
+`--stop-after keypoints|sync|calibrate|triangulate` runs up to that stage, writes its file and stops, so one person can hand another the data for the next stage without sharing the videos. The files load with `mocap_pipeline.io` (`load_keypoints`, `load_sync`, `load_rig`, `load_pose3d`).
+
+Tests (no videos or model needed): `cd backend && python -m pytest tests`.
+
+---
 # Stages
 | Stage | File | What it does |
 |---|---|---|

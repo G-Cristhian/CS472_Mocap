@@ -7,3 +7,7 @@ random_media/
 
 # Pipeline results (3D joints, calibration)
 backend/output/
+
+# Python caches
+__pycache__/
+.pytest_cache/

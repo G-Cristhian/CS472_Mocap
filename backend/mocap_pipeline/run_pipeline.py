@@ -4,6 +4,11 @@ Command line entry point: runs every stage in order.
     cd backend
     python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV cam2.mp4 --height-m 1.75 --out take01.json
 
+Every stage writes its result next to --out (io.stage_paths). Re-running with
+--resume loads those files instead of recomputing, so a failed or tweaked run
+starts from the last good stage instead of running MediaPipe again.
+--stop-after writes one stage's file and exits, to hand data to a teammate.
+
 This file is the one place that knows the order of the stages. When the web
 backend is built later, it should call run() rather than repeat this logic.
 """
@@ -25,6 +30,9 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = BACKEND_DIR / "output"
 DEFAULT_OUT = OUTPUT_DIR / "out3d.json"
 DEFAULT_CALIBRATION = OUTPUT_DIR / "calibration.json"
+
+# --stop-after choices, in pipeline order
+STAGES = ("keypoints", "sync", "calibrate", "triangulate")
 
 
 def default_model_path() -> str:
@@ -103,42 +111,114 @@ def calibrate_cameras(keypoints, video_paths, types, fovs, max_error_px, charuco
     return calibrate.group_to_rig(cgroup, ids, {"board": info["reprojection_error_px"]}), True
 
 
+def camera_ids_for(video_paths: list[str]) -> list[str]:
+    """
+    Stable camera id per video: the file stem, prefixed with camN_ when two
+    videos share a stem (two phones can both save IMG_0001.MOV). Decided before
+    detection so --resume can find a camera's keypoints file without running it.
+    """
+    stems = [Path(v).stem for v in video_paths]
+    if len(set(stems)) < len(stems):
+        return [f"cam{c}_{s}" for c, s in enumerate(stems)]
+    return stems
+
+
+def _mtime(path) -> float:
+    return Path(path).stat().st_mtime
+
+
+def _up_to_date(path, *inputs) -> bool:
+    """True if `path` exists and is at least as new as every existing file in `inputs`."""
+    p = Path(path)
+    if not p.exists():
+        return False
+    t = _mtime(p)
+    return all(t >= _mtime(i) for i in inputs if Path(i).exists())
+
+
+def _stop(stage: str, stop_after: str | None) -> bool:
+    if stop_after == stage:
+        print(f"Stopped after {stage} (--stop-after)")
+        return True
+    return False
+
+
 def run(video_paths: list[str], out_path: str, performer_height_m: float | None = None,
         model_path: str | None = None, camera: list[str] | None = None, fov: list[float] | None = None,
         clap_times: list[float] | None = None, calibration_path: str = str(DEFAULT_CALIBRATION),
         recalibrate: bool = False, max_error_px: float = config.CALIB_MAX_ERROR_PX,
-        charuco_videos: list[str] | None = None, smoothing: bool = True, bvh: bool = True) -> None:
-    
+        charuco_videos: list[str] | None = None, smoothing: bool = True, bvh: bool = True,
+        resume: bool = False, stop_after: str | None = None) -> None:
+    """
+    Runs every stage in order. With resume=True a stage whose file (io.stage_paths)
+    exists and is still valid is loaded instead of recomputed. stop_after names
+    the last stage to run (one of STAGES); its file is written and run() returns.
+    """
     n = len(video_paths)
 
     if not config.MIN_CAMERAS <= n <= config.MAX_CAMERAS:
         raise ValueError(f"Give {config.MIN_CAMERAS} to {config.MAX_CAMERAS} videos, one per camera (got {n}).")
-    
+    if stop_after is not None and stop_after not in STAGES:
+        raise ValueError(f"stop_after must be one of {STAGES}, got {stop_after!r}")
+
     model_path = model_path or default_model_path()
     camera = camera or ["auto"] * n
     fov = fov or [config.DEFAULT_HFOV_DEG] * n
 
+    ids = camera_ids_for(video_paths)
+    paths = io.stage_paths(out_path, ids)
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+
     types = camera_types(video_paths, camera)
     print("Cameras: " + ", ".join(f"cam{c} {kind}" for c, kind in enumerate(types)))
 
-    # Stage 1: 2D joints per camera.
+    # Stage 1: 2D joints per camera. Saved raw (before sync resamples them).
     keypoints = []
-    for video in video_paths:
-        print(f"Detecting joints in {video}")
-        keypoints.append(detect.detect_video(video, model_path))
+    for video, cid in zip(video_paths, ids):
+        kp_path = paths["keypoints"][cid]
+        kp = None
+        if resume and kp_path.exists():
+            saved, fingerprint = io.load_keypoints(str(kp_path), with_fingerprint=True)
+            if io.fingerprint_matches(fingerprint, video):
+                print(f"Using saved joints for {video} ({kp_path.name})")
+                kp = saved
+            else:
+                print(f"{kp_path.name} was made from a different version of {video}, detecting again")
+        if kp is None:
+            print(f"Detecting joints in {video}")
+            kp = detect.detect_video(video, model_path)
+            kp.camera_id = cid
+            io.save_keypoints(kp, str(kp_path), io.video_fingerprint(video))
+        kp.camera_id = cid
+        keypoints.append(kp)
 
-    # camera ids must be unique (two videos can share a file name in different folders)
-    if len({kp.camera_id for kp in keypoints}) < n:
-        for c, kp in enumerate(keypoints):
-            kp.camera_id = f"cam{c}_{kp.camera_id}"
+    if _stop("keypoints", stop_after):
+        return
 
-    # Stage 2a: one shared clock.
+    # Stage 2a: one shared clock. A saved sync file supplies the clap times
+    # (skipping the audio search); resampling is cheap and always runs.
+    sync_path = paths["sync"]
+    sync_from_file = False
+    if clap_times is None and resume and sync_path.exists():
+        saved_sync = io.load_sync(str(sync_path))
+        try:
+            clap_times = [saved_sync.clap_time_s[cid] for cid in ids]
+            sync_from_file = True
+            print(f"Using saved clap times from {sync_path.name}")
+        except KeyError:
+            print(f"{sync_path.name} is for different cameras, searching for the clap again")
     try:
         sync_result, keypoints = sync.synchronise(video_paths, keypoints, clap_times)
     except sync.ClapNotFoundError as e:
         raise SystemExit(f"{e}\nGive the clap time in each video by hand with --sync T0 T1 ... (seconds)")
-    
+    # rewriting an unchanged sync file would make the saved 3D points look stale
+    if not sync_from_file:
+        io.save_sync(sync_result, str(sync_path))
+
     print("Clap at " + ", ".join(f"{cid} {t:.3f} s" for cid, t in sync_result.clap_time_s.items()))
+
+    if _stop("sync", stop_after):
+        return
 
     # Stage 2b: where the cameras are, then real-world units, floor and Y up.
     calib_path = Path(calibration_path)
@@ -149,28 +229,40 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
         if len(rig.cameras) != n:
             raise SystemExit(f"{calib_path} has {len(rig.cameras)} cameras but {n} videos were given, "
                              f"add --recalibrate")
-        
+
     else:
         if performer_height_m is None:
             raise SystemExit("--height-m (performer height in metres) is needed to calibrate")
-        
+
         rig, from_board = calibrate_cameras(keypoints, video_paths, types, fov, max_error_px, charuco_videos)
         rough_pose = triangulate.triangulate_sequence(keypoints, rig)
 
         # a board calibration is already in metres, it only needs the floor and Y up
         rig = scale_floor.make_metric(rig, rough_pose, performer_height_m, rescale=not from_board)
-        calib_path.parent.mkdir(parents=True, exist_ok=True)
         io.save_rig(rig, str(calib_path))
 
         print(f"Saved calibration to {calib_path}")
 
-    # Stage 2c: final 3D joints.
-    pose = triangulate.triangulate_sequence(keypoints, rig)
-    
+    if _stop("calibrate", stop_after):
+        return
+
+    # Stage 2c: final 3D joints. Saved before smoothing, since smoothing is the
+    # cheap step most likely to be tuned. Stale if any input file is newer.
+    pose_path = paths["pose"]
+    inputs = [calib_path, sync_path, *paths["keypoints"].values()]
+    if resume and _up_to_date(pose_path, *inputs):
+        print(f"Using saved 3D joints from {pose_path.name}")
+        pose = io.load_pose3d(str(pose_path))
+    else:
+        pose = triangulate.triangulate_sequence(keypoints, rig)
+        io.save_pose3d(pose, str(pose_path))
+
+    if _stop("triangulate", stop_after):
+        return
+
     if smoothing:
         pose = smooth.smooth(smooth.fill_gaps(pose))
 
-    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     io.save_pose3d_json(pose, out_path, sync_result.common_timestamps)
     print(f"Saved {len(pose.points)} frames of 3D joints to {out_path}")
 
@@ -179,9 +271,6 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
         bvh_path = Path(out_path).with_suffix(".bvh")
         export_bvh(pose, str(bvh_path))
         print(f"Saved skeleton animation to {bvh_path}")
-
-    # TODO: save every intermediate result with io.py next to out_path so a
-    # failed run can be inspected and resumed from the last good stage.
 
 
 def export_bvh(pose, bvh_path: str) -> None:
@@ -231,6 +320,11 @@ def main() -> None:
     parser.add_argument("--no-smooth", action="store_true", help="Skip gap filling and smoothing.")
     parser.add_argument("--no-bvh", action="store_true",
                         help="Skip the skeleton animation (.bvh written next to the --out JSON).")
+    parser.add_argument("--resume", action="store_true",
+                        help="Reuse the stage files saved next to --out from an earlier run (joints, clap "
+                             "times, 3D points) instead of recomputing them. Changed videos are detected.")
+    parser.add_argument("--stop-after", choices=STAGES, default=None,
+                        help="Run up to this stage, save its file next to --out, and stop.")
     args = parser.parse_args()
 
     n = len(args.videos)
@@ -245,7 +339,7 @@ def main() -> None:
         camera=per_camera(parser, "--camera", args.camera, n), fov=per_camera(parser, "--fov", args.fov, n),
         clap_times=args.sync, calibration_path=args.calibration, recalibrate=args.recalibrate,
         max_error_px=args.max_error, charuco_videos=args.charuco_videos, smoothing=not args.no_smooth,
-        bvh=not args.no_bvh)
+        bvh=not args.no_bvh, resume=args.resume, stop_after=args.stop_after)
 
 
 if __name__ == "__main__":
