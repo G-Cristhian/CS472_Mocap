@@ -7,17 +7,40 @@ front side can see the point. The point's error is the total angle over which
 no two front-side cameras form a usable triangulation pair. 0 is perfect,
 360 is never reconstructable.
 """
+
 from __future__ import annotations
 
+import numpy as np
+
+from .. import config
 from ..schemas import CameraRig
 
 
 def camera_sees(camera, point) -> bool:
     """
-    TODO: True if the point projects inside the image and is closer than
+    True if the point projects inside the image and is closer than
     config.CAMERA_EFFECTIVE_RANGE_M (section 3.2).
     """
-    raise NotImplementedError
+    # camera... name, k (zoom)... r (where it's facing)... t (where it's standing)
+    # X, Y, Z (straight ahead)
+    in_cam = np.asarray(camera.R) @ np.asarray(point, dtype=float) + np.asarray(
+        camera.t
+    )
+
+    if in_cam[2] <= 0:  # Check if the user is in front of the camera
+        return False
+
+    # Where the point lands
+    u, v, w = np.asarray(camera.K) @ in_cam
+    x, y = u / w, v / w
+
+    # Calibration puts the image centre at K[0, 2], K[1, 2] so the image is twice that
+    width, height = 2 * camera.K[0][2], 2 * camera.K[1][2]
+
+    if not (0 <= x <= width and 0 <= y <= height):
+        return False
+
+    return bool(np.linalg.norm(in_cam) <= config.CAMERA_EFFECTIVE_RANGE_M)
 
 
 def is_triangulable(camera_a, camera_b, point) -> bool:
