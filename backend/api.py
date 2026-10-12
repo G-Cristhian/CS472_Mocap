@@ -58,6 +58,8 @@ TAKE_ID_RE = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
 VIDEO_EXTENSIONS = {".mov", ".mp4"}
 CAMERA_FIELDS = [f"cam{c}" for c in range(config.MAX_CAMERAS)]
 MAX_NAME_LENGTH = 100
+# projects only live in the frontend mock data for now, so any well-formed id is accepted
+PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
 MIN_HEIGHT_M, MAX_HEIGHT_M = 1.0, 2.5
 MAX_TEXT_FIELD_BYTES = 1024
 # Vite dev server (frontend/vite.config.ts: server.port 5173)
@@ -98,9 +100,11 @@ def write_status(folder: Path, record: dict) -> None:
 def read_status(folder: Path) -> dict | None:
     try:
         with open(folder / "status.json") as fp:
-            return json.load(fp)
+            record = json.load(fp)
     except (OSError, ValueError):
         return None
+    record.setdefault("project_id", None)  # takes recorded before project_id existed
+    return record
 
 
 def update_status(folder: Path, **fields) -> None:
@@ -408,14 +412,14 @@ class TakeUpload:
             self._text = None
 
 
-def check_upload(upload: TakeUpload) -> tuple[list[str], float, str | None]:
-    """Video paths in camera order, height, name; raises UploadError (422)."""
+def check_upload(upload: TakeUpload) -> tuple[list[str], float, str | None, str | None]:
+    """Video paths in camera order, height, name, project id; raises UploadError (422)."""
     n = len(upload.videos)
     if sorted(upload.videos) != CAMERA_FIELDS[:n] or not config.MIN_CAMERAS <= n <= config.MAX_CAMERAS:
         raise UploadError(422, f"give {config.MIN_CAMERAS} to {config.MAX_CAMERAS} videos as cam0, cam1, ... "
                                f"with no gaps (got {', '.join(sorted(upload.videos)) or 'none'})")
 
-    unknown = set(upload.fields) - {"height_m", "name"}
+    unknown = set(upload.fields) - {"height_m", "name", "project_id"}
     if unknown:
         raise UploadError(422, f"unexpected field(s): {', '.join(sorted(unknown))}")
 
@@ -432,7 +436,11 @@ def check_upload(upload: TakeUpload) -> tuple[list[str], float, str | None]:
     if name and len(name) > MAX_NAME_LENGTH:
         raise UploadError(422, f"name is longer than {MAX_NAME_LENGTH} characters")
 
-    return [str(upload.videos[c]) for c in CAMERA_FIELDS[:n]], height_m, name
+    project_id = upload.fields.get("project_id", "").strip() or None
+    if project_id and not PROJECT_ID_RE.match(project_id):
+        raise UploadError(422, "project_id must be up to 100 letters, digits, - or _")
+
+    return [str(upload.videos[c]) for c in CAMERA_FIELDS[:n]], height_m, name, project_id
 
 
 # ---- endpoints -------------------------------------------------------------------------
@@ -460,24 +468,27 @@ async def create_take(request: Request) -> dict:
         upload.close()
         if upload.error:
             raise upload.error
-        video_paths, height_m, name = check_upload(upload)
+        video_paths, height_m, name, project_id = check_upload(upload)
     except UploadError as e:
         shutil.rmtree(folder, ignore_errors=True)
         raise HTTPException(e.status_code, e.detail)
 
-    record = {"id": take_id, "name": name, "created_at": now_iso(), "camera_count": len(video_paths),
-              "height_m": height_m, "status": "queued", "stage": None, "error": None, "finished_at": None}
+    record = {"id": take_id, "name": name, "project_id": project_id, "created_at": now_iso(),
+              "camera_count": len(video_paths), "height_m": height_m, "status": "queued", "stage": None,
+              "error": None, "finished_at": None}
     write_status(folder, record)
     submit(take_id, video_paths, height_m)
     return record
 
 
 @app.get("/takes")
-def list_takes() -> list[dict]:
+def list_takes(project_id: str | None = None) -> list[dict]:
+    """Every take, newest first; ?project_id= keeps only that project's takes."""
     if not OUTPUT_DIR.is_dir():
         return []
     ids = sorted((d.name for d in OUTPUT_DIR.iterdir() if TAKE_ID_RE.match(d.name)), reverse=True)
-    return [r for r in (read_status(take_dir(i)) for i in ids) if r is not None]
+    records = [r for r in (read_status(take_dir(i)) for i in ids) if r is not None]
+    return [r for r in records if r["project_id"] == project_id] if project_id else records
 
 
 @app.get("/takes/{take_id}")

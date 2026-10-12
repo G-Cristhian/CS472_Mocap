@@ -13,9 +13,11 @@ import {
   ShareIcon,
 } from '@/components/ui/Icons'
 import { rigParts, takes as seedTakes } from '@/lib/data'
+import { API_URL, ApiUnreachableError, getTake, takeFileUrl } from '@/lib/api'
+import type { Take } from '@/lib/api'
 import type { Source } from '@/types'
 import { SOURCE_COLOR } from './SkeletonViewport'
-import type { MotionInfo } from '@/features/viewer/MotionViewport'
+import type { MotionInfo, MotionSource } from '@/features/viewer/MotionViewport'
 import './projects.css'
 
 // the 3D viewer pulls in three.js, so it loads only when a project is opened
@@ -29,9 +31,34 @@ const LEGEND: { source: Source; label: string }[] = [
   { source: 'review', label: 'Needs review' },
 ]
 
+/** What the viewer shows for the ?clip= take: a file to play, or a message. */
+interface ViewerState {
+  take?: Take
+  src?: MotionSource
+  message?: string
+}
+
+function viewerStateFor(take: Take): ViewerState {
+  switch (take.status) {
+    case 'queued':
+      return { take, message: 'Queued' }
+    case 'running':
+      return { take, message: take.stage ? `Processing: ${take.stage}…` : 'Processing…' }
+    case 'failed':
+      return { take, message: take.error ?? 'Processing failed' }
+    case 'done': {
+      // parseMotion picks the parser from the extension, so the name must end in .bvh
+      const name = `${take.name ?? take.id}.bvh`
+      // Loads the BVH (17-joint skeleton). Consider out3d.json later: all 33 raw joints, and it shows where tracking dropped out.
+      return { take, src: { url: takeFileUrl(take.id, 'out3d.bvh'), name } }
+    }
+  }
+}
+
 export function ProjectDetailPage() {
   const { projectId } = useParams()
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
+  const clip = params.get('clip')
   const { projects, clips } = useStudio()
   const { settings } = useSettings()
 
@@ -46,7 +73,7 @@ export function ProjectDetailPage() {
     const total = Math.min(Math.max(project?.clips ?? known.length, known.length), 4)
     return [...known, ...padding].slice(0, Math.max(1, total))
   })
-  const [activeTake, setActiveTake] = useState(params.get('clip') ?? takes[0]?.id)
+  const [viewer, setViewer] = useState<ViewerState>({ message: 'No take selected' })
   const [tab, setTab] = useState<'rig' | 'streaming' | 'export'>('rig')
   const [selectedPart, setSelectedPart] = useState('left-forearm')
   const [hidden, setHidden] = useState<Source[]>([])
@@ -57,7 +84,41 @@ export function ProjectDetailPage() {
   const [rotation, setRotation] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
 
-  const take = takes.find((t) => t.id === activeTake) ?? takes[0]
+  // the viewer follows ?clip= only; the mock take is the fallback for the transport
+  const selectedTake = takes.find((t) => t.id === clip)
+  const take = selectedTake ?? takes[0]
+  const takeName = clip ? (viewer.take ? viewer.take.name ?? viewer.take.id : selectedTake?.name ?? clip) : take?.name
+
+  const selectClip = (id: string) => {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.set('clip', id)
+      return next
+    })
+    setPosition(0)
+  }
+
+  // look the ?clip= take up in the API (a one-time check; live polling comes later)
+  useEffect(() => {
+    if (!clip) {
+      setViewer({ message: 'No take selected' })
+      return
+    }
+    const controller = new AbortController()
+    setViewer({ message: 'Loading take…' })
+    getTake(clip, controller.signal)
+      .then((found) => setViewer(found ? viewerStateFor(found) : { message: 'Take not found' }))
+      .catch((e) => {
+        if (controller.signal.aborted) return
+        setViewer({
+          message:
+            e instanceof ApiUnreachableError
+              ? `Can't reach the API at ${API_URL}`
+              : `Couldn't load the take: ${e instanceof Error ? e.message : String(e)}`,
+        })
+      })
+    return () => controller.abort()
+  }, [clip])
   const length = useMemo(() => {
     // the loaded file's length; the mocked take length until one loads
     if (motion) return motion.duration
@@ -134,17 +195,10 @@ export function ProjectDetailPage() {
             <p className="eyebrow">Clips</p>
             <div className="takelist">
               {takes.map((t) => (
-                <button
-                  key={t.id}
-                  aria-current={t.id === take?.id}
-                  onClick={() => {
-                    setActiveTake(t.id)
-                    setPosition(0)
-                  }}
-                >
+                <button key={t.id} aria-current={t.id === clip} onClick={() => selectClip(t.id)}>
                   <span
                     className="dot"
-                    style={{ background: t.id === take?.id ? 'var(--purple)' : 'var(--line)' }}
+                    style={{ background: t.id === clip ? 'var(--purple)' : 'var(--line)' }}
                   />
                   {t.name}
                   <span className="dur">{t.duration}</span>
@@ -212,6 +266,8 @@ export function ProjectDetailPage() {
                   setMotion(info)
                   setPosition(0)
                 }}
+                src={viewer.src}
+                message={viewer.message}
               />
             </Suspense>
 
@@ -242,7 +298,7 @@ export function ProjectDetailPage() {
             >
               {playing ? <PauseIcon /> : <PlayIcon />}
             </button>
-            <span className="transport__name">{take?.name}</span>
+            <span className="transport__name">{takeName}</span>
             <input
               type="range"
               min={0}
@@ -265,7 +321,7 @@ export function ProjectDetailPage() {
                   duration: '0:00',
                 }
                 setTakes([next, ...takes])
-                setActiveTake(next.id)
+                selectClip(next.id)
                 setToast(`${next.name} added — open Record to capture it`)
               }}
             >

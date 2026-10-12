@@ -62,6 +62,19 @@
   font-size: calc(13.5px * var(--font-scale));
 }
 
+.motionview__message {
+  position: absolute;
+  inset: 0 16px 60px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: calc(15px * var(--font-scale));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
 .motionview__drop {
   position: absolute;
   inset: 10px;
