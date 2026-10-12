@@ -51,7 +51,7 @@ iPhone settings, the same on every phone: same resolution and frame rate; Auto F
 ---
 # Recording
 1. Start all cameras, then **clap once, sharply**, close enough that every phone hears it. Keep talking and music down at that moment: the clap must be clearly louder than anything else going on, or it won't be found.
-2. **Stand still, upright, facing the cameras for a couple of seconds**: this measures the performer's height (sets the scale).
+2. **Right after the clap, stand still, upright, facing the cameras for a couple of seconds**: this measures the performer's height (sets the scale). This step is required: the run stops with "only N frames with the performer standing upright" if it is skipped, e.g. when a take starts straight in a fighting stance.
 3. Walk around the space for ~10 seconds, turning towards each camera and raising the arms (calibrates the cameras). Make sure the feet are seen on the floor (finds the floor).
 4. Perform.
 
