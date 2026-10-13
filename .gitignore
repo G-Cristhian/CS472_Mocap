@@ -1,13 +1,43 @@
-# Secrets and local media
-.env
-random_media/
+# Ignore the entire .vscode folder
+.vscode/*
 
-# Hidden macOS file
+# BUT do not ignore files crucial for team collaboration
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+# Ignore local history and workspace files
+*.code-workspace
+.history/
+
+# Ignore system files
 .DS_Store
+**/.DS_Store
+Thumbs.db
+**/Thumbs.db
+
+# Ignore virtual environments
+.venv/
+venv/
+ENV/
+env/
+_venv/
+pyenv/
+
+# Ignore variables and secrets
+.env
+.env.*
+!.env.example
+secrets.json
+
+# Ignore python compiled / cache
+*.pyc
+__pycache__/
 
 # Pipeline results (3D joints, calibration)
 backend/output/
 
-# Python caches
-__pycache__/
-.pytest_cache/
+## Local media folder
+random_media/
