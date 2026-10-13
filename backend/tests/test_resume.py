@@ -1,0 +1,132 @@
+"""
+run_pipeline.run() with --resume and --stop-after, with stage 1 (MediaPipe),
+sync's audio search and triangulation replaced by fakes that count their calls.
+Calibration is skipped by pre-writing a calibration.json, as a second run would.
+"""
+import os
+from pathlib import Path
+
+import pytest
+
+from mocap_pipeline import io, run_pipeline
+from mocap_pipeline.stage1_keypoints import detect
+from mocap_pipeline.stage2_reconstruct import sync, triangulate
+from tests.conftest import make_keypoints, make_pose, make_rig, make_sync
+
+
+class Calls:
+    def __init__(self):
+        self.detect = []
+        self.sync_clap_times = []
+        self.triangulate = 0
+
+
+@pytest.fixture
+def fakes(monkeypatch, fake_videos):
+    calls = Calls()
+
+    def fake_detect(video_path, model_path):
+        calls.detect.append(os.path.basename(video_path))
+        return make_keypoints(camera_id=Path(video_path).stem, video_path=video_path)
+
+    def fake_synchronise(video_paths, keypoints, clap_times=None):
+        calls.sync_clap_times.append(clap_times)
+        if clap_times is None:
+            clap_times = [1.0, 1.25]          # "found in the audio"
+        ids = [kp.camera_id for kp in keypoints]
+        return make_sync(ids), keypoints
+
+    def fake_triangulate(keypoints, rig):
+        calls.triangulate += 1
+        return make_pose()
+
+    monkeypatch.setattr(detect, "detect_video", fake_detect)
+    monkeypatch.setattr(sync, "synchronise", fake_synchronise)
+    monkeypatch.setattr(triangulate, "triangulate_sequence", fake_triangulate)
+    monkeypatch.setattr(run_pipeline, "camera_types", lambda videos, choices: ["webcam"] * len(videos))
+    return calls
+
+
+def run(fake_videos, tmp_path, **kw):
+    out = tmp_path / "output" / "out3d.json"
+    calib = tmp_path / "output" / "calibration.json"
+    if not calib.exists():
+        io.save_rig(make_rig(["cam0", "cam1"]), str(calib))
+    run_pipeline.run(fake_videos, str(out), model_path="unused.task", calibration_path=str(calib),
+                     smoothing=False, bvh=False, **kw)
+    return out
+
+
+def bump_mtime(path, seconds=5):
+    st = os.stat(path)
+    os.utime(path, ns=(st.st_atime_ns + seconds * 10**9, st.st_mtime_ns + seconds * 10**9))
+
+
+def test_first_run_writes_every_stage_file(fakes, fake_videos, tmp_path):
+    out = run(fake_videos, tmp_path)
+    paths = io.stage_paths(str(out), ["cam0", "cam1"])
+    assert out.exists()
+    assert paths["sync"].exists() and paths["pose"].exists()
+    assert all(p.exists() for p in paths["keypoints"].values())
+    assert fakes.detect == ["cam0.mp4", "cam1.mp4"]
+    assert fakes.triangulate == 1
+    assert fakes.sync_clap_times == [None]           # audio search ran
+
+
+def test_resume_skips_detection_sync_and_triangulation(fakes, fake_videos, tmp_path):
+    run(fake_videos, tmp_path)
+    run(fake_videos, tmp_path, resume=True)
+    assert fakes.detect == ["cam0.mp4", "cam1.mp4"]  # no new detections
+    assert fakes.triangulate == 1
+    assert fakes.sync_clap_times[-1] == [1.0, 1.25]  # saved clap times reused
+
+
+def test_without_resume_everything_reruns(fakes, fake_videos, tmp_path):
+    run(fake_videos, tmp_path)
+    run(fake_videos, tmp_path)
+    assert fakes.detect == ["cam0.mp4", "cam1.mp4"] * 2
+    assert fakes.triangulate == 2
+
+
+def test_changed_video_is_detected_again(fakes, fake_videos, tmp_path):
+    run(fake_videos, tmp_path)
+    bump_mtime(fake_videos[1])
+    run(fake_videos, tmp_path, resume=True)
+    assert fakes.detect == ["cam0.mp4", "cam1.mp4", "cam1.mp4"]
+    assert fakes.triangulate == 2                    # a new keypoints file makes the pose stale
+
+
+def test_new_calibration_retriangulates(fakes, fake_videos, tmp_path):
+    out = run(fake_videos, tmp_path)
+    bump_mtime(tmp_path / "output" / "calibration.json")
+    run(fake_videos, tmp_path, resume=True)
+    assert len(fakes.detect) == 2
+    assert fakes.triangulate == 2
+
+
+def test_explicit_sync_overrides_saved(fakes, fake_videos, tmp_path):
+    run(fake_videos, tmp_path)
+    run(fake_videos, tmp_path, resume=True, clap_times=[2.0, 2.5])
+    assert fakes.sync_clap_times[-1] == [2.0, 2.5]
+    assert io.load_sync(str(tmp_path / "output" / "out3d.sync.json")).clap_time_s["cam0"] == 1.0  # fake ignores input, file rewritten
+
+
+def test_stop_after_keypoints(fakes, fake_videos, tmp_path):
+    out = tmp_path / "output" / "out3d.json"
+    run_pipeline.run(fake_videos, str(out), model_path="unused.task", stop_after="keypoints")
+    paths = io.stage_paths(str(out), ["cam0", "cam1"])
+    assert all(p.exists() for p in paths["keypoints"].values())
+    assert not paths["sync"].exists() and not out.exists()
+    assert fakes.sync_clap_times == []
+
+
+def test_stop_after_rejects_unknown_stage(fakes, fake_videos, tmp_path):
+    with pytest.raises(ValueError):
+        run_pipeline.run(fake_videos, str(tmp_path / "o.json"), stop_after="smooth")
+
+
+def test_duplicate_video_stems_get_unique_ids(tmp_path):
+    a = tmp_path / "a" / "IMG_0001.MOV"
+    b = tmp_path / "b" / "IMG_0001.MOV"
+    assert run_pipeline.camera_ids_for([str(a), str(b)]) == ["cam0_IMG_0001", "cam1_IMG_0001"]
+    assert run_pipeline.camera_ids_for(["x/cam0.mp4", "y/cam1.mp4"]) == ["cam0", "cam1"]
