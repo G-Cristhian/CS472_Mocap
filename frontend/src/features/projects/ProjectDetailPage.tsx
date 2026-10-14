@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useSettings } from '@/app/SettingsProvider'
 import { useStudio } from '@/app/StudioProvider'
@@ -36,6 +36,19 @@ const STATUS_LABEL: Record<Take['status'], string> = {
   running: 'Processing',
   done: 'Done',
   failed: 'Failed',
+}
+
+/** How often the take list is refreshed while a take is queued or running. */
+const POLL_MS = 3000
+
+const isProcessing = (take: Take) => take.status === 'queued' || take.status === 'running'
+
+/** The take's status in the list; a running take shows its pipeline stage. */
+function statusLabel(take: Take) {
+  if (take.status === 'running' && take.stage) {
+    return `${take.stage[0].toUpperCase()}${take.stage.slice(1)}…`
+  }
+  return STATUS_LABEL[take.status]
 }
 
 const takeLabel = (take: Take) => take.name ?? take.id
@@ -83,7 +96,7 @@ export function ProjectDetailPage() {
   // the project's takes from the API; null until the first answer
   const [takes, setTakes] = useState<Take[] | null>(null)
   const [takesError, setTakesError] = useState<string | null>(null)
-  const [viewer, setViewer] = useState<ViewerState>({ message: 'No take selected' })
+  const [lookup, setLookup] = useState<ViewerState>({ message: 'No take selected' })
   const [tab, setTab] = useState<'rig' | 'streaming' | 'export'>('rig')
   const [selectedPart, setSelectedPart] = useState('left-forearm')
   const [hidden, setHidden] = useState<Source[]>([])
@@ -94,8 +107,13 @@ export function ProjectDetailPage() {
   const [rotation, setRotation] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
 
-  // the viewer follows ?clip=
+  // the viewer follows ?clip=: a take in the list stays fresh while it's polled,
+  // any other id (e.g. from an old link) is looked up once
   const selectedTake = takes?.find((t) => t.id === clip)
+  const viewer = useMemo(
+    () => (selectedTake ? viewerStateFor(selectedTake) : lookup),
+    [selectedTake, lookup],
+  )
   const shownTake = viewer.take ?? selectedTake
   const takeName = shownTake ? takeLabel(shownTake) : clip ?? 'No take selected'
 
@@ -122,18 +140,47 @@ export function ProjectDetailPage() {
     return () => controller.abort()
   }, [projectId])
 
-  // look the ?clip= take up in the API (a one-time check; live polling comes later)
+  // refresh the list while any take is queued or running; stops once none is
+  // (or the page closes). A failed refresh keeps the last list and tries again.
+  const processing = takes?.some(isProcessing) ?? false
+  useEffect(() => {
+    if (!processing || !projectId) return
+    const controller = new AbortController()
+    let timer: number
+    const poll = () => {
+      timer = window.setTimeout(() => {
+        listTakes(projectId, controller.signal)
+          .then((latest) => {
+            setTakes(latest)
+            setTakesError(null)
+          })
+          .catch((e) => {
+            if (!controller.signal.aborted) setTakesError(apiErrorMessage(e, 'the takes'))
+          })
+          .finally(() => {
+            if (!controller.signal.aborted) poll()
+          })
+      }, POLL_MS)
+    }
+    poll()
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [processing, projectId])
+
+  // look the ?clip= take up in the API (once; the list polling keeps it fresh)
   useEffect(() => {
     if (!clip) {
-      setViewer({ message: 'No take selected' })
+      setLookup({ message: 'No take selected' })
       return
     }
     const controller = new AbortController()
-    setViewer({ message: 'Loading take…' })
+    setLookup({ message: 'Loading take…' })
     getTake(clip, controller.signal)
-      .then((found) => setViewer(found ? viewerStateFor(found) : { message: 'Take not found' }))
+      .then((found) => setLookup(found ? viewerStateFor(found) : { message: 'Take not found' }))
       .catch((e) => {
-        if (!controller.signal.aborted) setViewer({ message: apiErrorMessage(e, 'the take') })
+        if (!controller.signal.aborted) setLookup({ message: apiErrorMessage(e, 'the take') })
       })
     return () => controller.abort()
   }, [clip])
@@ -220,7 +267,7 @@ export function ProjectDetailPage() {
                     style={{ background: t.id === clip ? 'var(--purple)' : 'var(--line)' }}
                   />
                   {takeLabel(t)}
-                  <span className="dur">{STATUS_LABEL[t.status]}</span>
+                  <span className="dur">{statusLabel(t)}</span>
                 </button>
               ))}
             </div>
