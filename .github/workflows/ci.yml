@@ -16,6 +16,22 @@ permissions:
   contents: read
 
 jobs:
+  backend:
+    name: Backend (pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      # MediaPipe needs these OpenGL/EGL libraries to import on headless Linux.
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq libegl1 libgles2 libgl1
+      - run: pip install -r backend/requirements.txt
+      - run: python -m pytest backend/tests -q
+
   frontend:
     name: Frontend (typecheck + build)
     runs-on: ubuntu-latest
