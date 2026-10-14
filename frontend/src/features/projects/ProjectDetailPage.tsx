@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useSettings } from '@/app/SettingsProvider'
 import { useStudio } from '@/app/StudioProvider'
@@ -176,6 +176,10 @@ export function ProjectDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState<Take | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  // takes deleted from this page: a list request already in flight when one was
+  // deleted would otherwise bring it back until the next poll
+  const deletedIds = useRef(new Set<string>())
+  const withoutDeleted = (list: Take[]) => list.filter((t) => !deletedIds.current.has(t.id))
 
   // the viewer follows ?clip=: a take in the list stays fresh while it's polled,
   // any other id (e.g. from an old link) is looked up once
@@ -218,7 +222,8 @@ export function ProjectDetailPage() {
     } finally {
       setDeleting(false)
     }
-    setTakes((list) => list?.filter((t) => t.id !== take.id) ?? null)
+    deletedIds.current.add(take.id)
+    setTakes((list) => (list ? withoutDeleted(list) : null))
     if (clip === take.id) {
       setParams((prev) => {
         const next = new URLSearchParams(prev)
@@ -237,7 +242,7 @@ export function ProjectDetailPage() {
     setTakes(null)
     setTakesError(null)
     listTakes(projectId, controller.signal)
-      .then(setTakes)
+      .then((list) => setTakes(withoutDeleted(list)))
       .catch((e) => {
         if (!controller.signal.aborted) setTakesError(apiErrorMessage(e, 'the takes'))
       })
@@ -255,7 +260,7 @@ export function ProjectDetailPage() {
       timer = window.setTimeout(() => {
         listTakes(projectId, controller.signal)
           .then((latest) => {
-            setTakes(latest)
+            setTakes(withoutDeleted(latest))
             setTakesError(null)
           })
           .catch((e) => {
