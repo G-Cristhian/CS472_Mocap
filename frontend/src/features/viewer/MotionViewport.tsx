@@ -79,16 +79,22 @@ export function MotionViewport(props: Props) {
   const { onMotionLoaded, src, message } = props
   const [motion, setMotion] = useState<Motion | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // why `src` couldn't be shown, in plain words (shown in the middle, where it can't be missed)
+  const [srcError, setSrcError] = useState<string | null>(null)
   const [loading, setLoading] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const fetching = useRef<AbortController | null>(null)
 
+  const show = (m: Motion) => {
+    setMotion(m)
+    setError(null)
+    setSrcError(null)
+    onMotionLoaded?.({ name: m.name, duration: m.duration, fps: m.fps, frames: m.times.length })
+  }
+
   const load = (text: string, name: string) => {
     try {
-      const m = parseMotion(text, name)
-      setMotion(m)
-      setError(null)
-      onMotionLoaded?.({ name: m.name, duration: m.duration, fps: m.fps, frames: m.times.length })
+      show(parseMotion(text, name))
     } catch (e) {
       setError(`${name}: ${e instanceof Error ? e.message : String(e)}`)
     }
@@ -108,6 +114,7 @@ export function MotionViewport(props: Props) {
     stopFetching()
     setMotion(null)
     setError(null)
+    setSrcError(null)
     onMotionLoaded?.(null)
     if (!srcUrl || !srcName) return
 
@@ -115,14 +122,33 @@ export function MotionViewport(props: Props) {
     fetching.current = controller
     setLoading(srcName)
     fetch(srcUrl, { signal: controller.signal })
-      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(
+        (r) => {
+          if (r.ok) return r.text()
+          throw new Error(
+            r.status === 404
+              ? 'The animation file is missing.'
+              : `The animation file couldn't be downloaded (the server answered ${r.status}).`,
+          )
+        },
+        () => {
+          throw new Error("The animation file couldn't be downloaded (can't reach the server).")
+        },
+      )
       .then((text) => {
         if (controller.signal.aborted) return
-        load(text, srcName)
+        let m: Motion
+        try {
+          m = parseMotion(text, srcName)
+        } catch (e) {
+          console.error(`${srcName}:`, e)
+          throw new Error("The animation file couldn't be read.")
+        }
+        show(m)
       })
       .catch((e) => {
         if (controller.signal.aborted) return
-        setError(`Could not load ${srcName} (${e instanceof Error ? e.message : String(e)})`)
+        setSrcError(e instanceof Error ? e.message : String(e))
       })
       .finally(() => {
         if (fetching.current === controller) {
@@ -208,7 +234,12 @@ export function MotionViewport(props: Props) {
         </label>
       </div>
 
-      {!motion && !loading && message && <div className="motionview__message">{message}</div>}
+      {!motion && !loading && srcError && (
+        <div className="motionview__message" role="alert">
+          {srcError}
+        </div>
+      )}
+      {!motion && !loading && !srcError && message && <div className="motionview__message">{message}</div>}
       {error && (
         <div className="motionview__error" role="alert">
           {error}
