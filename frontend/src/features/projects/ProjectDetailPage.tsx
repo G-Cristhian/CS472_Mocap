@@ -70,9 +70,22 @@ function apiErrorMessage(e: unknown, what: string) {
 }
 
 const EXPORT_FILES = [
-  { file: 'out3d.bvh', kind: 'BVH', label: 'Download BVH' },
-  { file: 'out3d.json', kind: 'JSON', label: 'Download JSON' },
+  { file: 'out3d.bvh', ext: 'bvh', kind: 'BVH', label: 'Download BVH' },
+  { file: 'out3d.json', ext: 'json', kind: 'JSON', label: 'Download JSON' },
 ] as const
+type ExportFile = (typeof EXPORT_FILES)[number]
+
+/** The saved file's name: the take's name made file-safe ("Jump Test #2" -> jump-test-2.bvh), else its id. */
+function downloadName(take: Take, ext: string) {
+  const base = (take.name ?? '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '') // é -> e
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .slice(0, 80)
+    .replace(/^-+|-+$/g, '')
+  return `${base || take.id}.${ext}`
+}
 
 /** A plain-words message for a failed download of one of a take's files. */
 function downloadErrorMessage(e: unknown, take: Take, kind: string) {
@@ -245,13 +258,13 @@ export function ProjectDetailPage() {
 
   // fetched rather than linked, so a missing file shows an error here instead of
   // sending the tab to the API's JSON error page
-  const downloadFile = async (take: Take, file: TakeFile, kind: string) => {
-    setDownloading(file)
+  const downloadFile = async (take: Take, f: ExportFile) => {
+    setDownloading(f.file)
     setDownloadError(null)
     try {
-      saveBlob(await getTakeFile(take.id, file), file)
+      saveBlob(await getTakeFile(take.id, f.file), downloadName(take, f.ext))
     } catch (e) {
-      setDownloadError(downloadErrorMessage(e, take, kind))
+      setDownloadError(downloadErrorMessage(e, take, f.kind))
     } finally {
       setDownloading(null)
     }
@@ -579,7 +592,7 @@ export function ProjectDetailPage() {
                     key={f.file}
                     className="btn btn--primary"
                     disabled={downloading !== null}
-                    onClick={() => downloadFile(selectedTake, f.file, f.kind)}
+                    onClick={() => downloadFile(selectedTake, f)}
                   >
                     <ExportIcon />
                     {downloading === f.file ? 'Downloading…' : f.label}
