@@ -134,9 +134,15 @@ textarea {
 }
 .btn:hover {
   transform: translateY(-1px);
+  text-decoration: none;
 }
 .btn:active {
   transform: translateY(0);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
 }
 .btn--primary {
   background: var(--purple);

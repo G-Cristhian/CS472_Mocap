@@ -60,6 +60,20 @@ function apiErrorMessage(e: unknown, what: string) {
     : `Couldn't load ${what}: ${e instanceof Error ? e.message : String(e)}`
 }
 
+const EXPORT_FILES = [
+  { file: 'out3d.bvh', label: 'Download BVH' },
+  { file: 'out3d.json', label: 'Download JSON' },
+] as const
+
+/** Why a take's files can't be downloaded yet. */
+function exportUnavailableReason(take: Take | undefined) {
+  if (!take) return 'Pick a take in the list to download its files.'
+  if (take.status === 'failed') {
+    return 'This take failed to process, so it has no files to download.'
+  }
+  return 'The files can be downloaded once this take has finished processing.'
+}
+
 /** What the viewer shows for the ?clip= take: a file to play, or a message. */
 interface ViewerState {
   take?: Take
@@ -237,13 +251,7 @@ export function ProjectDetailPage() {
           <ShareIcon />
           Share
         </button>
-        <button
-          className="btn btn--primary"
-          onClick={() => {
-            setTab('export')
-            setToast('Export queued — FBX at 60 fps')
-          }}
-        >
+        <button className="btn btn--primary" onClick={() => setTab('export')}>
           <ExportIcon />
           Export
         </button>
@@ -511,35 +519,35 @@ export function ProjectDetailPage() {
               <p style={{ color: 'var(--muted)', fontSize: 13.5 }}>
                 {selectedTake ? takeLabel(selectedTake) : 'No take selected'}
               </p>
-              <label className="field">
-                <span className="field__label">Format</span>
-                <select className="select" defaultValue="fbx">
-                  <option value="fbx">FBX — skeleton and animation</option>
-                  <option value="bvh">BVH — animation only</option>
-                  <option value="csv">CSV — joint positions per frame</option>
-                  <option value="glb">glTF / GLB</option>
-                </select>
-              </label>
-              <label className="field">
-                <span className="field__label">Frame rate</span>
-                <select className="select" defaultValue="60">
-                  <option value="60">60 fps (native)</option>
-                  <option value="30">30 fps</option>
-                  <option value="24">24 fps</option>
-                </select>
-              </label>
-              <label className="check">
-                <input type="checkbox" defaultChecked />
-                Bake the rotation offsets
-              </label>
-              <label className="check">
-                <input type="checkbox" defaultChecked />
-                Include parts marked “needs review”
-              </label>
-              <button className="btn btn--primary" onClick={() => setToast('Export queued')}>
-                <ExportIcon />
-                Export take
-              </button>
+              {EXPORT_FILES.map((f) =>
+                selectedTake?.status === 'done' ? (
+                  <a
+                    key={f.file}
+                    className="btn btn--primary"
+                    href={takeFileUrl(selectedTake.id, f.file)}
+                    download
+                  >
+                    <ExportIcon />
+                    {f.label}
+                  </a>
+                ) : (
+                  <button key={f.file} className="btn btn--primary" disabled>
+                    <ExportIcon />
+                    {f.label}
+                  </button>
+                ),
+              )}
+              {selectedTake?.status === 'done' ? (
+                <p style={{ color: 'var(--muted)', fontSize: 13.5 }}>
+                  BVH is the animated skeleton for Blender, Maya or a game engine. JSON has every
+                  tracked joint's 3D position per frame.
+                </p>
+              ) : (
+                <div className="note">
+                  <InfoIcon />
+                  <span>{exportUnavailableReason(selectedTake)}</span>
+                </div>
+              )}
             </div>
           )}
         </aside>
