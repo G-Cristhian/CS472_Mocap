@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useSettings } from '@/app/SettingsProvider'
 import { useStudio } from '@/app/StudioProvider'
 import { StickFigure } from '@/components/ui/StickFigure'
-import { Toast } from '@/components/ui/Modal'
+import { Modal, Toast } from '@/components/ui/Modal'
 import {
   AlertIcon,
   CheckIcon,
@@ -18,6 +18,7 @@ import {
   API_URL,
   ApiUnreachableError,
   TakeFileError,
+  deleteTake,
   getTake,
   getTakeFile,
   listTakes,
@@ -171,6 +172,10 @@ export function ProjectDetailPage() {
   // the Export tab's download in progress, and why the last one failed
   const [downloading, setDownloading] = useState<TakeFile | null>(null)
   const [downloadError, setDownloadError] = useState<string | null>(null)
+  // the take waiting for "Delete" to be confirmed, and that dialog's state
+  const [confirmDelete, setConfirmDelete] = useState<Take | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   // the viewer follows ?clip=: a take in the list stays fresh while it's polled,
   // any other id (e.g. from an old link) is looked up once
@@ -189,6 +194,40 @@ export function ProjectDetailPage() {
       return next
     })
     setPosition(0)
+  }
+
+  const askDelete = (take: Take) => {
+    setDeleteError(null)
+    setConfirmDelete(take)
+  }
+
+  const removeTake = async (take: Take) => {
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await deleteTake(take.id)
+    } catch (e) {
+      setDeleteError(
+        e instanceof ApiUnreachableError
+          ? `Can't reach the API at ${API_URL}, so the take wasn't deleted.`
+          : e instanceof Error
+            ? e.message
+            : String(e),
+      )
+      return
+    } finally {
+      setDeleting(false)
+    }
+    setTakes((list) => list?.filter((t) => t.id !== take.id) ?? null)
+    if (clip === take.id) {
+      setParams((prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('clip')
+        return next
+      })
+    }
+    setConfirmDelete(null)
+    setToast(`${takeLabel(take)} deleted`)
   }
 
   // load the project's takes
@@ -459,6 +498,11 @@ export function ProjectDetailPage() {
             <span className="transport__time">
               {clock(position)} / {clock(length)}
             </span>
+            {selectedTake && (
+              <button className="btn btn--danger" onClick={() => askDelete(selectedTake)}>
+                Delete
+              </button>
+            )}
             <Link className="btn btn--pink" to="/record">
               <span className="dot" style={{ background: '#fff' }} />
               New take
@@ -626,6 +670,37 @@ export function ProjectDetailPage() {
           )}
         </aside>
       </div>
+
+      {confirmDelete && (
+        <Modal
+          title={`Delete ${takeLabel(confirmDelete)}?`}
+          subtitle="This removes the take and its files (videos, BVH, JSON) from the server. It can't be undone."
+          onClose={() => !deleting && setConfirmDelete(null)}
+        >
+          {deleteError && (
+            <div className="alert">
+              <AlertIcon />
+              <span>{deleteError}</span>
+            </div>
+          )}
+          <div className="modal__actions">
+            <button
+              className="btn btn--ghost"
+              disabled={deleting}
+              onClick={() => setConfirmDelete(null)}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn btn--danger"
+              disabled={deleting}
+              onClick={() => removeTake(confirmDelete)}
+            >
+              {deleting ? 'Deleting…' : 'Delete take'}
+            </button>
+          </div>
+        </Modal>
+      )}
 
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
     </>

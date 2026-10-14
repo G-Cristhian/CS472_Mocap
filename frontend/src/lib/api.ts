@@ -53,6 +53,24 @@ export async function listTakes(projectId: string, signal?: AbortSignal): Promis
   return (await response.json()) as Take[]
 }
 
+/**
+ * Deletes a take and its files. Throws an Error saying why if the API refuses
+ * (e.g. the take is still processing). A take that's already gone counts as deleted.
+ */
+export async function deleteTake(id: string): Promise<void> {
+  const response = await send(`/takes/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (response.ok || response.status === 404) return
+  if (response.status === 409) {
+    throw new Error(
+      "This take is still processing, so it can't be deleted yet. Try again once it's done or failed.",
+    )
+  }
+  // FastAPI errors look like {"detail": "..."}
+  const body = (await response.json().catch(() => null)) as { detail?: unknown } | null
+  const detail = typeof body?.detail === 'string' ? body.detail : `HTTP ${response.status}`
+  throw new Error(`The API couldn't delete the take: ${detail}`)
+}
+
 export type TakeFile = 'out3d.bvh' | 'out3d.json'
 
 /** Where to download one of a finished take's result files. */
