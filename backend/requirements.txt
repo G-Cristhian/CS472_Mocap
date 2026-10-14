@@ -1,0 +1,16 @@
+# Pipeline
+mediapipe==1.1.0
+aniposelib==0.8.0
+opencv-contrib-python==5.0.0.93
+python-dotenv==1.2.4
+numpy==2.5.4
+scipy==1.18.1
+av==19.0.1
+
+# API
+fastapi==0.143.0
+uvicorn==0.54.0
+python-multipart==0.0.32
+
+# Tests
+pytest==9.1.1

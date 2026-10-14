@@ -2,7 +2,9 @@
 HTTP API around the mocap pipeline, for the web frontend.
 
     cd backend
-    python -m pip install -r requirements-api.txt
+    # Dependencies: backend/requirements.txt (from the repository root).
+    ./setup.sh
+    source .venv/bin/activate
     uvicorn api:app
 
 Upload 2-4 videos as a take, the pipeline runs on it in the background (one

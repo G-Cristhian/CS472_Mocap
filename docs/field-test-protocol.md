@@ -20,7 +20,7 @@ Everything else (occlusion, turning away from the cameras, two performers) is a 
 - One tripod or firm stand per phone, chest height. A phone wedged on a chair will move when someone brushes past it. Tape to mark tripod feet on the floor.
 - A tape measure (for the performer's height and the camera distances) and a roll of masking tape.
 - Something that claps: hands are fine. A clapperboard or two blocks of wood are louder.
-- A laptop with the repo set up (`cd backend && python -m pip install -r mocap_pipeline/requirements.txt`), a cable for each phone type, and a notebook or this file's take log.
+- A laptop with the repo set up (`./backend/setup.sh` from the repo root installs `backend/requirements.txt`; then `source backend/.venv/bin/activate`), a cable for each phone type, and a notebook or this file's take log.
 - A space at least 5 m by 5 m with a flat floor, even light and a plain background. A gym or an empty classroom works. Avoid windows behind the performer.
 
 ---

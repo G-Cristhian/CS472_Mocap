@@ -8,7 +8,8 @@ Videos from 2 to 4 cameras (iPhones and webcams can be mixed), each starting wit
 # Running
 ```
 $ cd backend
-$ python -m pip install -r mocap_pipeline/requirements.txt
+$ ./setup.sh  # installs backend/requirements.txt
+$ source .venv/bin/activate
 $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV cam2.mp4 --height-m 1.75
 ```
 On Linux without a desktop, MediaPipe also needs the GL libraries: `sudo apt install libegl1 libgles2 libgl1`.

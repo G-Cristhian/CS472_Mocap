@@ -35,6 +35,7 @@ secrets.json
 # Ignore python compiled / cache
 *.pyc
 __pycache__/
+.pytest_cache/
 
 # Pipeline results (3D joints, calibration)
 backend/output/

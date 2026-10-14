@@ -17,7 +17,10 @@ Calibration uses the person's own landmarks by default. A printed ChArUco board 
 ---
 # Requirements
 ```
-$ python -m pip install -r requirements.txt
+$ cd backend  # from the repository root
+$ ./setup.sh  # installs backend/requirements.txt
+$ source .venv/bin/activate
+$ cd multicam_3d
 ```
 On Linux without a desktop, MediaPipe also needs `libegl1` (`sudo apt install libegl1`).
 
