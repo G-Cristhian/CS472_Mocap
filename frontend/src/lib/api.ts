@@ -27,19 +27,30 @@ export class ApiUnreachableError extends Error {
   }
 }
 
-/** One take, or null if the API has no take with that id. */
-export async function getTake(id: string, signal?: AbortSignal): Promise<Take | null> {
-  let response: Response
+/** fetch, turning a network failure into ApiUnreachableError (an abort is rethrown as is). */
+async function send(path: string, init?: RequestInit): Promise<Response> {
   try {
-    response = await fetch(`${API_URL}/takes/${encodeURIComponent(id)}`, { signal })
+    return await fetch(`${API_URL}${path}`, init)
   } catch (e) {
     // fetch only rejects on network failure or abort
-    if (signal?.aborted) throw e
+    if (init?.signal?.aborted) throw e
     throw new ApiUnreachableError()
   }
+}
+
+/** One take, or null if the API has no take with that id. */
+export async function getTake(id: string, signal?: AbortSignal): Promise<Take | null> {
+  const response = await send(`/takes/${encodeURIComponent(id)}`, { signal })
   if (response.status === 404) return null
   if (!response.ok) throw new Error(`The API answered HTTP ${response.status}`)
   return (await response.json()) as Take
+}
+
+/** A project's takes, newest first. */
+export async function listTakes(projectId: string, signal?: AbortSignal): Promise<Take[]> {
+  const response = await send(`/takes?project_id=${encodeURIComponent(projectId)}`, { signal })
+  if (!response.ok) throw new Error(`The API answered HTTP ${response.status}`)
+  return (await response.json()) as Take[]
 }
 
 /** Where to download one of a finished take's result files. */

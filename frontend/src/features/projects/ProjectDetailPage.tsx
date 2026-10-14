@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useSettings } from '@/app/SettingsProvider'
 import { useStudio } from '@/app/StudioProvider'
@@ -12,8 +12,8 @@ import {
   PlayIcon,
   ShareIcon,
 } from '@/components/ui/Icons'
-import { rigParts, takes as seedTakes } from '@/lib/data'
-import { API_URL, ApiUnreachableError, getTake, takeFileUrl } from '@/lib/api'
+import { rigParts } from '@/lib/data'
+import { API_URL, ApiUnreachableError, getTake, listTakes, takeFileUrl } from '@/lib/api'
 import type { Take } from '@/lib/api'
 import type { Source } from '@/types'
 import { SOURCE_COLOR } from './SkeletonViewport'
@@ -30,6 +30,22 @@ const LEGEND: { source: Source; label: string }[] = [
   { source: 'ai', label: 'AI-inferred' },
   { source: 'review', label: 'Needs review' },
 ]
+
+const STATUS_LABEL: Record<Take['status'], string> = {
+  queued: 'Queued',
+  running: 'Processing',
+  done: 'Done',
+  failed: 'Failed',
+}
+
+const takeLabel = (take: Take) => take.name ?? take.id
+
+/** A plain-words message for a failed API call. */
+function apiErrorMessage(e: unknown, what: string) {
+  return e instanceof ApiUnreachableError
+    ? `Can't reach the API at ${API_URL}`
+    : `Couldn't load ${what}: ${e instanceof Error ? e.message : String(e)}`
+}
 
 /** What the viewer shows for the ?clip= take: a file to play, or a message. */
 interface ViewerState {
@@ -48,7 +64,7 @@ function viewerStateFor(take: Take): ViewerState {
       return { take, message: take.error ?? 'Processing failed' }
     case 'done': {
       // parseMotion picks the parser from the extension, so the name must end in .bvh
-      const name = `${take.name ?? take.id}.bvh`
+      const name = `${takeLabel(take)}.bvh`
       // Loads the BVH (17-joint skeleton). Consider out3d.json later: all 33 raw joints, and it shows where tracking dropped out.
       return { take, src: { url: takeFileUrl(take.id, 'out3d.bvh'), name } }
     }
@@ -59,20 +75,14 @@ export function ProjectDetailPage() {
   const { projectId } = useParams()
   const [params, setParams] = useSearchParams()
   const clip = params.get('clip')
-  const { projects, clips } = useStudio()
+  const { projects } = useStudio()
   const { settings } = useSettings()
 
   const project = projects.find((p) => p.id === projectId)
-  const projectClips = clips.filter((c) => c.projectId === projectId)
 
-  // The clip list shows the take the library knows about, padded out to the
-  // number of takes the project reports.
-  const [takes, setTakes] = useState(() => {
-    const known = projectClips.map((c) => ({ id: c.id, name: c.name, duration: c.duration }))
-    const padding = seedTakes.filter((t) => !known.some((k) => k.id === t.id))
-    const total = Math.min(Math.max(project?.clips ?? known.length, known.length), 4)
-    return [...known, ...padding].slice(0, Math.max(1, total))
-  })
+  // the project's takes from the API; null until the first answer
+  const [takes, setTakes] = useState<Take[] | null>(null)
+  const [takesError, setTakesError] = useState<string | null>(null)
   const [viewer, setViewer] = useState<ViewerState>({ message: 'No take selected' })
   const [tab, setTab] = useState<'rig' | 'streaming' | 'export'>('rig')
   const [selectedPart, setSelectedPart] = useState('left-forearm')
@@ -84,10 +94,10 @@ export function ProjectDetailPage() {
   const [rotation, setRotation] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
 
-  // the viewer follows ?clip= only; the mock take is the fallback for the transport
-  const selectedTake = takes.find((t) => t.id === clip)
-  const take = selectedTake ?? takes[0]
-  const takeName = clip ? (viewer.take ? viewer.take.name ?? viewer.take.id : selectedTake?.name ?? clip) : take?.name
+  // the viewer follows ?clip=
+  const selectedTake = takes?.find((t) => t.id === clip)
+  const shownTake = viewer.take ?? selectedTake
+  const takeName = shownTake ? takeLabel(shownTake) : clip ?? 'No take selected'
 
   const selectClip = (id: string) => {
     setParams((prev) => {
@@ -97,6 +107,20 @@ export function ProjectDetailPage() {
     })
     setPosition(0)
   }
+
+  // load the project's takes
+  useEffect(() => {
+    if (!projectId) return
+    const controller = new AbortController()
+    setTakes(null)
+    setTakesError(null)
+    listTakes(projectId, controller.signal)
+      .then(setTakes)
+      .catch((e) => {
+        if (!controller.signal.aborted) setTakesError(apiErrorMessage(e, 'the takes'))
+      })
+    return () => controller.abort()
+  }, [projectId])
 
   // look the ?clip= take up in the API (a one-time check; live polling comes later)
   useEffect(() => {
@@ -109,22 +133,12 @@ export function ProjectDetailPage() {
     getTake(clip, controller.signal)
       .then((found) => setViewer(found ? viewerStateFor(found) : { message: 'Take not found' }))
       .catch((e) => {
-        if (controller.signal.aborted) return
-        setViewer({
-          message:
-            e instanceof ApiUnreachableError
-              ? `Can't reach the API at ${API_URL}`
-              : `Couldn't load the take: ${e instanceof Error ? e.message : String(e)}`,
-        })
+        if (!controller.signal.aborted) setViewer({ message: apiErrorMessage(e, 'the take') })
       })
     return () => controller.abort()
   }, [clip])
-  const length = useMemo(() => {
-    // the loaded file's length; the mocked take length until one loads
-    if (motion) return motion.duration
-    const [m, s] = (take?.duration ?? '0:24').split(':').map(Number)
-    return m * 60 + s
-  }, [take, motion])
+  // the loaded file's length; nothing to play until one loads
+  const length = motion?.duration ?? 0
 
   useEffect(() => setFrozen(settings.freezeViewport), [settings.freezeViewport])
 
@@ -194,17 +208,27 @@ export function ProjectDetailPage() {
           <section>
             <p className="eyebrow">Clips</p>
             <div className="takelist">
-              {takes.map((t) => (
-                <button key={t.id} aria-current={t.id === clip} onClick={() => selectClip(t.id)}>
+              {takes?.map((t) => (
+                <button
+                  key={t.id}
+                  aria-current={t.id === clip}
+                  title={t.error ?? undefined}
+                  onClick={() => selectClip(t.id)}
+                >
                   <span
                     className="dot"
                     style={{ background: t.id === clip ? 'var(--purple)' : 'var(--line)' }}
                   />
-                  {t.name}
-                  <span className="dur">{t.duration}</span>
+                  {takeLabel(t)}
+                  <span className="dur">{STATUS_LABEL[t.status]}</span>
                 </button>
               ))}
             </div>
+            {(takesError || takes?.length === 0 || !takes) && (
+              <p style={{ color: 'var(--muted)', fontSize: 13.5, marginTop: 10 }}>
+                {takesError ?? (takes ? 'No takes in this project yet.' : 'Loading takes…')}
+              </p>
+            )}
           </section>
 
           <section>
@@ -312,22 +336,10 @@ export function ProjectDetailPage() {
             <span className="transport__time">
               {clock(position)} / {clock(length)}
             </span>
-            <button
-              className="btn btn--pink"
-              onClick={() => {
-                const next = {
-                  id: `take-${takes.length + 1}-${Date.now()}`,
-                  name: `Take ${String(takes.length + 1).padStart(2, '0')}`,
-                  duration: '0:00',
-                }
-                setTakes([next, ...takes])
-                selectClip(next.id)
-                setToast(`${next.name} added — open Record to capture it`)
-              }}
-            >
+            <Link className="btn btn--pink" to="/record">
               <span className="dot" style={{ background: '#fff' }} />
               New take
-            </button>
+            </Link>
           </div>
         </section>
 
@@ -450,7 +462,7 @@ export function ProjectDetailPage() {
             <div className="stack" style={{ gap: 18 }}>
               <h3 style={{ fontSize: 17 }}>Export take</h3>
               <p style={{ color: 'var(--muted)', fontSize: 13.5 }}>
-                {take?.name} · {take?.duration} · 60 fps
+                {selectedTake ? takeLabel(selectedTake) : 'No take selected'}
               </p>
               <label className="field">
                 <span className="field__label">Format</span>
