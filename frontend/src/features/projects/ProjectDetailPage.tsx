@@ -80,8 +80,9 @@ function downloadName(take: Take, ext: string) {
   const base = (take.name ?? '')
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '') // é -> e
+    .normalize('NFC') // recombine other scripts' marks (ダ stays ダ, not タ + mark)
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, '-')
     .slice(0, 80)
     .replace(/^-+|-+$/g, '')
   return `${base || take.id}.${ext}`
