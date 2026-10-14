@@ -53,7 +53,24 @@ export async function listTakes(projectId: string, signal?: AbortSignal): Promis
   return (await response.json()) as Take[]
 }
 
+export type TakeFile = 'out3d.bvh' | 'out3d.json'
+
 /** Where to download one of a finished take's result files. */
-export function takeFileUrl(id: string, file: 'out3d.bvh' | 'out3d.json') {
+export function takeFileUrl(id: string, file: TakeFile) {
   return `${API_URL}/takes/${encodeURIComponent(id)}/${file}`
+}
+
+/** The API refused a take's result file; status is 404 (take or file gone) or 409 (not done). */
+export class TakeFileError extends Error {
+  constructor(readonly status: number) {
+    super(`The API answered HTTP ${status}`)
+    this.name = 'TakeFileError'
+  }
+}
+
+/** One of a finished take's result files, downloaded into memory. */
+export async function getTakeFile(id: string, file: TakeFile, signal?: AbortSignal): Promise<Blob> {
+  const response = await send(`/takes/${encodeURIComponent(id)}/${file}`, { signal })
+  if (!response.ok) throw new TakeFileError(response.status)
+  return response.blob()
 }

@@ -5,6 +5,7 @@ import { useStudio } from '@/app/StudioProvider'
 import { StickFigure } from '@/components/ui/StickFigure'
 import { Toast } from '@/components/ui/Modal'
 import {
+  AlertIcon,
   CheckIcon,
   ExportIcon,
   InfoIcon,
@@ -13,8 +14,16 @@ import {
   ShareIcon,
 } from '@/components/ui/Icons'
 import { rigParts } from '@/lib/data'
-import { API_URL, ApiUnreachableError, getTake, listTakes, takeFileUrl } from '@/lib/api'
-import type { Take } from '@/lib/api'
+import {
+  API_URL,
+  ApiUnreachableError,
+  TakeFileError,
+  getTake,
+  getTakeFile,
+  listTakes,
+  takeFileUrl,
+} from '@/lib/api'
+import type { Take, TakeFile } from '@/lib/api'
 import type { Source } from '@/types'
 import { SOURCE_COLOR } from './SkeletonViewport'
 import type { MotionInfo, MotionSource } from '@/features/viewer/MotionViewport'
@@ -61,9 +70,34 @@ function apiErrorMessage(e: unknown, what: string) {
 }
 
 const EXPORT_FILES = [
-  { file: 'out3d.bvh', label: 'Download BVH' },
-  { file: 'out3d.json', label: 'Download JSON' },
+  { file: 'out3d.bvh', kind: 'BVH', label: 'Download BVH' },
+  { file: 'out3d.json', kind: 'JSON', label: 'Download JSON' },
 ] as const
+
+/** A plain-words message for a failed download of one of a take's files. */
+function downloadErrorMessage(e: unknown, take: Take, kind: string) {
+  if (e instanceof ApiUnreachableError) return `Can't reach the API at ${API_URL}, so nothing was downloaded.`
+  if (e instanceof TakeFileError && e.status === 404) {
+    return `The ${kind} file for ${takeLabel(take)} is missing on the server, so it can't be downloaded.`
+  }
+  if (e instanceof TakeFileError && e.status === 409) {
+    return `${takeLabel(take)} hasn't finished processing, so its files can't be downloaded yet.`
+  }
+  return `Couldn't download the ${kind} file: ${e instanceof Error ? e.message : String(e)}`
+}
+
+/** Save a blob as a file. The API is another origin, so a plain <a download> link would ignore the name. */
+function saveBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.append(link)
+  link.click()
+  link.remove()
+  // give the browser a moment to start the download before freeing the blob
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
 
 /** Why a take's files can't be downloaded yet. */
 function exportUnavailableReason(take: Take | undefined) {
@@ -120,6 +154,9 @@ export function ProjectDetailPage() {
   const [motion, setMotion] = useState<MotionInfo | null>(null)
   const [rotation, setRotation] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
+  // the Export tab's download in progress, and why the last one failed
+  const [downloading, setDownloading] = useState<TakeFile | null>(null)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
 
   // the viewer follows ?clip=: a take in the list stays fresh while it's polled,
   // any other id (e.g. from an old link) is looked up once
@@ -202,6 +239,23 @@ export function ProjectDetailPage() {
   const length = motion?.duration ?? 0
 
   useEffect(() => setFrozen(settings.freezeViewport), [settings.freezeViewport])
+
+  // a download error is about the take it was for
+  useEffect(() => setDownloadError(null), [clip])
+
+  // fetched rather than linked, so a missing file shows an error here instead of
+  // sending the tab to the API's JSON error page
+  const downloadFile = async (take: Take, file: TakeFile, kind: string) => {
+    setDownloading(file)
+    setDownloadError(null)
+    try {
+      saveBlob(await getTakeFile(take.id, file), file)
+    } catch (e) {
+      setDownloadError(downloadErrorMessage(e, take, kind))
+    } finally {
+      setDownloading(null)
+    }
+  }
 
   // with a file loaded the 3D viewport runs the clock; this is only the fallback
   useEffect(() => {
@@ -521,21 +575,27 @@ export function ProjectDetailPage() {
               </p>
               {EXPORT_FILES.map((f) =>
                 selectedTake?.status === 'done' ? (
-                  <a
+                  <button
                     key={f.file}
                     className="btn btn--primary"
-                    href={takeFileUrl(selectedTake.id, f.file)}
-                    download
+                    disabled={downloading !== null}
+                    onClick={() => downloadFile(selectedTake, f.file, f.kind)}
                   >
                     <ExportIcon />
-                    {f.label}
-                  </a>
+                    {downloading === f.file ? 'Downloading…' : f.label}
+                  </button>
                 ) : (
                   <button key={f.file} className="btn btn--primary" disabled>
                     <ExportIcon />
                     {f.label}
                   </button>
                 ),
+              )}
+              {downloadError && (
+                <div className="alert" role="alert">
+                  <AlertIcon />
+                  <span>{downloadError}</span>
+                </div>
               )}
               {selectedTake?.status === 'done' ? (
                 <p style={{ color: 'var(--muted)', fontSize: 13.5 }}>
