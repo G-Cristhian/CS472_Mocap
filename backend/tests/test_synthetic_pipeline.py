@@ -227,7 +227,7 @@ def test_run_pipeline_end_to_end_on_the_synthetic_scene(tmp_path, monkeypatch):
     recorded = {k.video_path: k for k in scene.recorded_keypoints(str(tmp_path))}
     for path in recorded:
         (tmp_path / path.split("/")[-1]).write_bytes(b"stand-in for a phone video")
-    monkeypatch.setattr(detect, "detect_video", lambda video_path, model_path: recorded[str(video_path)])
+    monkeypatch.setattr(detect, "detect_video", lambda video_path, model_path, detector="mediapipe": recorded[str(video_path)])
 
     out = tmp_path / "output" / "take.json"
     run_pipeline.run(list(recorded), str(out), performer_height_m=PERFORMER_HEIGHT_M, model_path="unused",
