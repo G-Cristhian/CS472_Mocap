@@ -6,7 +6,8 @@ Command line entry point: runs every stage in order.
 
 Every stage writes its result next to --out (io.stage_paths). Re-running with
 --resume loads those files instead of recomputing, so a failed or tweaked run
-starts from the last good stage instead of running MediaPipe again.
+starts from the last good stage instead of running the pose model again.
+--detector picks the pose model for stage 1 (stage1_keypoints/backends.py).
 --stop-after writes one stage's file and exits, to hand data to a teammate.
 
 This file is the one place that knows the order of the stages. When the web
@@ -20,6 +21,7 @@ import numpy as np
 from pathlib import Path
 from . import config, io
 from .stage1_keypoints import detect
+from .stage1_keypoints.backends import BACKENDS, DEFAULT_BACKEND
 from .stage2_reconstruct import calibrate, scale_floor, smooth, sync, triangulate
 from .stage3_rig import bvh_writer, rotations, skeleton
 from .stage2_reconstruct.iphone_camera import (is_iphone_video, iphone_intrinsics, IPhoneMetadataError,
@@ -148,11 +150,13 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
         clap_times: list[float] | None = None, calibration_path: str = str(DEFAULT_CALIBRATION),
         recalibrate: bool = False, max_error_px: float = config.CALIB_MAX_ERROR_PX,
         charuco_videos: list[str] | None = None, smoothing: bool = True, bvh: bool = True,
-        resume: bool = False, stop_after: str | None = None) -> None:
+        resume: bool = False, stop_after: str | None = None, detector: str = DEFAULT_BACKEND) -> None:
     """
     Runs every stage in order. With resume=True a stage whose file (io.stage_paths)
     exists and is still valid is loaded instead of recomputed. stop_after names
     the last stage to run (one of STAGES); its file is written and run() returns.
+    detector is the stage 1 pose model (a name in backends.BACKENDS); saved
+    joints are only reused if the same detector made them.
     """
     n = len(video_paths)
 
@@ -160,6 +164,8 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
         raise ValueError(f"Give {config.MIN_CAMERAS} to {config.MAX_CAMERAS} videos, one per camera (got {n}).")
     if stop_after is not None and stop_after not in STAGES:
         raise ValueError(f"stop_after must be one of {STAGES}, got {stop_after!r}")
+    if detector not in BACKENDS:
+        raise ValueError(f"detector must be one of {tuple(BACKENDS)}, got {detector!r}")
 
     model_path = model_path or default_model_path()
     camera = camera or ["auto"] * n
@@ -179,16 +185,20 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
         kp = None
         if resume and kp_path.exists():
             saved, fingerprint = io.load_keypoints(str(kp_path), with_fingerprint=True)
-            if io.fingerprint_matches(fingerprint, video):
+            # files saved before --detector existed were all made by MediaPipe
+            saved_detector = fingerprint.get("detector", "mediapipe")
+            if not io.fingerprint_matches(fingerprint, video):
+                print(f"{kp_path.name} was made from a different version of {video}, detecting again")
+            elif saved_detector != detector:
+                print(f"{kp_path.name} was made with {saved_detector}, detecting again with {detector}")
+            else:
                 print(f"Using saved joints for {video} ({kp_path.name})")
                 kp = saved
-            else:
-                print(f"{kp_path.name} was made from a different version of {video}, detecting again")
         if kp is None:
-            print(f"Detecting joints in {video}")
-            kp = detect.detect_video(video, model_path)
+            print(f"Detecting joints in {video} ({detector})")
+            kp = detect.detect_video(video, model_path, detector=detector)
             kp.camera_id = cid
-            io.save_keypoints(kp, str(kp_path), io.video_fingerprint(video))
+            io.save_keypoints(kp, str(kp_path), {**io.video_fingerprint(video), "detector": detector})
         kp.camera_id = cid
         keypoints.append(kp)
 
@@ -301,8 +311,13 @@ def main() -> None:
                         help="Performer height in metres; sets the real-world scale (needed when calibrating).")
     parser.add_argument("--out", default=str(DEFAULT_OUT),
                         help="Output JSON path (3D joints per frame). Default: backend/output/out3d.json")
+    parser.add_argument("--detector", choices=list(BACKENDS), default=DEFAULT_BACKEND,
+                        help=f"Pose model for stage 1 (default: {DEFAULT_BACKEND}). When comparing detectors, also "
+                             "pass --recalibrate or a separate --calibration file per detector, otherwise the "
+                             "first detector's calibration is reused.")
     parser.add_argument("--model", default=None,
-                        help="pose_landmarker .task file (default: MODEL_FILEPATH in .env, or the repo's model)")
+                        help="MediaPipe pose_landmarker .task file (default: MODEL_FILEPATH in .env, or the "
+                             "repo's model). Other detectors download their own models.")
     parser.add_argument("--camera", nargs="+", choices=["auto", "iphone", "webcam"], default=["auto"],
                         help="Camera type, one for all or one per video. auto: iPhone if the video has Apple's "
                              "focal length metadata, otherwise webcam (any non-iPhone camera, uses --fov).")
@@ -339,7 +354,8 @@ def main() -> None:
         camera=per_camera(parser, "--camera", args.camera, n), fov=per_camera(parser, "--fov", args.fov, n),
         clap_times=args.sync, calibration_path=args.calibration, recalibrate=args.recalibrate,
         max_error_px=args.max_error, charuco_videos=args.charuco_videos, smoothing=not args.no_smooth,
-        bvh=not args.no_bvh, resume=args.resume, stop_after=args.stop_after)
+        bvh=not args.no_bvh, resume=args.resume, stop_after=args.stop_after,
+        detector=args.detector)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 """
-run_pipeline.run() with --resume and --stop-after, with stage 1 (MediaPipe),
+run_pipeline.run() with --resume, --stop-after and --detector, with stage 1,
 sync's audio search and triangulation replaced by fakes that count their calls.
 Calibration is skipped by pre-writing a calibration.json, as a second run would.
 """
@@ -17,6 +17,7 @@ from tests.conftest import make_keypoints, make_pose, make_rig, make_sync
 class Calls:
     def __init__(self):
         self.detect = []
+        self.detectors = []
         self.sync_clap_times = []
         self.triangulate = 0
 
@@ -25,8 +26,9 @@ class Calls:
 def fakes(monkeypatch, fake_videos):
     calls = Calls()
 
-    def fake_detect(video_path, model_path):
+    def fake_detect(video_path, model_path, detector="mediapipe"):
         calls.detect.append(os.path.basename(video_path))
+        calls.detectors.append(detector)
         return make_keypoints(camera_id=Path(video_path).stem, video_path=video_path)
 
     def fake_synchronise(video_paths, keypoints, clap_times=None):
@@ -109,6 +111,40 @@ def test_explicit_sync_overrides_saved(fakes, fake_videos, tmp_path):
     run(fake_videos, tmp_path, resume=True, clap_times=[2.0, 2.5])
     assert fakes.sync_clap_times[-1] == [2.0, 2.5]
     assert io.load_sync(str(tmp_path / "output" / "out3d.sync.json")).clap_time_s["cam0"] == 1.0  # fake ignores input, file rewritten
+
+
+def test_detector_reaches_stage_1(fakes, fake_videos, tmp_path):
+    run(fake_videos, tmp_path, detector="rtmpose")
+    assert fakes.detectors == ["rtmpose", "rtmpose"]
+
+
+def test_switching_detector_detects_again(fakes, fake_videos, tmp_path):
+    run(fake_videos, tmp_path)
+    run(fake_videos, tmp_path, resume=True, detector="rtmpose")
+    assert fakes.detectors == ["mediapipe"] * 2 + ["rtmpose"] * 2
+    assert fakes.triangulate == 2                    # new joints make the pose stale
+
+
+def test_same_detector_resumes(fakes, fake_videos, tmp_path):
+    run(fake_videos, tmp_path, detector="rtmpose")
+    run(fake_videos, tmp_path, resume=True, detector="rtmpose")
+    assert fakes.detectors == ["rtmpose"] * 2
+
+
+def test_saved_joints_without_a_detector_count_as_mediapipe(fakes, fake_videos, tmp_path):
+    out = run(fake_videos, tmp_path)
+    for cid, kp_path in io.stage_paths(str(out), ["cam0", "cam1"])["keypoints"].items():
+        kp = io.load_keypoints(str(kp_path))            # rewrite as saved before --detector existed
+        io.save_keypoints(kp, str(kp_path), io.video_fingerprint(str(tmp_path / f"{cid}.mp4")))
+    run(fake_videos, tmp_path, resume=True)
+    assert len(fakes.detect) == 2                       # still reused
+    run(fake_videos, tmp_path, resume=True, detector="rtmpose")
+    assert fakes.detectors[-2:] == ["rtmpose", "rtmpose"]
+
+
+def test_unknown_detector_is_rejected(fakes, fake_videos, tmp_path):
+    with pytest.raises(ValueError, match="detector"):
+        run(fake_videos, tmp_path, detector="openpose")
 
 
 def test_stop_after_keypoints(fakes, fake_videos, tmp_path):
