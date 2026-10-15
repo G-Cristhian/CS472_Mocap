@@ -5,3 +5,5 @@ python-dotenv
 numpy
 scipy
 av
+rtmlib==0.0.16
+onnxruntime
