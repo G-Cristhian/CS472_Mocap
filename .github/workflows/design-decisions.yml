@@ -5,7 +5,6 @@
 #
 # Secrets:
 #   ANTHROPIC_API_KEY     required
-#   DISCORD_WEBHOOK_URL   optional; a channel webhook, posts a line when a PR is opened
 name: Design decisions
 
 on:
@@ -102,14 +101,3 @@ jobs:
           reviewers: GianniGuava
           add-paths: docs/decisions/DECISIONS.md
           delete-branch: true
-
-      - name: Notify Discord
-        if: steps.changed.outputs.changed == 'true' && env.DISCORD_WEBHOOK_URL != ''
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          PR_URL: ${{ steps.pr.outputs.pull-request-url }}
-          RANGE: ${{ steps.range.outputs.range }}
-        run: |
-          report="$(head -c 1500 "$RUNNER_TEMP/design-report.md")"
-          payload="$(jq -n --arg c "Design decisions found in $RANGE. Review: $PR_URL"$'\n'"\`\`\`"$'\n'"$report"$'\n'"\`\`\`" '{content: $c}')"
-          curl -sS -H "Content-Type: application/json" -d "$payload" "$DISCORD_WEBHOOK_URL"

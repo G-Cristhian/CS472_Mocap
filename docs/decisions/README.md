@@ -55,6 +55,8 @@ On every push to `main`, the workflow in `.github/workflows/design-decisions.yml
 
 The same procedure runs locally through the `design-interrogator` subagent in `.claude/agents/`, for example "use the design-interrogator subagent on 762e384..HEAD".
 
+The same procedure also runs as a scheduled cloud routine, "Design decisions, hourly", because the GitHub workflow needs the Claude GitHub App installed by the repository owner. The routine's prompt is kept in [routine-prompt.md](routine-prompt.md). Every hour it checks main for commits newer than the one recorded in `.last-reviewed`, reviews them, advances the marker, and pushes to the branch `design-decisions/pending`. It opens a pull request only when rows were added, and adds later findings to that pull request as comments until it is merged. The workflow and the routine share the branch and the marker, so running both never reviews a commit twice. How to review what either of them finds, from a laptop or a phone, is in `docs/procedures/reviewing-design-decisions.md`.
+
 Procedure the detector follows:
 
 1. Read this file and the current sheet.

@@ -1,6 +1,6 @@
 # Enable Claude on the GitHub repository
 
-For the repository owner. Takes about fifteen minutes. Needed once, before the design-decision workflow in `.github/workflows/design-decisions.yml` can run.
+For the repository owner. Takes about fifteen minutes. Needed once, before the design-decision workflow in `.github/workflows/design-decisions.yml` can run. Until then the same job runs as an hourly cloud routine that needs no owner action; see `docs/decisions/routine-prompt.md` and the section at the end of this file.
 
 Every step here needs admin on `G-Cristhian/CS472_Mocap`. The repository is owned by a personal account, and GitHub gives collaborators on a personal repository write access only; there is no admin role to hand out. So as of 2026-10-16 all four steps are Cristhian's. (Moving the repository into a GitHub organization, which is free, would let other members be made admins and would let the app be installed once for every repository the team creates.)
 
@@ -42,27 +42,30 @@ Repository Settings, Actions, General, scroll to Workflow permissions:
 
 Without the tick, the workflow edits the sheet and then fails at the pull-request step.
 
-## 4. Discord notification (optional)
-
-1. In Discord, open the channel that should get the pings. Channel settings, Integrations, Webhooks, New Webhook. Name it, Copy Webhook URL.
-2. GitHub: Settings, Secrets and variables, Actions, New repository secret. Name `DISCORD_WEBHOOK_URL`, paste the URL.
-
-With no secret the workflow skips the Discord step and relies on GitHub's own review-request notification.
-
-## 5. Merge the workflow
+## 4. Merge the workflow
 
 The workflow, the agent definition and the decisions sheet arrive in one pull request. Merge it to `main`. The first push to `main` after that is the first live run.
 
-## 6. Test it by hand
+## 5. Test it by hand
 
 Actions tab, "Design decisions", Run workflow, enter a range such as `762e384..main`, Run. Within a few minutes you should see:
 
 - a run that finishes green
 - a pull request titled "Design decisions found in ..." on a `design-decisions/` branch, with Giancarlo requested as reviewer
-- a message in the Discord channel, if step 4 was done
 
 If the run is red at the "Interrogate the commits" step, the usual causes are a missing `ANTHROPIC_API_KEY` secret or the app not installed on this repository. If it is red at "Open a review PR", step 3 was skipped.
 
-## 7. Reviewing what it finds
+## 6. Reviewing what it finds
 
 Review happens in that pull request. Edit the Status and Reviewer notes columns of the new rows in `docs/decisions/DECISIONS.md` before merging. The statuses and what they mean are in `docs/decisions/README.md`.
+
+## Without the owner: the hourly routine
+
+A scheduled cloud routine does the same job without the GitHub App, using a collaborator's own GitHub token. Any collaborator with push access can set this up for their account:
+
+1. Install the Claude Code CLI if `claude` is not recognised: `npm install -g @anthropic-ai/claude-code`.
+2. Make sure `gh auth status` shows you signed in to GitHub.
+3. Run `claude`, then inside the session `/login` (claude.ai account, not an API key), then `/web-setup`. It asks to send your `gh` token to your Claude account and prints "Connected as <username>". From then on cloud sessions and routines under your account can clone and push any repository that token can reach.
+4. The routine "Design decisions, hourly" at https://claude.ai/code/routines then runs under that access. Its prompt is `docs/decisions/routine-prompt.md`. Enable it there if it is disabled.
+
+Routines draw down the subscription usage of the account that owns them, visible at https://claude.ai/settings/usage.
