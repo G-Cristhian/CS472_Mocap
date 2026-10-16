@@ -110,7 +110,8 @@ def test_full_stage2_without_noise_recovers_the_truth():
     assert max(rig.reprojection_error_px.values()) < 0.1
 
 
-@pytest.mark.parametrize("angles", [(0, -60, 60), (-35, 35), (-20, -65, 20, 65)])
+@pytest.mark.parametrize("angles", [(0, -60, 60), (-35, 35), (-20, -65, 20, 65),
+                                    (-65, -40, -15, 15, 40, 65)])   # no upper limit on cameras (D-024)
 def test_full_stage2_with_realistic_noise(angles):
     scene = Scene(routine=SHORT, angles_deg=angles, noise=REALISTIC)
     pose, rig = stage2(scene)

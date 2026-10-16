@@ -161,6 +161,23 @@ def test_stop_after_rejects_unknown_stage(fakes, fake_videos, tmp_path):
         run_pipeline.run(fake_videos, str(tmp_path / "o.json"), stop_after="smooth")
 
 
+def test_five_videos_run_and_one_is_rejected(fakes, tmp_path):
+    """No maximum camera count (D-024); the minimum of 2 stays (D-002)."""
+    videos = []
+    for c in range(5):
+        p = tmp_path / f"cam{c}.mp4"
+        p.write_bytes(b"not really a video " + p.name.encode())
+        videos.append(str(p))
+    calib = tmp_path / "output" / "calibration.json"
+    io.save_rig(make_rig([f"cam{c}" for c in range(5)]), str(calib))
+    run_pipeline.run(videos, str(tmp_path / "output" / "out3d.json"), model_path="unused.task",
+                     calibration_path=str(calib), smoothing=False, bvh=False)
+    assert fakes.detect == [f"cam{c}.mp4" for c in range(5)]
+
+    with pytest.raises(ValueError, match="at least 2"):
+        run_pipeline.run(videos[:1], str(tmp_path / "output" / "one.json"), model_path="unused.task")
+
+
 def test_duplicate_video_stems_get_unique_ids(tmp_path):
     a = tmp_path / "a" / "IMG_0001.MOV"
     b = tmp_path / "b" / "IMG_0001.MOV"

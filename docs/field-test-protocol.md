@@ -16,7 +16,7 @@ Everything else (occlusion, turning away from the cameras, two performers) is a 
 ---
 ## 2. Kit
 
-- 2 to 4 phones, fully charged, with at least 10 GB free each. Figure on about 100 MB per phone per minute at 1080p60, 400 MB at 4K60 or 1080p120.
+- At least 2 phones (there is no maximum; 3 or 4 is the sweet spot for one performer), fully charged, with at least 10 GB free each. Figure on about 100 MB per phone per minute at 1080p60, 400 MB at 4K60 or 1080p120.
 - One tripod or firm stand per phone, chest height. A phone wedged on a chair will move when someone brushes past it. Tape to mark tripod feet on the floor.
 - A tape measure (for the performer's height and the camera distances) and a roll of masking tape.
 - Something that claps: hands are fine. A clapperboard or two blocks of wood are louder.

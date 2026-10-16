@@ -235,7 +235,7 @@ def _place_camera(placed_group, flat_placed, flat_new, K_new, name):
 def calibrate_rig(keypoints: list[Keypoints2D],
                   intrinsics: "list[np.ndarray] | None" = None) -> CameraRig:
     """
-    Multi-camera calibration (2 to 4 cameras), our method:
+    Multi-camera calibration (2 or more cameras), our method:
       1. Start from the pair of cameras that saw the most distinct joints
          together (calibrate_pair's steps).
       2. Add the other cameras one at a time, the one that sees the most of

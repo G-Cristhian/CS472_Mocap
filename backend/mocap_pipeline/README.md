@@ -2,7 +2,7 @@
 # mocap_pipeline
 The team's outline with stages 1 and 2 filled in from our multi-camera pipeline (`backend/multicam_3d`): same folders, function names and data shapes (`schemas.py`). Each file starts with a comment saying which `multicam_3d` file it was copied from.
 
-Videos from 2 to 4 cameras (iPhones and webcams can be mixed), each starting with a clap, go in. 3D joints per frame come out, in metres, Y up, floor at Y = 0.
+Videos from 2 or more cameras (iPhones and webcams can be mixed), each starting with a clap, go in. 3D joints per frame come out, in metres, Y up, floor at Y = 0.
 
 ---
 # Running
@@ -83,7 +83,8 @@ All tunable numbers are in `config.py`.
 
 ---
 # Camera setup: front arc
-- 2 cameras: about -35 and +35 degrees. 3 cameras: about -60, 0, +60. 4 cameras: about -65, -20, +20, +65.
+- Any number from 2 up. Spread them evenly across an arc of up to about 130 degrees centred on the performer's front, so the outermost pair is 70 to 130 degrees apart. Examples: 2 cameras at -35 and +35; 3 at -60, 0, +60; 4 at -65, -20, +20, +65; 6 at -65, -40, -15, +15, +40, +65.
+- More cameras means fewer lost joints, not more accuracy per joint: each joint needs any 2 cameras to see it, and the outermost pair does most of the depth work. Every extra camera costs its own detection time.
 - Chest height, 2-4 m from the middle of the space, each seeing the whole body. Don't bunch the cameras in the middle.
 - Every camera must see the performer's front (no cameras behind or beside them).
 

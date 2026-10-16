@@ -130,7 +130,7 @@ def check(video_paths: list[str]) -> int:
             except sync.ClapNotFoundError as e:
                 print(f"  WARNING cross-check failed: {e}")
     elif len(video_paths) < 2:
-        print("\nWARNING one video given; the pipeline needs 2 to 4")
+        print("\nWARNING one video given; the pipeline needs at least 2")
 
     print("\n" + ("All files usable." if problems == 0 else f"{problems} file(s) the pipeline cannot use."))
     return 1 if problems else 0

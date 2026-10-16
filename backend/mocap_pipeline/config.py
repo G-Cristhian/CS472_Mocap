@@ -10,8 +10,10 @@ Values are starting guesses; adjust once real footage is available.
 POSE_MODEL_PATH = "landmarks_from_image_test/models/pose_landmarker_heavy.task"
 
 # ---- Cameras (ours) ----------------------------------------------------------
-# The pipeline takes 2 to 4 cameras in a front arc, iPhones and webcams mixed.
-MIN_CAMERAS, MAX_CAMERAS = 2, 4
+# At least two cameras in a front arc, iPhones and webcams mixed; no upper
+# limit (design decision D-024). Triangulating a joint needs two views, and
+# every extra camera adds detection time linearly and refinement time faster.
+MIN_CAMERAS = 2
 
 # ---- Stage 2a: sync --------------------------------------------------------
 # Only search this many seconds from the start of each video for the clap.
