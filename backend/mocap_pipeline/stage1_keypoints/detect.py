@@ -52,15 +52,16 @@ def detect_video(video_path: str, model_path: str) -> Keypoints2D:
         raise FileNotFoundError(f"Could not open video: {video_path}")
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    width = 0   # set to 0 for now, will be updated later!
+    height = 0  # set to 0 for now, will be updated later!
 
     points, confidence, timestamps = [], [], []
 
     with create_landmarker(model_path) as landmarker:
         frame_idx = 0
         last_ms = -1
-        while True:
+
+        while True:     # while video can still be read, continues
             ok, frame = cap.read()
             if not ok:
                 break
@@ -99,6 +100,9 @@ def detect_video(video_path: str, model_path: str) -> Keypoints2D:
             frame_idx += 1
 
     cap.release()
+
+    if frame_idx == 0:
+        raise ValueError(f"No frames could be read from video: {video_path}")
 
     return Keypoints2D(
         camera_id=Path(video_path).stem,
