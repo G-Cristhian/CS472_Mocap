@@ -160,8 +160,8 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
     """
     n = len(video_paths)
 
-    if not config.MIN_CAMERAS <= n <= config.MAX_CAMERAS:
-        raise ValueError(f"Give {config.MIN_CAMERAS} to {config.MAX_CAMERAS} videos, one per camera (got {n}).")
+    if n < config.MIN_CAMERAS:
+        raise ValueError(f"Give at least {config.MIN_CAMERAS} videos, one per camera (got {n}).")
     if stop_after is not None and stop_after not in STAGES:
         raise ValueError(f"stop_after must be one of {STAGES}, got {stop_after!r}")
     if detector not in BACKENDS:
@@ -304,9 +304,9 @@ def per_camera(parser, name, values, n):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Phone/webcam videos (2-4 cameras) to 3D joints.")
+    parser = argparse.ArgumentParser(description="Phone/webcam videos (2 or more cameras) to 3D joints.")
     parser.add_argument("videos", nargs="+",
-                        help="One video per camera, 2 to 4, each starting with a clap. The first is the reference camera.")
+                        help="One video per camera, at least 2, each starting with a clap. The first is the reference camera.")
     parser.add_argument("--height-m", type=float, default=None,
                         help="Performer height in metres; sets the real-world scale (needed when calibrating).")
     parser.add_argument("--out", default=str(DEFAULT_OUT),
@@ -343,8 +343,8 @@ def main() -> None:
     args = parser.parse_args()
 
     n = len(args.videos)
-    if not config.MIN_CAMERAS <= n <= config.MAX_CAMERAS:
-        parser.error(f"give {config.MIN_CAMERAS} to {config.MAX_CAMERAS} videos, one per camera (got {n})")
+    if n < config.MIN_CAMERAS:
+        parser.error(f"give at least {config.MIN_CAMERAS} videos, one per camera (got {n})")
     if args.sync is not None and len(args.sync) != n:
         parser.error(f"--sync needs one clap time per video ({n})")
     if args.charuco_videos and len(args.charuco_videos) != n:

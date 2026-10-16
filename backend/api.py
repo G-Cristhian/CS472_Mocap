@@ -5,7 +5,7 @@ HTTP API around the mocap pipeline, for the web frontend.
     python -m pip install -r requirements-api.txt
     uvicorn api:app
 
-Upload 2-4 videos as a take, the pipeline runs on it in the background (one
+Upload 2 or more videos as a take, the pipeline runs on it in the background (one
 take at a time, each in its own process), then fetch out3d.json / out3d.bvh.
 
 Each take lives in backend/output/<take_id>/:
@@ -56,7 +56,8 @@ from mocap_pipeline.run_pipeline import OUTPUT_DIR, run
 
 TAKE_ID_RE = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
 VIDEO_EXTENSIONS = {".mov", ".mp4"}
-CAMERA_FIELDS = [f"cam{c}" for c in range(config.MAX_CAMERAS)]
+# video fields are cam0, cam1, ... with no gaps; any number from config.MIN_CAMERAS up
+CAMERA_FIELD_RE = re.compile(r"^cam(\d+)$")
 MAX_NAME_LENGTH = 100
 # projects only live in the frontend mock data for now, so any well-formed id is accepted
 PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
@@ -373,14 +374,13 @@ class TakeUpload:
         self._name = name
 
         if filename is None:
-            if name in CAMERA_FIELDS:
+            if CAMERA_FIELD_RE.match(name):
                 return self.fail(422, f"{name} must be a video file")
             self._text = b""
             return
 
-        if name not in CAMERA_FIELDS:
-            return self.fail(422, f"unexpected file field {name!r}; videos go in cam0 to "
-                                  f"{CAMERA_FIELDS[-1]}")
+        if not CAMERA_FIELD_RE.match(name):
+            return self.fail(422, f"unexpected file field {name!r}; videos go in cam0, cam1, ...")
         ext = Path(filename.decode("utf-8", "replace")).suffix.lower()
         if ext not in VIDEO_EXTENSIONS:
             return self.fail(422, f"{name}: only .mov and .mp4 videos are accepted")
@@ -412,12 +412,18 @@ class TakeUpload:
             self._text = None
 
 
+def camera_number(field: str) -> int:
+    """cam12 -> 12, so camera fields sort numerically rather than as text."""
+    return int(CAMERA_FIELD_RE.match(field).group(1))
+
+
 def check_upload(upload: TakeUpload) -> tuple[list[str], float, str | None, str | None]:
     """Video paths in camera order, height, name, project id; raises UploadError (422)."""
     n = len(upload.videos)
-    if sorted(upload.videos) != CAMERA_FIELDS[:n] or not config.MIN_CAMERAS <= n <= config.MAX_CAMERAS:
-        raise UploadError(422, f"give {config.MIN_CAMERAS} to {config.MAX_CAMERAS} videos as cam0, cam1, ... "
-                               f"with no gaps (got {', '.join(sorted(upload.videos)) or 'none'})")
+    expected = [f"cam{c}" for c in range(n)]
+    if n < config.MIN_CAMERAS or sorted(upload.videos, key=camera_number) != expected:
+        raise UploadError(422, f"give at least {config.MIN_CAMERAS} videos as cam0, cam1, ... with no gaps "
+                               f"(got {', '.join(sorted(upload.videos, key=camera_number)) or 'none'})")
 
     unknown = set(upload.fields) - {"height_m", "name", "project_id"}
     if unknown:
@@ -440,7 +446,7 @@ def check_upload(upload: TakeUpload) -> tuple[list[str], float, str | None, str 
     if project_id and not PROJECT_ID_RE.match(project_id):
         raise UploadError(422, "project_id must be up to 100 letters, digits, - or _")
 
-    return [str(upload.videos[c]) for c in CAMERA_FIELDS[:n]], height_m, name, project_id
+    return [str(upload.videos[c]) for c in expected], height_m, name, project_id
 
 
 # ---- endpoints -------------------------------------------------------------------------
