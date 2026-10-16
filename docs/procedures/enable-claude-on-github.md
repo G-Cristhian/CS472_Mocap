@@ -2,11 +2,15 @@
 
 For the repository owner. Takes about fifteen minutes. Needed once, before the design-decision workflow in `.github/workflows/design-decisions.yml` can run.
 
-What you need: admin on `G-Cristhian/CS472_Mocap`, an Anthropic Console account at https://console.anthropic.com with billing set up, and the `gh` command signed in on your machine (`gh auth status`).
+Every step here needs admin on `G-Cristhian/CS472_Mocap`. The repository is owned by a personal account, and GitHub gives collaborators on a personal repository write access only; there is no admin role to hand out. So as of 2026-10-16 all four steps are Cristhian's. (Moving the repository into a GitHub organization, which is free, would let other members be made admins and would let the app be installed once for every repository the team creates.)
+
+You also need an Anthropic Console account at https://console.anthropic.com with billing set up.
 
 ## 1. Install the Claude GitHub App (repository owner only)
 
-The workflow authenticates through the app, so this comes first. A GitHub App installs on the account that owns the repository, so only Cristhian can do this step; a collaborator with admin sees only their own repositories in the install dialog. Steps 2 to 4 can be done by any repository admin.
+The workflow authenticates through the app, so this comes first. A GitHub App installs on the account that owns the repository; a collaborator who opens the install dialog sees only their own repositories.
+
+As of 2026-10-16 the app is not installed. The team's existing agent-made pull requests were pushed from Claude Code sessions under Cristhian's own account, which does not involve the app.
 
 By hand, no tools needed: open https://github.com/apps/claude, click Install, choose "Only select repositories", pick `G-Cristhian/CS472_Mocap`, confirm.
 
