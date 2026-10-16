@@ -19,6 +19,18 @@ Results go to `backend/output/` (created automatically, ignored by git), whereve
 
 The calibration is reused on the next run; add `--recalibrate` if a camera moved or the number of cameras changed.
 
+## Choosing the pose model
+`--detector mediapipe|rtmpose` picks the stage 1 model (default `mediapipe`). Each model lives in `stage1_keypoints/backends.py` and fills the same 33 MediaPipe joints, so stages 2 and 3 do not change.
+
+- `mediapipe`: MediaPipe PoseLandmarker (heavy), tracks the performer between frames.
+- `rtmpose`: RTMPose with the Halpe-26 (body with feet) model, via `rtmlib`. A person detector runs every frame and the largest person is taken as the performer. Fills 21 of the 33 joints, every one stages 2 and 3 use (eye corners, mouth and fingers stay empty; the foot tip comes from the big toe). The models download on the first run, to `~/.cache/rtmlib`; `--model` is not used.
+
+To compare models on the same take, give each its own output and calibration, so neither reuses the other's:
+```
+$ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --height-m 1.75 --out output/mp/out3d.json --calibration output/mp/calibration.json
+$ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --height-m 1.75 --detector rtmpose --out output/rtm/out3d.json --calibration output/rtm/calibration.json
+```
+
 ---
 # Rerunning and debugging
 Every stage saves its result next to the `--out` file, named after it. For the default `out3d.json`:
@@ -30,7 +42,7 @@ Every stage saves its result next to the `--out` file, named after it. For the d
 | `calibration.json` | 2b | the cameras (already reused on the next run, see above) |
 | `out3d.pose.npz` | 2c | the 3D joints before smoothing |
 
-`--resume` loads these instead of recomputing: MediaPipe is skipped for a video whose keypoints file exists and whose video has not changed (size and modification time are checked), the clap search is skipped when the sync file exists, and triangulation is skipped when the pose file is newer than the calibration, sync and keypoints files. Smoothing and the `.bvh` always run, so tuning them is a quick `--resume` away:
+`--resume` loads these instead of recomputing: detection is skipped for a video whose keypoints file exists, whose video has not changed (size and modification time are checked) and which was made with the same `--detector`, the clap search is skipped when the sync file exists, and triangulation is skipped when the pose file is newer than the calibration, sync and keypoints files. Smoothing and the `.bvh` always run, so tuning them is a quick `--resume` away:
 ```
 $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --height-m 1.75            # full run, minutes
 $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --resume --no-smooth       # seconds
@@ -54,7 +66,7 @@ It takes seconds and says which files the pipeline cannot use.
 # Stages
 | Stage | File | What it does |
 |---|---|---|
-| 1 | `stage1_keypoints/detect.py` | MediaPipe on every frame: pixel joints, confidence, real frame times |
+| 1 | `stage1_keypoints/detect.py` | pose model (`backends.py`, `--detector`) on every frame: pixel joints, confidence, real frame times |
 | 2a | `stage2_reconstruct/sync.py` | finds the clap in each video's audio, puts all cameras on one 30 fps timeline |
 | 2b | `stage2_reconstruct/calibrate.py` | camera positions from the performer's joints (ours, not Liu et al.) |
 | 2b | `stage2_reconstruct/board_calibration.py` | ChArUco board fallback if the above fails |
