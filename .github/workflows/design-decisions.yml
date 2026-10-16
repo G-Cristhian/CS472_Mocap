@@ -1,0 +1,115 @@
+# Design decision detector. On every push to main, Claude reads the pushed
+# commits, adds any new design decisions to docs/decisions/DECISIONS.md with a
+# citation where one exists, and opens a pull request for human review.
+# Rules and statuses: docs/decisions/README.md
+#
+# Secrets:
+#   ANTHROPIC_API_KEY     required
+#   DISCORD_WEBHOOK_URL   optional; a channel webhook, posts a line when a PR is opened
+name: Design decisions
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/decisions/**"
+  workflow_dispatch:
+    inputs:
+      range:
+        description: "Commit range to review, e.g. 762e384..main"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: design-decisions
+  cancel-in-progress: false
+
+jobs:
+  interrogate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Pick the commit range
+        id: range
+        env:
+          INPUT_RANGE: ${{ github.event.inputs.range }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          if [ -n "$INPUT_RANGE" ]; then
+            range="$INPUT_RANGE"
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE" 2>/dev/null; then
+            range="HEAD~1..HEAD"
+          else
+            range="$BEFORE..$AFTER"
+          fi
+          echo "range=$range" >> "$GITHUB_OUTPUT"
+          echo "Reviewing $range"
+          git log --oneline "$range"
+
+      - name: Interrogate the commits
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are the design-interrogator for this repository. Read docs/decisions/README.md
+            and follow its procedure exactly. Then read .claude/agents/design-interrogator.md
+            for the working rules.
+
+            Review the commit range: ${{ steps.range.outputs.range }}
+
+            Add any new design decisions to docs/decisions/DECISIONS.md. Do not commit.
+            Write your final report (the shape given in the agent file) to
+            $RUNNER_TEMP/design-report.md. If nothing counted as a decision, still write the
+            report, with "New rows: none", and leave DECISIONS.md untouched.
+          claude_args: >-
+            --allowedTools "Read,Grep,Glob,Edit,Write,WebSearch,WebFetch,Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git rev-parse *)"
+            --max-turns 80
+
+      - name: Did the sheet change?
+        id: changed
+        run: |
+          if git diff --quiet -- docs/decisions/DECISIONS.md; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -f "$RUNNER_TEMP/design-report.md" ]; then
+            cat "$RUNNER_TEMP/design-report.md"
+          else
+            printf 'Range: %s\nNew rows: none\n(no report written)\n' "${{ steps.range.outputs.range }}" > "$RUNNER_TEMP/design-report.md"
+          fi
+
+      - name: Open a review PR with the new rows
+        id: pr
+        if: steps.changed.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: design-decisions/${{ github.run_id }}
+          base: main
+          title: "Design decisions found in ${{ steps.range.outputs.range }}"
+          body-path: ${{ runner.temp }}/design-report.md
+          commit-message: "docs(decisions): rows found in ${{ steps.range.outputs.range }}"
+          labels: design-decision
+          reviewers: GianniGuava
+          add-paths: docs/decisions/DECISIONS.md
+          delete-branch: true
+
+      - name: Notify Discord
+        if: steps.changed.outputs.changed == 'true' && env.DISCORD_WEBHOOK_URL != ''
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          PR_URL: ${{ steps.pr.outputs.pull-request-url }}
+          RANGE: ${{ steps.range.outputs.range }}
+        run: |
+          report="$(head -c 1500 "$RUNNER_TEMP/design-report.md")"
+          payload="$(jq -n --arg c "Design decisions found in $RANGE. Review: $PR_URL"$'\n'"\`\`\`"$'\n'"$report"$'\n'"\`\`\`" '{content: $c}')"
+          curl -sS -H "Content-Type: application/json" -d "$payload" "$DISCORD_WEBHOOK_URL"
