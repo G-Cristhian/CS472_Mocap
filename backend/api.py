@@ -35,6 +35,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import traceback
 from concurrent.futures import Future, ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
@@ -87,22 +88,42 @@ def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def _retry_sharing(action, attempts: int = 50, pause_s: float = 0.005):
+    """
+    Runs action(), retrying briefly on OSError. On Windows a file that another
+    process has open cannot be replaced, and a file being replaced cannot be
+    opened, so the API's reads and the worker's writes of status.json can
+    collide for a few milliseconds. The last error is raised.
+    """
+    for attempt in range(attempts):
+        try:
+            return action()
+        except OSError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(pause_s)
+
+
 def write_status(folder: Path, record: dict) -> None:
     """Atomic: the API reads status.json while the worker writes it."""
     fd, tmp = tempfile.mkstemp(dir=folder, prefix=".status-", suffix=".tmp")
     try:
         with os.fdopen(fd, "w") as fp:
             json.dump(record, fp, indent=2)
-        os.replace(tmp, folder / "status.json")
+        _retry_sharing(lambda: os.replace(tmp, folder / "status.json"))
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
 
 
+def _load_json(path: Path) -> dict:
+    with open(path) as fp:
+        return json.load(fp)
+
+
 def read_status(folder: Path) -> dict | None:
     try:
-        with open(folder / "status.json") as fp:
-            record = json.load(fp)
+        record = _retry_sharing(lambda: _load_json(folder / "status.json"))
     except (OSError, ValueError):
         return None
     record.setdefault("project_id", None)  # takes recorded before project_id existed
