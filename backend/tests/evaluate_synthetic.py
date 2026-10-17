@@ -5,7 +5,11 @@ camera layouts and noise levels and print one table of errors.
     cd backend
     python -m tests.evaluate_synthetic              # the full table, a few minutes
     python -m tests.evaluate_synthetic --quick      # fewer rows, shorter routine
-    python -m tests.evaluate_synthetic --bvh out/synthetic_take.bvh   # also write a BVH for the viewer
+    python -m tests.evaluate_synthetic --bvh out/synthetic_take.bvh   # write the BVH somewhere else
+
+The BVH of the realistic 3-camera run always goes to backend/output/
+synthetic_take.bvh (the pipeline's own output folder, ignored by git) unless
+--bvh says otherwise.
 
 Columns: mean reprojection error the calibration reports; MPJPE (mean per
 joint position error) against the truth after the best rigid alignment
@@ -24,6 +28,7 @@ import numpy as np
 from mocap_pipeline import config
 from mocap_pipeline.joints import JOINT_INDEX, RIG_JOINTS
 from mocap_pipeline.stage2_reconstruct import calibrate, scale_floor, smooth, sync, triangulate
+from mocap_pipeline.run_pipeline import OUTPUT_DIR
 from mocap_pipeline.stage3_rig import bvh_writer, rotations, skeleton
 from tests import bvh_reader
 from tests.synthetic_scene import (PERFORMER_HEIGHT_M, Noise, Routine, Scene, aligned_mpjpe, camera_centre,
@@ -76,7 +81,9 @@ def row(label: str, m: dict, dt: float) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--quick", action="store_true", help="shorter routine and fewer configurations")
-    parser.add_argument("--bvh", default=None, help="write the final BVH of the 3-camera realistic run here")
+    parser.add_argument("--bvh", default=str(OUTPUT_DIR / "synthetic_take.bvh"),
+                        help="where to write the final BVH of the 3-camera realistic run "
+                             "(default: backend/output/synthetic_take.bvh)")
     args = parser.parse_args()
     warnings.filterwarnings("ignore")
 
@@ -133,7 +140,7 @@ def main() -> None:
     offsets = skeleton.rest_pose_offsets(skeleton.bone_lengths(rig_pos))
     root, local = rotations.solve_rotations(rig_pos, offsets)
     euler = rotations.to_euler_degrees(local, bvh_writer.ROTATION_ORDER)
-    path = args.bvh or "/tmp/synthetic_take.bvh"
+    path = args.bvh
     bvh_writer.write_bvh(path, offsets, root, euler, pose.fps)
     fk = bvh_reader.joint_positions(path)
     truth_rig = skeleton.rig_joint_positions(scene.truth_pose())
