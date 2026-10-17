@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+    <title>Mocap backend tester</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="top">
+      <strong>Mocap backend tester</strong>
+      <span class="muted" id="python-note">runs backend/mocap_pipeline on this machine</span>
+    </header>
+
+    <main>
+      <section id="setup" class="panel">
+        <h2>1. Pick the take</h2>
+        <div class="row">
+          <button id="choose" class="btn">Choose folder…</button>
+          <span id="folder" class="mono muted">no folder chosen</span>
+        </div>
+        <p class="muted small">The folder should hold one take: one video per camera, named so that sorting by name gives camera order (cam0 first). Tick the ones to use.</p>
+        <ul id="videos" class="videos"></ul>
+
+        <div class="grid">
+          <label>Performer height (m)<input id="height" type="number" step="0.01" min="1" max="2.5" value="1.75" /></label>
+          <label>Detector
+            <select id="detector">
+              <option value="mediapipe">MediaPipe (default)</option>
+              <option value="rtmpose">RTMPose</option>
+            </select>
+          </label>
+          <label>Field of view, non-iPhone cameras (°)<input id="fov" type="number" step="1" min="30" max="120" value="65" /></label>
+          <label class="wide">Output folder<input id="outdir" type="text" class="mono" /></label>
+          <label class="check"><input id="recalibrate" type="checkbox" checked /> Recalibrate (ignore an existing calibration.json)</label>
+          <label class="check"><input id="resume" type="checkbox" /> Resume (reuse saved stage files in the output folder)</label>
+        </div>
+        <div class="row">
+          <button id="run" class="btn primary" disabled>Run the pipeline</button>
+          <span id="setup-error" class="error"></span>
+        </div>
+      </section>
+
+      <section id="progress" class="panel" hidden>
+        <h2>2. Processing</h2>
+        <progress id="bar" max="1000" value="0"></progress>
+        <div class="row">
+          <span id="stage" class="pill">starting</span>
+          <span id="detail" class="detail">Starting the pipeline</span>
+          <span class="spacer"></span>
+          <button id="cancel" class="btn">Cancel</button>
+        </div>
+        <details id="log-box">
+          <summary>Log</summary>
+          <pre id="log" class="log"></pre>
+        </details>
+      </section>
+
+      <section id="preview" class="panel" hidden>
+        <h2>3. Result</h2>
+        <div id="result-error" class="error"></div>
+        <div id="viewer" class="viewer" aria-label="Skeleton preview; drag to rotate, wheel to zoom"></div>
+        <div class="transport">
+          <button id="play" class="btn" aria-label="Play or pause">Play</button>
+          <input id="time" type="range" min="0" max="1000" value="0" aria-label="Time" />
+          <span id="clock" class="mono">0.00 / 0.00 s</span>
+        </div>
+        <dl id="metrics" class="metrics"></dl>
+        <div class="row">
+          <button id="open-folder" class="btn">Open the output folder</button>
+          <button id="again" class="btn">Run another take</button>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

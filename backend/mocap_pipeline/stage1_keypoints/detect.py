@@ -12,6 +12,7 @@ Output: schemas.Keypoints2D for that camera.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import cv2
@@ -40,6 +41,11 @@ def detect_video(video_path: str, model_path: str, detector: str = DEFAULT_BACKE
         raise FileNotFoundError(f"Could not open video: {video_path}")
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    # MOCAP_PROGRESS=1 (set by the desktop tester) prints a line every 30 frames so a
+    # progress bar can follow detection, the slow stage. The frame count is the
+    # container's estimate and can be off by a few frames.
+    progress_every = 30 if os.getenv("MOCAP_PROGRESS") else 0
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     width = 0   # set to 0 for now, will be updated later!
     height = 0  # set to 0 for now, will be updated later!
 
@@ -71,6 +77,8 @@ def detect_video(video_path: str, model_path: str, detector: str = DEFAULT_BACKE
             points.append(frame_pts)
             confidence.append(frame_conf)
             frame_idx += 1
+            if progress_every and frame_idx % progress_every == 0:
+                print(f"progress: detect {video_path} {frame_idx}/{total_frames}", flush=True)
 
     cap.release()
 
