@@ -41,6 +41,8 @@ Every stage saves its result next to the `--out` file, named after it. For the d
 | `out3d.sync.json` | 2a | the clap time in each video and the shared 30 fps timeline |
 | `calibration.json` | 2b | the cameras (already reused on the next run, see above) |
 | `out3d.pose.npz` | 2c | the 3D joints before smoothing |
+| `out3d.metrics.json` | all | quality numbers for the run, see Metrics below |
+| `out3d.log` | all | everything the run printed, time-stamped |
 
 `--resume` loads these instead of recomputing: detection is skipped for a video whose keypoints file exists, whose video has not changed (size and modification time are checked) and which was made with the same `--detector`, the clap search is skipped when the sync file exists, and triangulation is skipped when the pose file is newer than the calibration, sync and keypoints files. Smoothing and the `.bvh` always run, so tuning them is a quick `--resume` away:
 ```
@@ -53,6 +55,24 @@ $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --resume --recalibrate
 `--stop-after keypoints|sync|calibrate|triangulate` runs up to that stage, writes its file and stops, so one person can hand another the data for the next stage without sharing the videos. The files load with `mocap_pipeline.io` (`load_keypoints`, `load_sync`, `load_rig`, `load_pose3d`).
 
 Tests (no videos or model needed): `cd backend && python -m pytest tests`. Stages 2 and 3 are checked against a synthetic performer with exactly known joints, seen by virtual phones in the protocol's camera arc (`tests/synthetic_scene.py`); `python -m tests.evaluate_synthetic` prints the error of every stage for several camera layouts and noise levels, and `--bvh out.bvh` writes the result for the viewer.
+
+---
+# Metrics
+Every run writes `out3d.metrics.json` (next to `--out`, also when the run fails or stops early) with the numbers that say how well the setup worked, and `out3d.log` with everything printed. There is no ground truth in the field, so these are precision and self-consistency measures, the ones the literature uses when truth is absent: reprojection error (Zhang 2000, DOI 10.1109/34.888718; Triggs et al. 1999, DOI 10.1007/3-540-44480-7_21) and limb-length variability (Karashchuk et al. 2021, DOI 10.1016/j.celrep.2021.109730). The synthetic tests add MPJPE against the truth (Ionescu et al. 2014, DOI 10.1109/TPAMI.2013.248).
+
+| Key | What it says |
+|---|---|
+| `stage1.<camera>` | frames, fraction with no person, mean confidence overall and per joint |
+| `sync` | clap time per camera, where the times came from, cross-check shift per camera in ms and whether it was applied |
+| `calibrate` | starting pair, distinct correspondences per pair (how much the performer moved), reprojection error per camera, camera types, board fallback |
+| `scale`, `floor` | upright frames, metres per unit, floor fit residual and spread, tilt from the body's up direction, whether the fitted plane was trusted |
+| `triangulate` | mean reprojection error overall and per joint, views dropped as outliers, joints failed, joints with fewer than 2 views |
+| `smooth.gaps` | gaps filled and gaps left missing |
+| `pose_raw`, `pose_final` | missing fraction overall and per joint, mean cameras per joint, before and after smoothing |
+| `rig.bone_lengths` | per bone: median length, standard deviation over the take and as a fraction; the cleanest precision number without ground truth |
+| `timing` | seconds per stage and total |
+
+Reading it: calibration error under about 3 px and bone-length standard deviation under about 1 cm mean the setup worked. A camera with a much higher reprojection error than the others moved or has the wrong field of view. A high missing fraction on one joint means that joint was hidden from all but one camera. The API serves the file at `GET /takes/<id>/metrics.json`.
 
 ---
 # Recording a session

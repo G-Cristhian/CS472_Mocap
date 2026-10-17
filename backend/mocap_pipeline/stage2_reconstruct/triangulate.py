@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from .. import config
+from .. import config, metrics
+from ..joints import MEDIAPIPE_JOINTS
 from ..schemas import CameraRig, Keypoints2D, Pose3D
 from .calibrate import rig_to_group
 
@@ -42,6 +43,7 @@ def triangulate_sequence(keypoints: list[Keypoints2D], rig: CameraRig) -> Pose3D
     p2ds = points.reshape(n_cams, -1, 2)
     p3ds = cgroup.triangulate(p2ds)
     max_error = config.MAX_REPROJECTION_ERROR_PX
+    views_dropped = 0
 
     # with 3+ cameras, a joint mis-detected in one camera is fixed by leaving that view out
     for _ in range(n_cams - 2):
@@ -53,6 +55,7 @@ def triangulate_sequence(keypoints: list[Keypoints2D], rig: CameraRig) -> Pose3D
             break
 
         worst = np.nanargmax(np.nan_to_num(per_cam[:, bad], nan=-1.0), axis=0)
+        views_dropped += int(bad.sum())
         p2ds = p2ds.copy()
         p2ds[worst, np.flatnonzero(bad)] = np.nan
         p3ds[bad] = cgroup.triangulate(p2ds[:, bad])
@@ -61,6 +64,17 @@ def triangulate_sequence(keypoints: list[Keypoints2D], rig: CameraRig) -> Pose3D
     errors = cgroup.reprojection_error(p3ds, p2ds, mean=True)
     failed = ~(errors < max_error)
     p3ds[failed] = np.nan
+
+    if metrics.active():
+        kept = np.where(failed, np.nan, errors).reshape(n_frames, n_joints)
+        with np.errstate(all="ignore"):
+            per_joint = np.nanmean(kept, axis=0)
+        metrics.record("triangulate", {
+            "cameras": int(n_cams), "frames": int(n_frames),
+            "mean_reprojection_px": float(np.nanmean(kept)) if np.isfinite(kept).any() else None,
+            "mean_reprojection_px_per_joint": {n: float(per_joint[j]) for j, n in enumerate(MEDIAPIPE_JOINTS)},
+            "views_dropped": views_dropped, "joints_failed": int(failed.sum()),
+            "joints_with_fewer_than_2_views": int((np.sum(~np.isnan(p2ds[:, :, 0]), axis=0) < 2).sum())})
 
     num_views = np.sum(~np.isnan(p2ds[:, :, 0]), axis=0)
     num_views[failed] = 0
