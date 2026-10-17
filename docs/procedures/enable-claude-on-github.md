@@ -31,7 +31,7 @@ Skip if step 1 stored it.
 1. Console: https://console.anthropic.com, API Keys, Create Key. Name it `cs472-mocap-github`. Copy it once; it is not shown again.
 2. GitHub: repository Settings, Secrets and variables, Actions, New repository secret. Name `ANTHROPIC_API_KEY`, paste the key.
 
-Set a monthly spend limit on the Console workspace while you are there, under Limits. The workflow runs once per push to main and a run costs cents, but a limit means a bug cannot run up a bill.
+Set a monthly spend limit on the Console workspace while you are there, under Limits. The workflow runs once per merged pull request plus an hourly sweep, and a run costs cents, but a limit means a bug cannot run up a bill.
 
 ## 3. Let Actions open pull requests
 
