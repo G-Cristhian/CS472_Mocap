@@ -13,6 +13,7 @@ Each take lives in backend/output/<take_id>/:
     status.json               the take record returned by the API
     log.txt                   everything the pipeline printed
     calibration.json, out3d.json, out3d.bvh   pipeline outputs
+    out3d.metrics.json, out3d.log             quality numbers and the pipeline's own log
 
 Environment variables:
     MOCAP_MAX_UPLOAD_MB   max size per video in MB (default 800)
@@ -520,6 +521,18 @@ def get_out3d_json(take_id: str) -> FileResponse:
 @app.get("/takes/{take_id}/out3d.bvh")
 def get_out3d_bvh(take_id: str) -> FileResponse:
     return result_file(take_id, "out3d.bvh", "text/plain")
+
+
+@app.get("/takes/{take_id}/metrics.json")
+def get_metrics(take_id: str) -> FileResponse:
+    """Quality numbers for the take (mocap_pipeline/metrics.py); written for failed takes too."""
+    folder, record = get_take(take_id)
+    if record.get("status") not in ("done", "failed"):
+        raise HTTPException(409, f"take is {record.get('status')}, not finished")
+    path = folder / "out3d.metrics.json"
+    if not path.is_file():
+        raise HTTPException(404, "metrics.json not found")
+    return FileResponse(path, media_type="application/json", filename="metrics.json")
 
 
 @app.delete("/takes/{take_id}", status_code=204)

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .. import config
+from .. import config, metrics
 from ..schemas import Keypoints2D, SyncResult
 
 
@@ -166,8 +166,10 @@ def _refine_against_reference(rms_ref, clap_ref, rms, clap, name):
 
     corr = np.correlate(b, a, mode="full")
     shift = (int(np.argmax(corr)) - (len(a) - 1)) * win_s
+    accepted = abs(shift) <= config.CLAP_MAX_REFINE_S
+    metrics.record(f"sync.cross_check.{name}", {"shift_ms": shift * 1000.0, "applied": bool(accepted)})
 
-    if abs(shift) > config.CLAP_MAX_REFINE_S:
+    if not accepted:
         print(f"warning: {name}: clap cross-check against camera 0 disagrees by {shift * 1000:.0f} ms, "
               f"keeping the detected clap (check it, or give --sync)")
         return clap

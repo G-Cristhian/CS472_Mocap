@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .. import config
+from .. import config, metrics
 from ..schemas import Pose3D
 
 
@@ -31,6 +31,7 @@ def fill_gaps(pose: Pose3D) -> Pose3D:
     out = p3ds.copy()
     frames = np.arange(len(p3ds))
     long_gaps = 0
+    filled = 0
 
     for j in range(p3ds.shape[1]):
         missing = np.isnan(p3ds[:, j]).any(axis=1)
@@ -43,9 +44,11 @@ def fill_gaps(pose: Pose3D) -> Pose3D:
             if e - s > config.MAX_GAP_FILL_FRAMES:
                 long_gaps += 1
                 continue
+            filled += 1
             for axis in range(3):
                 out[s:e, j, axis] = np.interp(frames[s:e], frames[known], p3ds[known, j, axis])
 
+    metrics.record("smooth.gaps", {"filled": filled, "left_missing": long_gaps})
     if long_gaps:
         print(f"{long_gaps} gaps longer than {config.MAX_GAP_FILL_FRAMES} frames left missing")
     return Pose3D(fps=pose.fps, points=out, num_views=pose.num_views.copy())

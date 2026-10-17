@@ -19,11 +19,12 @@ import os
 import numpy as np
 
 from pathlib import Path
-from . import config, io
+from . import config, io, metrics
 from .stage1_keypoints import detect
 from .stage1_keypoints.backends import BACKENDS, DEFAULT_BACKEND
 from .stage2_reconstruct import calibrate, scale_floor, smooth, sync, triangulate
 from .stage3_rig import bvh_writer, rotations, skeleton
+from .joints import RIG_JOINTS, RIG_PARENTS
 from .stage2_reconstruct.iphone_camera import (is_iphone_video, iphone_intrinsics, IPhoneMetadataError,
                                                MODEL_KEY)
 
@@ -157,6 +158,9 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
     the last stage to run (one of STAGES); its file is written and run() returns.
     detector is the stage 1 pose model (a name in backends.BACKENDS); saved
     joints are only reused if the same detector made them.
+
+    Every run writes <out>.metrics.json and <out>.log next to the output
+    (metrics.py), also when it fails or stops early.
     """
     n = len(video_paths)
 
@@ -167,6 +171,26 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
     if detector not in BACKENDS:
         raise ValueError(f"detector must be one of {tuple(BACKENDS)}, got {detector!r}")
 
+    metrics.start(out_path, videos=[str(v) for v in video_paths], detector=detector,
+                  performer_height_m=performer_height_m, resume=resume, stop_after=stop_after)
+    try:
+        with metrics.time("total"):
+            stopped = _run_stages(video_paths, out_path, performer_height_m, model_path, camera, fov, clap_times,
+                                  calibration_path, recalibrate, max_error_px, charuco_videos, smoothing, bvh,
+                                  resume, stop_after, detector)
+    except BaseException as e:
+        path = metrics.finish("failed", f"{type(e).__name__}: {e}")
+        raise
+    path = metrics.finish("done" if stopped is None else f"stopped after {stopped}")
+    if path is not None and stopped is None:
+        print(f"Saved metrics to {path}")
+
+
+def _run_stages(video_paths, out_path, performer_height_m, model_path, camera, fov, clap_times,
+                calibration_path, recalibrate, max_error_px, charuco_videos, smoothing, bvh,
+                resume, stop_after, detector) -> str | None:
+    """The stages in order; returns the stage name if stop_after ended the run early."""
+    n = len(video_paths)
     model_path = model_path or default_model_path()
     camera = camera or ["auto"] * n
     fov = fov or [config.DEFAULT_HFOV_DEG] * n
@@ -196,14 +220,16 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
                 kp = saved
         if kp is None:
             print(f"Detecting joints in {video} ({detector})")
-            kp = detect.detect_video(video, model_path, detector=detector)
+            with metrics.time(f"detect.{cid}"):
+                kp = detect.detect_video(video, model_path, detector=detector)
             kp.camera_id = cid
             io.save_keypoints(kp, str(kp_path), {**io.video_fingerprint(video), "detector": detector})
         kp.camera_id = cid
         keypoints.append(kp)
+        metrics.record(f"stage1.{cid}", metrics.keypoints_summary(kp))
 
     if _stop("keypoints", stop_after):
-        return
+        return "keypoints"
 
     # Stage 2a: one shared clock. A saved sync file supplies the clap times
     # (skipping the audio search); resampling is cheap and always runs.
@@ -218,7 +244,8 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
         except KeyError:
             print(f"{sync_path.name} is for different cameras, searching for the clap again")
     try:
-        sync_result, keypoints = sync.synchronise(video_paths, keypoints, clap_times)
+        with metrics.time("sync"):
+            sync_result, keypoints = sync.synchronise(video_paths, keypoints, clap_times)
     except sync.ClapNotFoundError as e:
         raise SystemExit(f"{e}\nGive the clap time in each video by hand with --sync T0 T1 ... (seconds)")
     # rewriting an unchanged sync file would make the saved 3D points look stale
@@ -226,15 +253,21 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
         io.save_sync(sync_result, str(sync_path))
 
     print("Clap at " + ", ".join(f"{cid} {t:.3f} s" for cid, t in sync_result.clap_time_s.items()))
+    metrics.record("sync.clap_time_s", sync_result.clap_time_s)
+    metrics.record("sync.clap_times_from", "given" if clap_times is not None and not sync_from_file
+                   else "saved file" if sync_from_file else "audio")
+    metrics.record("sync.common_frames", int(len(sync_result.common_timestamps)))
+    metrics.record("sync.common_fps", float(config.TARGET_FPS))
 
     if _stop("sync", stop_after):
-        return
+        return "sync"
 
     # Stage 2b: where the cameras are, then real-world units, floor and Y up.
     calib_path = Path(calibration_path)
     if calib_path.exists() and not recalibrate:
         print(f"Using existing calibration {calib_path}")
         rig = io.load_rig(str(calib_path))
+        metrics.record("calibrate.reused_file", str(calib_path))
 
         if len(rig.cameras) != n:
             raise SystemExit(f"{calib_path} has {len(rig.cameras)} cameras but {n} videos were given, "
@@ -244,17 +277,22 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
         if performer_height_m is None:
             raise SystemExit("--height-m (performer height in metres) is needed to calibrate")
 
-        rig, from_board = calibrate_cameras(keypoints, video_paths, types, fov, max_error_px, charuco_videos)
-        rough_pose = triangulate.triangulate_sequence(keypoints, rig)
+        with metrics.time("calibrate"):
+            rig, from_board = calibrate_cameras(keypoints, video_paths, types, fov, max_error_px, charuco_videos)
+            rough_pose = triangulate.triangulate_sequence(keypoints, rig)
 
-        # a board calibration is already in metres, it only needs the floor and Y up
-        rig = scale_floor.make_metric(rig, rough_pose, performer_height_m, rescale=not from_board)
+            # a board calibration is already in metres, it only needs the floor and Y up
+            rig = scale_floor.make_metric(rig, rough_pose, performer_height_m, rescale=not from_board)
+        metrics.record("calibrate.from_board", bool(from_board))
         io.save_rig(rig, str(calib_path))
 
         print(f"Saved calibration to {calib_path}")
 
+    metrics.record("calibrate.reprojection_error_px", rig.reprojection_error_px)
+    metrics.record("calibrate.camera_types", dict(zip(ids, types)))
+
     if _stop("calibrate", stop_after):
-        return
+        return "calibrate"
 
     # Stage 2c: final 3D joints. Saved before smoothing, since smoothing is the
     # cheap step most likely to be tuned. Stale if any input file is newer.
@@ -264,14 +302,18 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
         print(f"Using saved 3D joints from {pose_path.name}")
         pose = io.load_pose3d(str(pose_path))
     else:
-        pose = triangulate.triangulate_sequence(keypoints, rig)
+        with metrics.time("triangulate"):
+            pose = triangulate.triangulate_sequence(keypoints, rig)
         io.save_pose3d(pose, str(pose_path))
+    metrics.record("pose_raw", metrics.pose_summary(pose))
 
     if _stop("triangulate", stop_after):
-        return
+        return "triangulate"
 
     if smoothing:
-        pose = smooth.smooth(smooth.fill_gaps(pose))
+        with metrics.time("smooth"):
+            pose = smooth.smooth(smooth.fill_gaps(pose))
+    metrics.record("pose_final", metrics.pose_summary(pose))
 
     io.save_pose3d_json(pose, out_path, sync_result.common_timestamps)
     print(f"Saved {len(pose.points)} frames of 3D joints to {out_path}")
@@ -279,13 +321,16 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
     # Stage 3: skeleton rig file (.bvh next to the JSON, same name).
     if bvh:
         bvh_path = Path(out_path).with_suffix(".bvh")
-        export_bvh(pose, str(bvh_path))
+        with metrics.time("rig"):
+            export_bvh(pose, str(bvh_path))
         print(f"Saved skeleton animation to {bvh_path}")
+    return None
 
 
 def export_bvh(pose, bvh_path: str) -> None:
     """Stage 3: Pose3D -> H36M skeleton with fixed bone lengths -> joint rotations -> .bvh."""
     rig_positions = skeleton.rig_joint_positions(pose)
+    metrics.record("rig.bone_lengths", metrics.bone_length_summary(rig_positions, RIG_JOINTS, RIG_PARENTS))
     offsets = skeleton.rest_pose_offsets(skeleton.bone_lengths(rig_positions))
     root_positions, local_rotations = rotations.solve_rotations(rig_positions, offsets)
     euler = rotations.to_euler_degrees(local_rotations, bvh_writer.ROTATION_ORDER)
