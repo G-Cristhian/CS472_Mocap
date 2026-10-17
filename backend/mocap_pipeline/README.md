@@ -97,7 +97,7 @@ It takes seconds and says which files the pipeline cannot use.
 | 3a | `stage3_rig/skeleton.py` | 33 MediaPipe joints to the 17-joint H36M skeleton, fixed bone lengths, T-pose |
 | 3b | `stage3_rig/rotations.py` | each joint's rotation per frame |
 | 3c | `stage3_rig/bvh_writer.py` | writes the .bvh |
-| - | `placement/` | camera placement tool: still the outline's placeholders |
+| - | `placement/` | camera placement tool: scores a rig's coverage (`metric.py`) and searches for a layout by simulated annealing (`anneal.py`), Rahimian & Kearney 2015 |
 
 All tunable numbers are in `config.py`.
 
