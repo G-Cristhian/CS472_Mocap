@@ -6,7 +6,7 @@ The performer is an articulated figure with the 33 MediaPipe joints and
 exactly fixed bone lengths, built so that the pipeline's height rule holds
 exactly: ears sit HEAD_TOP_ABOVE_EARS_M below the top of the head and the
 heel landmarks HEEL_ABOVE_FLOOR_M above the floor (both from config). It
-performs the field test routine (docs/field-test-protocol.md, section 5):
+performs the field test routine (docs/procedures/filming.md, section 5):
 stand still, walk a loop with the arms raised and the body turning, then a
 fast punching sequence.
 

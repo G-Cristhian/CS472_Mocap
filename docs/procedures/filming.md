@@ -184,6 +184,8 @@ The full pipeline takes minutes per take and does not need to run at the venue.
 ---
 ## 10. Processing afterwards
 
+The current version of this section, with the metrics file the pipeline now writes, is [processing-a-take.md](processing-a-take.md). The commands below still work.
+
 One command per take, from `backend/`. iPhones ignore `--fov`; it applies to the Fold only. Give the performer's height from the log. Keep each take's output and calibration in its own folder.
 
 ```
