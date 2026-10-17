@@ -51,7 +51,7 @@ Rules:
 
 ## How the detector works
 
-On every push to `main`, the workflow in `.github/workflows/design-decisions.yml` runs Claude over the pushed commit range with the procedure below. If it adds or changes rows, it opens a pull request against `main` with the new rows, requests review from the maintainers, and posts to Discord when a webhook secret is set. Merging the PR is the review act: edit the Status and Reviewer notes columns in the PR before merging.
+When a pull request merges into `main`, and once an hour as a sweep for direct pushes, the workflow in `.github/workflows/design-decisions.yml` runs Claude over the commits on `main` since the one recorded in `.last-reviewed`, with the procedure below. If it adds rows, it opens a pull request against `main` from the branch `design-decisions/pending`, requests review from the maintainers, and adds later findings to that same pull request until it is merged. Quiet hours add nothing. Merging the PR is the review act: edit the Status and Reviewer notes columns in the PR before merging. (GitHub's `push` event cannot be used: the Claude action refuses it.)
 
 The same procedure runs locally through the `design-interrogator` subagent in `.claude/agents/`, for example "use the design-interrogator subagent on 762e384..HEAD".
 

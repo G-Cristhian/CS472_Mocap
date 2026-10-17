@@ -1,6 +1,13 @@
-# Design decision detector. On every push to main, Claude reads the pushed
-# commits, adds any new design decisions to docs/decisions/DECISIONS.md with a
-# citation where one exists, and opens a pull request for human review.
+# Design decision detector. When a pull request merges into main, and once an
+# hour as a sweep for direct pushes, Claude reads the commits on main since the
+# one recorded in docs/decisions/.last-reviewed, adds any new design decisions
+# to docs/decisions/DECISIONS.md with a citation where one exists, advances the
+# marker, and opens (or updates) one pull request for human review from the
+# branch design-decisions/pending.
+#
+# Not "on: push": anthropics/claude-code-action refuses push events
+# ("Unsupported event type: push", runs 7 to 9 on 2026-10-16). pull_request,
+# schedule and workflow_dispatch are supported.
 # Rules and statuses: docs/decisions/README.md
 #
 # Secrets:
@@ -8,14 +15,15 @@
 name: Design decisions
 
 on:
-  push:
+  pull_request:
+    types: [closed]
     branches: [main]
-    paths-ignore:
-      - "docs/decisions/**"
+  schedule:
+    - cron: "15 * * * *"
   workflow_dispatch:
     inputs:
       range:
-        description: "Commit range to review, e.g. 762e384..main"
+        description: "Commit range to review, e.g. 762e384..main (default: since the marker)"
         required: false
         default: ""
 
@@ -30,31 +38,54 @@ concurrency:
 
 jobs:
   interrogate:
+    # a closed pull request only counts if it merged, and the review PR itself is skipped
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.merged == true && github.event.pull_request.head.ref != 'design-decisions/pending')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
+
+      - name: Continue the pending review branch, if there is one
+        run: |
+          git config user.name "design-decisions workflow"
+          git config user.email "workflow@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin design-decisions/pending >/dev/null 2>&1; then
+            git fetch origin design-decisions/pending
+            git merge --no-edit origin/design-decisions/pending
+          fi
 
       - name: Pick the commit range
         id: range
         env:
           INPUT_RANGE: ${{ github.event.inputs.range }}
-          BEFORE: ${{ github.event.before }}
-          AFTER: ${{ github.sha }}
         run: |
+          after="$(git rev-parse origin/main)"
+          echo "after=$after" >> "$GITHUB_OUTPUT"
           if [ -n "$INPUT_RANGE" ]; then
             range="$INPUT_RANGE"
-          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE" 2>/dev/null; then
-            range="HEAD~1..HEAD"
           else
-            range="$BEFORE..$AFTER"
+            marker="$(tr -d '[:space:]' < docs/decisions/.last-reviewed 2>/dev/null || true)"
+            if [ -z "$marker" ] || ! git cat-file -e "$marker" 2>/dev/null; then
+              marker="0e1eea9"
+            fi
+            range="$marker..$after"
           fi
           echo "range=$range" >> "$GITHUB_OUTPUT"
           echo "Reviewing $range"
           git log --oneline "$range"
+          if [ "$(git rev-list --count "$range")" = "0" ]; then
+            echo "empty=true" >> "$GITHUB_OUTPUT"
+            echo "Nothing new since the marker."
+          else
+            echo "empty=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Interrogate the commits
+        if: steps.range.outputs.empty == 'false'
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -64,6 +95,9 @@ jobs:
             for the working rules.
 
             Review the commit range: ${{ steps.range.outputs.range }}
+
+            Ignore changes under docs/decisions/, .claude/ and .github/ when looking for
+            decisions: they are the sheet's own machinery.
 
             Add any new design decisions to docs/decisions/DECISIONS.md. Do not commit.
             Write your final report (the shape given in the agent file) to
@@ -75,7 +109,11 @@ jobs:
 
       - name: Did the sheet change?
         id: changed
+        if: steps.range.outputs.empty == 'false'
+        env:
+          AFTER: ${{ steps.range.outputs.after }}
         run: |
+          echo "$AFTER" > docs/decisions/.last-reviewed
           if git diff --quiet -- docs/decisions/DECISIONS.md; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
@@ -87,17 +125,17 @@ jobs:
             printf 'Range: %s\nNew rows: none\n(no report written)\n' "${{ steps.range.outputs.range }}" > "$RUNNER_TEMP/design-report.md"
           fi
 
-      - name: Open a review PR with the new rows
+      - name: Open or update the review PR
         id: pr
-        if: steps.changed.outputs.changed == 'true'
+        if: steps.range.outputs.empty == 'false' && steps.changed.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v7
         with:
-          branch: design-decisions/${{ github.run_id }}
+          branch: design-decisions/pending
           base: main
-          title: "Design decisions found in ${{ steps.range.outputs.range }}"
+          title: "[AI] Design decisions found since ${{ steps.range.outputs.range }}"
           body-path: ${{ runner.temp }}/design-report.md
-          commit-message: "docs(decisions): rows found in ${{ steps.range.outputs.range }}"
+          commit-message: "[AI] docs(decisions): rows found in ${{ steps.range.outputs.range }}"
           labels: design-decision
           reviewers: GianniGuava
-          add-paths: docs/decisions/DECISIONS.md
+          add-paths: docs/decisions/DECISIONS.md,docs/decisions/.last-reviewed
           delete-branch: true
