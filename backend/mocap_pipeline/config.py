@@ -106,3 +106,16 @@ MAX_CONVERGENCE_DEG = 140.0
 # Beyond this distance a camera is treated as not seeing the point. The paper
 # used 3.65 m for marker cameras; retune for phones.
 CAMERA_EFFECTIVE_RANGE_M = 6.0
+# (ours) a target point no camera sees costs 360 plus this (the paper's
+# equation 1 penalty, our value): without it the annealer parks every camera
+# on one spot, since a point nobody sees costs no more than one everybody
+# sees from the same side.
+PLACEMENT_UNCOVERED_PENALTY_DEG = 360.0
+# (ours) fallback target points when no recording exists: a grid over the
+# capture volume, half-width and step in metres on the floor, and the heights.
+PLACEMENT_GRID_HALF_WIDTH_M = 1.5
+PLACEMENT_GRID_STEP_M = 0.5
+PLACEMENT_GRID_HEIGHTS_M = (0.1, 0.9, 1.5)
+# (ours) at most this many joint positions are sampled from a recording to
+# score a layout; the annealer evaluates the cost thousands of times.
+PLACEMENT_MAX_TARGET_POINTS = 300
