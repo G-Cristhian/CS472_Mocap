@@ -5,6 +5,14 @@
 # marker, and opens (or updates) one pull request for human review from the
 # branch design-decisions/pending.
 #
+# Commits that touch only docs/decisions/, .claude/ or .github/ (the sheet's own
+# machinery) are not reviewed; when the whole range is such commits the Claude
+# step is skipped, so an idle hour costs nothing.
+#
+# Debugging: the full Claude transcript is printed in the job log
+# (show_full_output) and uploaded as the artifact claude-execution-output.
+# Run it by hand with dry_run to see the report without opening a PR.
+#
 # Not "on: push": anthropics/claude-code-action refuses push events
 # ("Unsupported event type: push", runs 7 to 9 on 2026-10-16). pull_request,
 # schedule and workflow_dispatch are supported.
@@ -26,6 +34,11 @@ on:
         description: "Commit range to review, e.g. 762e384..main (default: since the marker)"
         required: false
         default: ""
+      dry_run:
+        description: "Print the report but do not open or update the review PR"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -80,8 +93,16 @@ jobs:
           if [ "$(git rev-list --count "$range")" = "0" ]; then
             echo "empty=true" >> "$GITHUB_OUTPUT"
             echo "Nothing new since the marker."
+            exit 0
+          fi
+          # commits that change something outside the sheet's own machinery
+          reviewable="$(git log --format=%h "$range" -- . ':!docs/decisions' ':!.claude' ':!.github' | wc -l)"
+          if [ "$reviewable" = "0" ]; then
+            echo "empty=true" >> "$GITHUB_OUTPUT"
+            echo "Every commit in the range touches only docs/decisions/, .claude/ or .github/; nothing to review."
           else
             echo "empty=false" >> "$GITHUB_OUTPUT"
+            echo "$reviewable commit(s) touch files outside the excluded paths."
           fi
 
       - name: Interrogate the commits
@@ -101,11 +122,20 @@ jobs:
 
             Add any new design decisions to docs/decisions/DECISIONS.md. Do not commit.
             Write your final report (the shape given in the agent file) to
-            $RUNNER_TEMP/design-report.md. If nothing counted as a decision, still write the
+            ${{ runner.temp }}/design-report.md. If nothing counted as a decision, still write the
             report, with "New rows: none", and leave DECISIONS.md untouched.
+          show_full_output: true
           claude_args: >-
             --allowedTools "Read,Grep,Glob,Edit,Write,WebSearch,WebFetch,Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git rev-parse *)"
             --max-turns 80
+
+      - name: Keep the Claude transcript
+        if: always() && steps.range.outputs.empty == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-execution-output
+          path: ${{ runner.temp }}/claude-execution-output.json
+          if-no-files-found: ignore
 
       - name: Did the sheet change?
         id: changed
@@ -127,7 +157,7 @@ jobs:
 
       - name: Open or update the review PR
         id: pr
-        if: steps.range.outputs.empty == 'false' && steps.changed.outputs.changed == 'true'
+        if: steps.range.outputs.empty == 'false' && steps.changed.outputs.changed == 'true' && !inputs.dry_run
         uses: peter-evans/create-pull-request@v7
         with:
           branch: design-decisions/pending
