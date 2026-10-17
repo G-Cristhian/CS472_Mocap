@@ -1,6 +1,6 @@
-<!-- Copied from: multicam_3d/README.md, updated for the mocap_pipeline layout -->
+<!-- Copied from: legacy/multicam_3d/README.md, updated for the mocap_pipeline layout -->
 # mocap_pipeline
-The team's outline with stages 1 and 2 filled in from our multi-camera pipeline (`backend/multicam_3d`): same folders, function names and data shapes (`schemas.py`). Each file starts with a comment saying which `multicam_3d` file it was copied from.
+The team's outline with stages 1 and 2 filled in from our first multi-camera pipeline (now `backend/legacy/multicam_3d`, kept for reference): same folders, function names and data shapes (`schemas.py`). Each file starts with a comment saying which `multicam_3d` file it was copied from.
 
 Videos from 2 or more cameras (iPhones and webcams can be mixed), each starting with a clap, go in. 3D joints per frame come out, in metres, Y up, floor at Y = 0.
 
@@ -13,7 +13,7 @@ $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV cam2.mp4 --height-m 1.
 ```
 On Linux without a desktop, MediaPipe also needs the GL libraries: `sudo apt install libegl1 libgles2 libgl1`.
 
-The MediaPipe model defaults to the one in `backend/landmarks_from_image_test/models/`. `MODEL_FILEPATH` in a `.env` file or `--model` overrides it.
+The MediaPipe model defaults to the one in `backend/models/`. `MODEL_FILEPATH` in a `.env` file or `--model` overrides it.
 
 Results go to `backend/output/` (created automatically, ignored by git), wherever you run the command from: the 3D joints to `out3d.json`, the skeleton animation to `out3d.bvh` (same name as the JSON, `--no-bvh` to skip it) and the calibration to `calibration.json`. `--out take01.json` / `--calibration ...` save somewhere else instead (missing folders are created).
 

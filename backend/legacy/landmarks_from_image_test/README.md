@@ -12,7 +12,7 @@ This test/demo is to ensure landmarks are being generated on an image
     $ python -m pip install mediapipe
     ```
 
-3. Ensure there is a model the detector can pull from in the `/models/` directory
+3. Ensure there is a model the detector can pull from: the repo's copy now lives in `backend/models/pose_landmarker_heavy.task` (moved there when this demo became legacy); point `MODEL_FILEPATH` at it
 
 4. Ensure there is a an image file in the `/random_media/` directory. .png/.jpg will work
 

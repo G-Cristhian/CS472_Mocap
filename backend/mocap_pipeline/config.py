@@ -4,10 +4,9 @@ Values are starting guesses; adjust once real footage is available.
 """
 
 # ---- Stage 1: 2D keypoints -------------------------------------------------
-# Path to the MediaPipe model, relative to backend/. The repo already ships one
-# in backend/landmarks_from_image_test/models/. MODEL_FILEPATH in .env or
-# --model overrides it.
-POSE_MODEL_PATH = "landmarks_from_image_test/models/pose_landmarker_heavy.task"
+# Path to the MediaPipe model, relative to backend/. The repo ships one in
+# backend/models/. MODEL_FILEPATH in .env or --model overrides it.
+POSE_MODEL_PATH = "models/pose_landmarker_heavy.task"
 
 # ---- Cameras (ours) ----------------------------------------------------------
 # At least two cameras in a front arc, iPhones and webcams mixed; no upper

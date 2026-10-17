@@ -42,7 +42,7 @@ The tests take about a minute.[^4] The benchmark runs stages 2 and 3 on a synthe
 
 ## 4. The pose model
 
-The MediaPipe model file ships in the repository (`backend/landmarks_from_image_test/models/pose_landmarker_heavy.task`) and is the default[^6], so nothing to download. If you plan to compare detectors (see [comparing-pose-models.md](comparing-pose-models.md)), run RTMPose once now so it downloads its models into `~/.cache/rtmlib` while you have internet[^7]:
+The MediaPipe model file ships in the repository (`backend/models/pose_landmarker_heavy.task`) and is the default[^6], so nothing to download. If you plan to compare detectors (see [comparing-pose-models.md](comparing-pose-models.md)), run RTMPose once now so it downloads its models into `~/.cache/rtmlib` while you have internet[^7]:
 
 ```
 python -c "from mocap_pipeline.stage1_keypoints.backends import create_backend; create_backend('rtmpose').close(); print('rtmpose ready')"

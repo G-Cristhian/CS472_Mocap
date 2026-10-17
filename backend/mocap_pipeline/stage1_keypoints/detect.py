@@ -1,7 +1,7 @@
 """
 Stage 1: run a pose model on every frame of one video.
 
-Starting point: backend/landmarks_from_image_test/ already does this for a
+Starting point: backend/legacy/landmarks_from_image_test/ already does this for a
 single image (detector.py, main.py). This module is the video version.
 
 The model itself lives in backends.py (MediaPipe by default); this module
