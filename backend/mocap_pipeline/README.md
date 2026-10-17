@@ -76,7 +76,7 @@ Reading it: calibration error under about 3 px and bone-length standard deviatio
 
 ---
 # Recording a session
-How to set up the phones, the room and the performer, and what to record, is in [`docs/field-test-protocol.md`](../../docs/field-test-protocol.md). Before leaving the venue, check the files of each take (resolution, frame rate, audio, iPhone lens metadata, clap found) with
+How to set up the phones, the room and the performer, and what to record, is in [`docs/procedures/filming.md`](../../docs/procedures/filming.md), and what to do with the files afterwards in [`docs/procedures/processing-a-take.md`](../../docs/procedures/processing-a-take.md). Before leaving the venue, check the files of each take (resolution, frame rate, audio, iPhone lens metadata, clap found) with
 ```
 $ python -m mocap_pipeline.check_videos take01/*
 ```

@@ -1,6 +1,6 @@
 """
 Pre-flight check for recorded videos, meant to run at the venue before the
-tripods come down (docs/field-test-protocol.md, section 9):
+tripods come down (docs/procedures/filming.md, section 9):
 
     cd backend
     python -m mocap_pipeline.check_videos take01/*
