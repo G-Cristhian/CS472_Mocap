@@ -18,6 +18,7 @@ import type { Take } from '@/lib/api'
 import type { Source } from '@/types'
 import { SOURCE_COLOR } from './SkeletonViewport'
 import type { MotionInfo, MotionSource } from '@/features/viewer/MotionViewport'
+import { CameraView2D } from '@/features/viewer/CameraView2D'
 import './projects.css'
 
 // the 3D viewer pulls in three.js, so it loads only when a project is opened
@@ -74,7 +75,7 @@ export function ProjectDetailPage() {
     return [...known, ...padding].slice(0, Math.max(1, total))
   })
   const [viewer, setViewer] = useState<ViewerState>({ message: 'No take selected' })
-  const [tab, setTab] = useState<'rig' | 'streaming' | 'export'>('rig')
+  const [tab, setTab] = useState<'rig' | 'cameras' | 'streaming' | 'export'>('rig')
   const [selectedPart, setSelectedPart] = useState('left-forearm')
   const [hidden, setHidden] = useState<Source[]>([])
   const [playing, setPlaying] = useState(false)
@@ -337,6 +338,9 @@ export function ProjectDetailPage() {
             <button role="tab" aria-selected={tab === 'rig'} onClick={() => setTab('rig')}>
               Rig
             </button>
+            <button role="tab" aria-selected={tab === 'cameras'} onClick={() => setTab('cameras')}>
+              Cameras
+            </button>
             <button role="tab" aria-selected={tab === 'streaming'} onClick={() => setTab('streaming')}>
               Streaming
             </button>
@@ -412,6 +416,21 @@ export function ProjectDetailPage() {
                 </div>
               </div>
             </>
+          )}
+
+          {tab === 'cameras' && (
+            <div className="stack" style={{ gap: 14 }}>
+              <h3 style={{ fontSize: 17 }}>What each camera saw</h3>
+              <p style={{ color: 'var(--muted)', fontSize: 13.5 }}>
+                The 2D joints the detector found in every video, at the time the transport shows. Faint bones
+                mean low confidence; a missing figure means no person was found in that frame.
+              </p>
+              {viewer.take && viewer.take.status === 'done' ? (
+                <CameraView2D takeId={viewer.take.id} time={position} />
+              ) : (
+                <p style={{ color: 'var(--muted-2)', fontSize: 13 }}>Select a finished take to see its cameras.</p>
+              )}
+            </div>
           )}
 
           {tab === 'streaming' && (
