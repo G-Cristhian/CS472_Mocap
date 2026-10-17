@@ -1,6 +1,8 @@
 # Hourly routine prompt
 
-This is the prompt the scheduled cloud routine "Design decisions, hourly" runs with (claude.ai/code/routines, model Claude Opus 5.5, every hour on the hour UTC). It is kept here so the team can read exactly what the agent does. Change the routine and this file together.
+This is the prompt for the scheduled cloud routine "Design decisions, hourly" (claude.ai/code/routines, model Claude Opus 5.5, every hour on the hour UTC). It is kept here so the team can read exactly what the agent does. Change the routine and this file together.
+
+Status on 2026-10-16: not yet created. Creating it was refused with `repo_access_denied` even after `/web-setup`, so cloud access to this private repository needs the Claude GitHub App installed by the owner, the same step the workflow needs. Once that is done, either the workflow or this routine can be switched on.
 
 The routine does the same job as `.github/workflows/design-decisions.yml`, triggered by a clock instead of by GitHub, so it works without the Claude GitHub App being installed by the repository owner. The two can coexist: both use the `design-decisions/pending` branch, and the marker file `docs/decisions/.last-reviewed` keeps either from reviewing the same commits twice.
 

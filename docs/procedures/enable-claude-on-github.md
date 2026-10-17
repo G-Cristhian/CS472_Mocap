@@ -59,13 +59,8 @@ If the run is red at the "Interrogate the commits" step, the usual causes are a 
 
 Review happens in that pull request. Edit the Status and Reviewer notes columns of the new rows in `docs/decisions/DECISIONS.md` before merging. The statuses and what they mean are in `docs/decisions/README.md`.
 
-## Without the owner: the hourly routine
+## The hourly routine (also needs step 1)
 
-A scheduled cloud routine does the same job without the GitHub App, using a collaborator's own GitHub token. Any collaborator with push access can set this up for their account:
-
-1. Install the Claude Code CLI if `claude` is not recognised: `npm install -g @anthropic-ai/claude-code`.
-2. Make sure `gh auth status` shows you signed in to GitHub.
-3. Run `claude`, then inside the session `/login` (claude.ai account, not an API key), then `/web-setup`. It asks to send your `gh` token to your Claude account and prints "Connected as <username>". From then on cloud sessions and routines under your account can clone and push any repository that token can reach.
-4. The routine "Design decisions, hourly" at https://claude.ai/code/routines then runs under that access. Its prompt is `docs/decisions/routine-prompt.md`. Enable it there if it is disabled.
+A scheduled cloud routine (`docs/decisions/routine-prompt.md`) can do the same job as the workflow. On 2026-10-16 we tried to create it under a collaborator's account after `/web-setup` had sent that collaborator's GitHub token to Claude; creation was refused with `repo_access_denied`. For a private repository owned by another personal account, the App install in step 1 is required for the routine as well. After step 1, create it from https://claude.ai/code/routines with the prompt in that file, hourly, model Claude Opus 5.5.
 
 Routines draw down the subscription usage of the account that owns them, visible at https://claude.ai/settings/usage.
