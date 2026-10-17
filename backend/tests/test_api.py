@@ -22,6 +22,8 @@ pytest.importorskip("httpx")
 from fastapi.testclient import TestClient  # noqa: E402
 
 import api  # noqa: E402
+from mocap_pipeline import io  # noqa: E402
+from tests.conftest import make_keypoints, make_sync  # noqa: E402
 
 VIDEO = b"\x00\x00\x00\x18ftypmp42" + b"not really a video" * 4
 
@@ -58,6 +60,11 @@ def fake_run(video_paths, out_path, performer_height_m=None, calibration_path=No
     """Stands in for run_pipeline.run: prints a stage line, writes the result files."""
     print(f"Detecting joints in {video_paths[0]} (mediapipe)")
     out = Path(out_path)
+    ids = [Path(v).stem for v in video_paths]
+    for cid, video in zip(ids, video_paths):           # stage 1 and 2a files, as the real run leaves them
+        io.save_keypoints(make_keypoints(camera_id=cid, video_path=str(video)),
+                          str(io.stage_paths(out_path, ids)["keypoints"][cid]))
+    io.save_sync(make_sync(ids), str(io.stage_paths(out_path)["sync"]))
     out.write_text(json.dumps([{"t": 0.0, "landmarks": {}}]))
     out.with_suffix(".bvh").write_text("HIERARCHY\nMOTION\nFrames: 1\n")
     Path(f"{out.with_suffix('')}.metrics.json").write_text(json.dumps({"run": {"status": "done"}}))
@@ -209,6 +216,29 @@ def test_results_and_metrics_are_served_when_done(client):
     assert client.get(f"/takes/{take_id}/out3d.json").json() == [{"t": 0.0, "landmarks": {}}]
     assert client.get(f"/takes/{take_id}/out3d.bvh").text.startswith("HIERARCHY")
     assert client.get(f"/takes/{take_id}/metrics.json").json()["run"]["status"] == "done"
+
+
+def test_keypoints_are_listed_and_served_per_camera(client):
+    take_id = upload(client, ("cam0", "cam1")).json()["id"]
+    assert client.get(f"/takes/{take_id}/keypoints.json").status_code in (409, 200)   # queued or already done
+    wait_for(client, take_id)
+
+    cameras = client.get(f"/takes/{take_id}/keypoints.json").json()["cameras"]
+    assert [c["camera_id"] for c in cameras] == ["cam0", "cam1"]
+    assert cameras[0] == {"camera_id": "cam0", "width": 1920, "height": 1080, "fps": 29.97, "frames": 12,
+                          "clap_time_s": 1.0}
+    assert cameras[1]["clap_time_s"] == 1.25
+
+    kp = client.get(f"/takes/{take_id}/keypoints/cam1.json").json()
+    assert kp["camera_id"] == "cam1" and kp["clap_time_s"] == 1.25
+    assert len(kp["joints"]) == 33 and kp["joints"][0] == "NOSE"
+    assert len(kp["timestamps"]) == 12 and len(kp["points"]) == 12 and len(kp["points"][0]) == 33
+    assert kp["points"][3][5] is None and kp["confidence"][3][5] == 0.0     # the gap conftest plants
+    assert isinstance(kp["points"][0][0], list) and len(kp["points"][0][0]) == 2
+
+    assert client.get(f"/takes/{take_id}/keypoints/cam7.json").status_code == 404
+    assert client.get(f"/takes/{take_id}/keypoints/camera.json").status_code == 404
+    assert client.get("/takes/20261016-000099-abcd/keypoints.json").status_code == 404
 
 
 def test_stage_is_parsed_from_the_pipelines_output(client, output_dir):
