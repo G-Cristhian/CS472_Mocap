@@ -1,0 +1,306 @@
+.landing {
+  min-height: 100vh;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* Extra class in the selector so these beat the global a:hover underline */
+.landing a,
+.landing a:hover,
+.landing a:focus-visible {
+  text-decoration: none;
+}
+
+/* Header */
+.landing__header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  height: 72px;
+  padding: 0 32px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+
+.landing__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+/* Section links sit in the middle, Log in and Get started on the right */
+.landing__nav {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.landing__links {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+}
+
+.landing__actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+/* :not(.btn) keeps the Get started button's own white text and hover colour */
+.landing__nav a:not(.btn) {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.landing__nav a:not(.btn):hover {
+  color: var(--ink);
+}
+
+/* Hero */
+.landing__hero {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 56px;
+  align-items: center;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 96px 32px 72px;
+}
+
+.landing__hero h1 {
+  font-size: clamp(40px, 5.2vw, 64px);
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  margin: 16px 0 20px;
+}
+
+.landing__lead {
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--muted);
+  max-width: 560px;
+  margin: 0;
+}
+
+.landing__ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.landing__ctas--center {
+  justify-content: center;
+}
+
+.landing__stage {
+  margin: 0;
+  padding: 28px;
+  border-radius: var(--r-xl);
+  background: var(--viewport);
+  box-shadow: var(--shadow-lg);
+}
+
+.landing__stage svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.landing__stage figcaption {
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted-2);
+  text-align: center;
+}
+
+.landing__joint {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: landing-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes landing-pulse {
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.18);
+  }
+}
+
+/* Sections */
+.landing__section {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 96px 32px;
+}
+
+.landing__eyebrow {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--purple);
+}
+
+.landing__h2 {
+  font-size: clamp(28px, 3.4vw, 40px);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  margin: 12px 0 0;
+}
+
+.landing__steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  margin: 48px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.landing__step,
+.landing__card {
+  border-radius: var(--r-lg);
+  padding: 28px;
+}
+
+.landing__step {
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.landing__step h3,
+.landing__card h3 {
+  font-size: 18px;
+  margin: 12px 0 8px;
+}
+
+.landing__step p,
+.landing__card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.landing__num {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--purple);
+}
+
+.landing__grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  margin: 48px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.landing__card {
+  background: var(--surface-2);
+}
+
+/* Closing band */
+.landing__band {
+  padding: 72px 32px;
+  border-radius: var(--r-xl);
+  background: var(--viewport);
+  color: #fff;
+  text-align: center;
+}
+
+.landing__band h2 {
+  font-size: clamp(28px, 3.4vw, 40px);
+  letter-spacing: -0.02em;
+  margin: 0 0 12px;
+}
+
+.landing__band p {
+  margin: 0 auto;
+  max-width: 520px;
+  color: var(--muted-2);
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+/* Footer */
+.landing__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 32px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.landing__footer nav {
+  display: flex;
+  gap: 20px;
+}
+
+.landing__footer a {
+  color: var(--muted);
+}
+
+.landing__footer a:hover {
+  color: var(--ink);
+}
+
+@media (max-width: 991px) {
+  .landing__links {
+    display: none;
+  }
+}
+
+@media (max-width: 960px) {
+  .landing__header {
+    padding: 0 16px;
+  }
+
+  .landing__hero {
+    grid-template-columns: 1fr;
+    padding-top: 64px;
+  }
+
+  .landing__steps,
+  .landing__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .landing__section {
+    padding: 64px 20px;
+  }
+
+  .landing__band {
+    padding: 48px 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing__joint {
+    animation: none;
+  }
+}

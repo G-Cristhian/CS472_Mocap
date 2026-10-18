@@ -149,17 +149,22 @@ export const ExportIcon = ({ size = 18 }: IconProps) => (
   </svg>
 )
 
+// MotionBoxPro mark: a play symbol whose corners are tracked joints, so playback is the motion.
+// Hex colours only, so public/logo.svg and public/favicon.svg match it exactly.
 export const LogoMark = ({ size = 26 }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true">
-    <path
-      d="M16 11.5V20M9.5 16.5L16 13l6.5 3.5M11 27l5-7 5 7"
-      stroke="currentColor"
-      strokeWidth="2.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <circle cx="16" cy="7" r="3.2" fill="var(--purple)" />
-    <circle cx="8" cy="17.5" r="2.4" fill="var(--blue)" />
-    <circle cx="24" cy="17.5" r="2.4" fill="var(--pink)" />
+    <defs>
+      <linearGradient id="mbp-v5-bg" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stopColor="#6d4aff" />
+        <stop offset="1" stopColor="#e31c79" />
+      </linearGradient>
+    </defs>
+    <rect width="32" height="32" rx="9" fill="url(#mbp-v5-bg)" />
+    <path d="M5 13.5H8.5M5 18.5H8.5" stroke="#fff" strokeOpacity="0.45" strokeWidth="1.6" strokeLinecap="round" />
+    <path d="M12 9.5L23 16L12 22.5Z" fill="#fff" fillOpacity="0.15" stroke="#fff" strokeWidth="1.8" strokeLinejoin="round" />
+    <circle cx="12" cy="9.5" r="2" fill="#fff" />
+    <circle cx="23" cy="16" r="2" fill="#fff" />
+    <circle cx="12" cy="22.5" r="2" fill="#fff" />
+    <circle cx="16.5" cy="16" r="1.2" fill="#fff" fillOpacity="0.8" />
   </svg>
 )

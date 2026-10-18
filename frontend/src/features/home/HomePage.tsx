@@ -6,6 +6,8 @@ import { NewProjectDialog } from '@/components/ui/NewProjectDialog'
 import { ProjectCard, ProjectRow } from '@/components/ui/ProjectCard'
 import { StickFigure } from '@/components/ui/StickFigure'
 import { PlusIcon } from '@/components/ui/Icons'
+import { useAuth } from '@/app/AuthProvider'
+import { firstName } from '@/lib/auth'
 import { currentUser } from '@/lib/data'
 import type { Project } from '@/types'
 import './home.css'
@@ -79,12 +81,20 @@ interface VariantProps {
 }
 
 /* ---------------- Variant A — card grid ---------------- */
+/** First name for "Welcome back, …" in the dashboard variants. */
+function useGreetingName() {
+  const { user } = useAuth()
+
+  return user ? firstName(user) : ''
+}
+
 function HomeCards({ projects, onNewProject }: VariantProps) {
+  const greetingName = useGreetingName()
   return (
     <div className="page">
       <div className="homeA__top">
         <div>
-          <h1 className="homeA__title">Welcome back, {currentUser.name}</h1>
+          <h1 className="homeA__title">Welcome back, {greetingName}</h1>
           <p className="homeA__sub">
             Pick up a project, or calibrate the suit once and let the cameras carry the rest of the
             session.
@@ -127,12 +137,13 @@ function HomeCards({ projects, onNewProject }: VariantProps) {
 
 /* ---------------- Variant B — purple hero ---------------- */
 function HomeHero({ projects, onNewProject }: VariantProps) {
+  const greetingName = useGreetingName()
   return (
     <>
       <section className="homeB__hero">
         <div className="homeB__heroInner">
           <div>
-            <h1>Welcome back, {currentUser.name}</h1>
+            <h1>Welcome back, {greetingName}</h1>
             <p>
               {currentUser.suit} is calibrated and four cameras are online. You are ready to record.
             </p>
@@ -169,6 +180,7 @@ function HomeHero({ projects, onNewProject }: VariantProps) {
 
 /* ---------------- Variant C — minimal list ---------------- */
 function HomeMinimal({ projects, onNewProject }: VariantProps) {
+  const greetingName = useGreetingName()
   const today = new Date().toLocaleDateString(undefined, {
     weekday: 'long',
     day: 'numeric',
@@ -181,7 +193,7 @@ function HomeMinimal({ projects, onNewProject }: VariantProps) {
         <div>
           <p className="eyebrow">{today}</p>
           <h1 className="homeC__title">
-            Welcome back, <b>{currentUser.name}</b>
+            Welcome back, <b>{greetingName}</b>
           </h1>
           <p className="homeC__status">
             {currentUser.suit} calibrated · 4 cameras online ·{' '}

@@ -1,6 +1,7 @@
 import type { Camera, Clip, Project, RigPart } from '@/types'
 
-export const currentUser = { name: 'Noah', initial: 'N', suit: 'Suit A' }
+// Mock calibration suit for the prototype screens. The person's name comes from their account.
+export const currentUser = { suit: 'Suit A' }
 
 export const projects: Project[] = [
   {

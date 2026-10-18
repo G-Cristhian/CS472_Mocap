@@ -37,7 +37,7 @@ export function MotionLibraryPage() {
     <div className="page">
       <div className="page-head">
         <div>
-          <h1 className="page-title">Motion Library</h1>
+          <h1 className="page-title">Recordings</h1>
           <p className="page-sub">Every take you have recorded, across all projects.</p>
         </div>
         <Link className="btn btn--primary" to="/record">
