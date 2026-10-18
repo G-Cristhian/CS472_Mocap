@@ -1,21 +1,22 @@
-# Design decision detector. When a pull request merges into main, and once an
-# hour as a sweep for direct pushes, Claude reads the commits on main since the
-# one recorded in docs/decisions/.last-reviewed, adds any new design decisions
+# Design decision detector. After every push to main (a PR merge or a direct
+# push), Claude reads the commits on main since the one recorded in
+# docs/decisions/.last-reviewed, adds any new design decisions
 # to docs/decisions/DECISIONS.md with a citation where one exists, advances the
 # marker, and opens (or updates) one pull request for human review from the
 # branch design-decisions/pending.
 #
 # Commits that touch only docs/decisions/, .claude/ or .github/ (the sheet's own
 # machinery) are not reviewed; when the whole range is such commits the Claude
-# step is skipped, so an idle hour costs nothing.
+# step is skipped, so merging the review PR itself costs nothing.
 #
 # Debugging: the full Claude transcript is printed in the job log
 # (show_full_output) and uploaded as the artifact claude-execution-output.
 # Run it by hand with dry_run to see the report without opening a PR.
 #
 # Not "on: push": anthropics/claude-code-action refuses push events
-# ("Unsupported event type: push", runs 7 to 9 on 2026-10-16). pull_request,
-# schedule and workflow_dispatch are supported.
+# ("Unsupported event type: push", runs 7 to 9 on 2026-10-16). It accepts
+# workflow_run, so push-to-main.yml runs on every push to main and this
+# workflow runs when that one completes.
 # Rules and statuses: docs/decisions/README.md
 #
 # Secrets:
@@ -23,11 +24,9 @@
 name: Design decisions
 
 on:
-  pull_request:
-    types: [closed]
-    branches: [main]
-  schedule:
-    - cron: "15 * * * *"
+  workflow_run:
+    workflows: ["Push to main"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       range:
@@ -51,10 +50,10 @@ concurrency:
 
 jobs:
   interrogate:
-    # a closed pull request only counts if it merged, and the review PR itself is skipped
+    # only a completed push to main; a hand-started run always goes ahead
     if: >-
-      github.event_name != 'pull_request' ||
-      (github.event.pull_request.merged == true && github.event.pull_request.head.ref != 'design-decisions/pending')
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
