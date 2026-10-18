@@ -55,7 +55,9 @@ After every push to `main` (a pull request merge or a direct push), the workflow
 
 The same procedure runs locally through the `design-interrogator` subagent in `.claude/agents/`, for example "use the design-interrogator subagent on 762e384..HEAD".
 
-The same procedure also runs as a scheduled cloud routine, "Design decisions, hourly", because the GitHub workflow needs the Claude GitHub App installed by the repository owner. The routine's prompt is kept in [routine-prompt.md](routine-prompt.md). Every hour it checks main for commits newer than the one recorded in `.last-reviewed`, reviews them, advances the marker, and pushes to the branch `design-decisions/pending`. It opens a pull request only when rows were added, and adds later findings to that pull request as comments until it is merged. The workflow and the routine share the branch and the marker, so running both never reviews a commit twice. How to review what either of them finds, from a laptop or a phone, is in `docs/procedures/reviewing-design-decisions.md`.
+The workflow can also be started by hand from the Actions tab ("Design decisions", Run workflow), with an optional commit range and a dry-run switch that prints the report without opening a pull request. How to review what it finds, from a laptop or a phone, is in `docs/procedures/reviewing-design-decisions.md`.
+
+A scheduled cloud routine was planned as a stand-in while the workflow could not run (its prompt lived in `routine-prompt.md` until 2026-10-18). It was never created, and the workflow has run on its own since the Claude GitHub App was installed, so the routine was dropped.
 
 Procedure the detector follows:
 
