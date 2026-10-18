@@ -55,7 +55,7 @@ class MediaPipeBackend(PoseBackend):
     """
     MediaPipe PoseLandmarker in VIDEO mode, so it tracks the person between
     frames, with num_poses=1 (single performer). Same options as
-    landmarks_from_image_test/detector.py. Segmentation masks are not needed.
+    legacy/landmarks_from_image_test/detector.py. Segmentation masks are not needed.
     """
     name = "mediapipe"
 

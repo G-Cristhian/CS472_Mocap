@@ -1,4 +1,4 @@
-# Copied from: multicam_3d/smooth.py (fill_gaps, smooth), filled into the
+# Copied from: legacy/multicam_3d/smooth.py (fill_gaps, smooth), filled into the
 # mocap_pipeline/stage2_reconstruct/smooth.py placeholder (now taking and returning Pose3D).
 """
 Stage 2c, clean-up: fill short gaps and remove jitter.
