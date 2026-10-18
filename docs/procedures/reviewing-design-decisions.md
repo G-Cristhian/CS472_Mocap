@@ -4,7 +4,7 @@ For whoever is the reviewer, currently Giancarlo. Works from a laptop or a phone
 
 ## How you find out
 
-The detector (the hourly routine, or the GitHub workflow once the app is installed) opens one pull request from the branch `design-decisions/pending` and requests you as reviewer. GitHub notifies you by email and, if you have the GitHub mobile app, by push notification. While that pull request stays open, later runs add their findings to it as comments instead of opening more. Quiet hours add nothing.
+The detector (the GitHub workflow `design-decisions.yml`, which runs after every push to `main`) opens one pull request from the branch `design-decisions/pending` and requests you as reviewer. GitHub notifies you by email and, if you have the GitHub mobile app, by push notification. While that pull request stays open, later runs add their findings to it instead of opening more. A push with nothing to review adds nothing.
 
 ## Reviewing on a laptop
 
@@ -18,11 +18,11 @@ Two ways, pick whichever is open.
 
 **GitHub mobile app.** Open the pull request, go to Files, open `DECISIONS.md`, tap the pencil to edit the file on the branch, change the Status cells, commit. Then merge from the pull request screen.
 
-**Claude Code on the phone.** Open a Claude Code session on the repository and dictate the verdicts, for example: "On the design-decisions/pending branch, in docs/decisions/DECISIONS.md, mark D-025 approved, D-026 out of scope with the note 'variable rename', and leave D-027. Commit and push." Then merge from the GitHub app or the pull request page. The session can also run the routine's procedure by hand if you want a review before the next hour: "use the design-interrogator subagent on <sha>..HEAD".
+**Claude Code on the phone.** Open a Claude Code session on the repository and dictate the verdicts, for example: "On the design-decisions/pending branch, in docs/decisions/DECISIONS.md, mark D-025 approved, D-026 out of scope with the note 'variable rename', and leave D-027. Commit and push." Then merge from the GitHub app or the pull request page. The session can also run the detector's procedure by hand: "use the design-interrogator subagent on <sha>..HEAD".
 
 ## Running it by hand
 
-From the routines page at claude.ai/code/routines, open "Design decisions, hourly" and run it now. Each run can be opened as a full session to read what the agent did. Routines draw down the subscription usage of the account that owns them; the total is at claude.ai/settings/usage, and no per-run token breakdown is shown.
+On GitHub, open Actions, pick "Design decisions" and press Run workflow. Two optional inputs: a commit range such as `762e384..main` (the default is everything since the marker in `docs/decisions/.last-reviewed`), and a dry-run switch that prints the report in the job log without opening or updating the pull request. The full Claude transcript is printed in the "Interrogate the commits" step and saved as the run artifact `claude-execution-output`. Runs bill the Anthropic API key in the repository's `ANTHROPIC_API_KEY` secret; the cost of each run is in the transcript's final result block.
 
 ## When a row has no source
 

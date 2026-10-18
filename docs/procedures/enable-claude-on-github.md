@@ -1,6 +1,6 @@
 # Enable Claude on the GitHub repository
 
-For the repository owner. Takes about fifteen minutes. Needed once, before the design-decision workflow in `.github/workflows/design-decisions.yml` can run. Until then the same job runs as an hourly cloud routine that needs no owner action; see `docs/decisions/routine-prompt.md` and the section at the end of this file.
+For the repository owner. Takes about fifteen minutes. Needed once, before the design-decision workflow in `.github/workflows/design-decisions.yml` can run. Done on 2026-10-17; kept for the next repository.
 
 Every step here needs admin on `G-Cristhian/CS472_Mocap`. The repository is owned by a personal account, and GitHub gives collaborators on a personal repository write access only; there is no admin role to hand out. So as of 2026-10-16 all four steps are Cristhian's. (Moving the repository into a GitHub organization, which is free, would let other members be made admins and would let the app be installed once for every repository the team creates.)
 
@@ -10,7 +10,7 @@ You also need an Anthropic Console account at https://console.anthropic.com with
 
 The workflow authenticates through the app, so this comes first. A GitHub App installs on the account that owns the repository; a collaborator who opens the install dialog sees only their own repositories.
 
-As of 2026-10-16 the app is not installed. The team's existing agent-made pull requests were pushed from Claude Code sessions under Cristhian's own account, which does not involve the app.
+Installed on 2026-10-17. Before that, the team's agent-made pull requests were pushed from Claude Code sessions under Cristhian's own account, which does not involve the app.
 
 By hand, no tools needed: open https://github.com/apps/claude, click Install, choose "Only select repositories", pick `G-Cristhian/CS472_Mocap`, confirm.
 
@@ -31,7 +31,7 @@ Skip if step 1 stored it.
 1. Console: https://console.anthropic.com, API Keys, Create Key. Name it `cs472-mocap-github`. Copy it once; it is not shown again.
 2. GitHub: repository Settings, Secrets and variables, Actions, New repository secret. Name `ANTHROPIC_API_KEY`, paste the key.
 
-Set a monthly spend limit on the Console workspace while you are there, under Limits. The workflow runs once per merged pull request plus an hourly sweep, and a run costs cents, but a limit means a bug cannot run up a bill.
+Set a monthly spend limit on the Console workspace while you are there, under Limits. The workflow runs once per push to `main` and skips pushes that touch only the sheet's own files; a run costs cents (about 10 to 20 cents for one commit), but a limit means a bug cannot run up a bill.
 
 ## 3. Let Actions open pull requests
 
@@ -48,19 +48,14 @@ The workflow, the agent definition and the decisions sheet arrive in one pull re
 
 ## 5. Test it by hand
 
-Actions tab, "Design decisions", Run workflow, enter a range such as `762e384..main`, Run. Within a few minutes you should see:
+Actions tab, "Design decisions", Run workflow, enter a range such as `762e384..main`, tick dry run, Run. Within a few minutes you should see a green run whose "Did the sheet change?" step prints the report. Run it again without dry run and, if rows were found, a pull request titled "[AI] Design decisions found since ..." opens from the branch `design-decisions/pending` with Giancarlo requested as reviewer.
 
-- a run that finishes green
-- a pull request titled "Design decisions found in ..." on a `design-decisions/` branch, with Giancarlo requested as reviewer
-
-If the run is red at the "Interrogate the commits" step, the usual causes are a missing `ANTHROPIC_API_KEY` secret or the app not installed on this repository. If it is red at "Open a review PR", step 3 was skipped.
+If the run is red at the "Interrogate the commits" step, the usual causes are a missing `ANTHROPIC_API_KEY` secret or the app not installed on this repository; the step's log says which. Note that the secret belongs to this repository only: a fork carrying the workflow fails every run until the file is deleted there. If it is red at "Open or update the review PR", step 3 was skipped.
 
 ## 6. Reviewing what it finds
 
 Review happens in that pull request. Edit the Status and Reviewer notes columns of the new rows in `docs/decisions/DECISIONS.md` before merging. The statuses and what they mean are in `docs/decisions/README.md`.
 
-## The hourly routine (also needs step 1)
+## The hourly routine (dropped)
 
-A scheduled cloud routine (`docs/decisions/routine-prompt.md`) can do the same job as the workflow. On 2026-10-16 we tried to create it under a collaborator's account after `/web-setup` had sent that collaborator's GitHub token to Claude; creation was refused with `repo_access_denied`. For a private repository owned by another personal account, the App install in step 1 is required for the routine as well. After step 1, create it from https://claude.ai/code/routines with the prompt in that file, hourly, model Claude Opus 5.5.
-
-Routines draw down the subscription usage of the account that owns them, visible at https://claude.ai/settings/usage.
+A scheduled cloud routine was planned as a stand-in while the workflow could not run. On 2026-10-16 creating it under a collaborator's account was refused with `repo_access_denied`: for a private repository owned by another personal account, the App install in step 1 is required for a routine as well. Once step 1 was done the workflow ran on its own, so the routine was never created and its prompt file (`docs/decisions/routine-prompt.md`) was removed on 2026-10-18. Forks of this repository that still carry the old workflow fail every scheduled run for lack of the secret; delete the workflow file there rather than adding a key.
