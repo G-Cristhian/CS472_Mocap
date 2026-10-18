@@ -1,0 +1,16 @@
+# Marker workflow: runs on every push to main and does nothing itself.
+# design-decisions.yml triggers on its completion (workflow_run), because the
+# Claude action refuses the push event but accepts workflow_run.
+name: Push to main
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  note:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Pushed $GITHUB_SHA to main; the Design decisions workflow runs next."
