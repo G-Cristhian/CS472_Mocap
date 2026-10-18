@@ -96,6 +96,18 @@ MAX_REPROJECTION_ERROR_PX = 15.0
 # Small window so fast motion such as a punch survives.
 SMOOTH_WINDOW_FRAMES = 7
 SMOOTH_POLYORDER = 2
+# (ours) Which smoother cleans the 3D joints: "savgol" (the Savitzky-Golay
+# filter above) or "butterworth" (a zero-phase low-pass, the biomechanics
+# standard: Winter, Biomechanics and Motor Control of Human Movement, 4th ed.,
+# 2009, chapter 3). --smoother picks one per run; both are kept so they can be
+# compared on the same take.
+SMOOTHER = "savgol"
+# Butterworth: cutoff in Hz and the order of one pass. The filter runs forward
+# and then backward (scipy sosfiltfilt), so the result has no lag and twice the
+# order. Winter's gait work uses 6 Hz; punches are faster, so this starts
+# higher. Must be below half the frame rate. Starting guess, not measured.
+BUTTER_CUTOFF_HZ = 8.0
+BUTTER_ORDER = 2
 
 # ---- Placement tool (Rahimian & Kearney 2015) ------------------------------
 # Two cameras can triangulate a point only if their viewing rays meet at an

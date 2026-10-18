@@ -8,6 +8,7 @@ Every stage writes its result next to --out (io.stage_paths). Re-running with
 --resume loads those files instead of recomputing, so a failed or tweaked run
 starts from the last good stage instead of running the pose model again.
 --detector picks the pose model for stage 1 (stage1_keypoints/backends.py).
+--smoother picks the stage 2c smoother (stage2_reconstruct/smooth.py).
 --stop-after writes one stage's file and exits, to hand data to a teammate.
 
 This file is the one place that knows the order of the stages. When the web
@@ -151,13 +152,16 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
         clap_times: list[float] | None = None, calibration_path: str = str(DEFAULT_CALIBRATION),
         recalibrate: bool = False, max_error_px: float = config.CALIB_MAX_ERROR_PX,
         charuco_videos: list[str] | None = None, smoothing: bool = True, bvh: bool = True,
-        resume: bool = False, stop_after: str | None = None, detector: str = DEFAULT_BACKEND) -> None:
+        resume: bool = False, stop_after: str | None = None, detector: str = DEFAULT_BACKEND,
+        smoother: str = config.SMOOTHER) -> None:
     """
     Runs every stage in order. With resume=True a stage whose file (io.stage_paths)
     exists and is still valid is loaded instead of recomputed. stop_after names
     the last stage to run (one of STAGES); its file is written and run() returns.
     detector is the stage 1 pose model (a name in backends.BACKENDS); saved
-    joints are only reused if the same detector made them.
+    joints are only reused if the same detector made them. smoother is the
+    stage 2c filter (a name in smooth.SMOOTHERS); it always runs, so two runs
+    with --resume compare smoothers on the same triangulation.
 
     Every run writes <out>.metrics.json and <out>.log next to the output
     (metrics.py), also when it fails or stops early.
@@ -170,14 +174,16 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
         raise ValueError(f"stop_after must be one of {STAGES}, got {stop_after!r}")
     if detector not in BACKENDS:
         raise ValueError(f"detector must be one of {tuple(BACKENDS)}, got {detector!r}")
+    if smoother not in smooth.SMOOTHERS:
+        raise ValueError(f"smoother must be one of {smooth.SMOOTHERS}, got {smoother!r}")
 
-    metrics.start(out_path, videos=[str(v) for v in video_paths], detector=detector,
+    metrics.start(out_path, videos=[str(v) for v in video_paths], detector=detector, smoother=smoother,
                   performer_height_m=performer_height_m, resume=resume, stop_after=stop_after)
     try:
         with metrics.time("total"):
             stopped = _run_stages(video_paths, out_path, performer_height_m, model_path, camera, fov, clap_times,
                                   calibration_path, recalibrate, max_error_px, charuco_videos, smoothing, bvh,
-                                  resume, stop_after, detector)
+                                  resume, stop_after, detector, smoother)
     except BaseException as e:
         path = metrics.finish("failed", f"{type(e).__name__}: {e}")
         raise
@@ -188,7 +194,7 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
 
 def _run_stages(video_paths, out_path, performer_height_m, model_path, camera, fov, clap_times,
                 calibration_path, recalibrate, max_error_px, charuco_videos, smoothing, bvh,
-                resume, stop_after, detector) -> str | None:
+                resume, stop_after, detector, smoother) -> str | None:
     """The stages in order; returns the stage name if stop_after ended the run early."""
     n = len(video_paths)
     model_path = model_path or default_model_path()
@@ -312,7 +318,7 @@ def _run_stages(video_paths, out_path, performer_height_m, model_path, camera, f
 
     if smoothing:
         with metrics.time("smooth"):
-            pose = smooth.smooth(smooth.fill_gaps(pose))
+            pose = smooth.smooth(smooth.fill_gaps(pose), smoother)
     metrics.record("pose_final", metrics.pose_summary(pose))
 
     io.save_pose3d_json(pose, out_path, sync_result.common_timestamps)
@@ -377,6 +383,10 @@ def main() -> None:
                         help="Calibration above this reprojection error (px) falls back to the ChArUco board.")
     parser.add_argument("--charuco-videos", nargs="+", default=None,
                         help="Board video from each camera, used only if calibration from the performer fails.")
+    parser.add_argument("--smoother", choices=list(smooth.SMOOTHERS), default=config.SMOOTHER,
+                        help=f"Stage 2c filter (default: {config.SMOOTHER}). savgol: Savitzky-Golay, "
+                             f"{config.SMOOTH_WINDOW_FRAMES}-frame window. butterworth: zero-phase low-pass at "
+                             f"{config.BUTTER_CUTOFF_HZ:g} Hz. Runs even with --resume, so two resumed runs compare them.")
     parser.add_argument("--no-smooth", action="store_true", help="Skip gap filling and smoothing.")
     parser.add_argument("--no-bvh", action="store_true",
                         help="Skip the skeleton animation (.bvh written next to the --out JSON).")
@@ -400,7 +410,7 @@ def main() -> None:
         clap_times=args.sync, calibration_path=args.calibration, recalibrate=args.recalibrate,
         max_error_px=args.max_error, charuco_videos=args.charuco_videos, smoothing=not args.no_smooth,
         bvh=not args.no_bvh, resume=args.resume, stop_after=args.stop_after,
-        detector=args.detector)
+        detector=args.detector, smoother=args.smoother)
 
 
 if __name__ == "__main__":

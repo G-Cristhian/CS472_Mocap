@@ -38,6 +38,8 @@ export function pipelineArgs(options: RunOptions): string[] {
     path.join(options.outDir, 'calibration.json'),
     '--detector',
     options.detector,
+    '--smoother',
+    options.smoother,
     '--fov',
     String(options.fov),
   ]

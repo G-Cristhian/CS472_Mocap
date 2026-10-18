@@ -110,7 +110,24 @@ def pose_summary(pose) -> dict:
         "missing_fraction": float(missing.mean()) if pts.size else None,
         "missing_fraction_per_joint": {n: float(missing[:, j].mean()) for j, n in enumerate(MEDIAPIPE_JOINTS)},
         "mean_views_per_joint": float(np.asarray(pose.num_views)[~missing].mean()) if (~missing).any() else None,
+        "jitter_mm": jitter_mm(pts),
     }
+
+
+def jitter_mm(pts) -> float | None:
+    """
+    Mean size of the second difference of each joint's position, in mm per
+    frame squared, over every frame whose two neighbours are present. Real
+    motion contributes too, so compare it between runs of the same take
+    (raw against smoothed, one smoother against another), not between takes.
+    """
+    pts = np.asarray(pts, dtype=float)
+    if len(pts) < 3:
+        return None
+    d2 = pts[2:] - 2 * pts[1:-1] + pts[:-2]                  # (F-2, J, 3)
+    size = np.linalg.norm(d2, axis=2)
+    size = size[np.isfinite(size)]
+    return float(size.mean() * 1000.0) if size.size else None
 
 
 def bone_length_summary(rig_positions, rig_joints, rig_parents) -> dict:

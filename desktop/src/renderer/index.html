@@ -31,6 +31,12 @@
               <option value="rtmpose">RTMPose</option>
             </select>
           </label>
+          <label>Smoother
+            <select id="smoother">
+              <option value="savgol">Savitzky-Golay (default)</option>
+              <option value="butterworth">Butterworth low-pass</option>
+            </select>
+          </label>
           <label>Field of view, non-iPhone cameras (°)<input id="fov" type="number" step="1" min="30" max="120" value="65" /></label>
           <label class="wide">Output folder<input id="outdir" type="text" class="mono" /></label>
           <label class="check"><input id="recalibrate" type="checkbox" checked /> Recalibrate (ignore an existing calibration.json)</label>
