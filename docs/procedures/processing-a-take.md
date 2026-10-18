@@ -64,6 +64,7 @@ Open `output/take01/out3d.bvh` in the frontend viewer (`cd frontend && npm run d
 All of these take seconds with `--resume`:
 
 - `--no-smooth` to see the raw triangulation.
+- `--smoother butterworth` for the other filter; compare `jitter_mm` in `out3d.metrics.json` and the fast moments in the viewer (see "Choosing the smoother" in `backend/mocap_pipeline/README.md`).
 - `--recalibrate` after changing `--fov` or `--max-error`.
 - A camera subset: the same take with fewer videos and a different `--out` and `--calibration` folder. Camera 0 must stay in the list.[^11]
 - Another detector: see [comparing-pose-models.md](comparing-pose-models.md).

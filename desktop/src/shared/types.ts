@@ -7,6 +7,7 @@ export interface VideoFile {
 }
 
 export type Detector = 'mediapipe' | 'rtmpose'
+export type Smoother = 'savgol' | 'butterworth'
 
 export interface RunOptions {
   /** absolute paths, camera 0 first */
@@ -15,6 +16,8 @@ export interface RunOptions {
   /** the take's own folder; out3d.json, calibration.json and the stage files go here */
   outDir: string
   detector: Detector
+  /** stage 2c filter; both are kept so they can be compared on one take */
+  smoother: Smoother
   /** horizontal field of view for non-iPhone cameras, degrees */
   fov: number
   recalibrate: boolean
