@@ -15,6 +15,8 @@ On Linux without a desktop, MediaPipe also needs the GL libraries: `sudo apt ins
 
 The MediaPipe model defaults to the one in `backend/models/`. `MODEL_FILEPATH` in a `.env` file or `--model` overrides it.
 
+Stage 1 detects the videos of a take several at a time, each in its own process: by default one per video, up to the processor's cores and `config.DETECT_MAX_AUTO_JOBS` (4), since each process loads its own copy of the pose model. `--jobs 2` limits it, `--jobs 1` detects them one after another. A video that cannot be read does not stop the others: every video is attempted, each failure is printed with the file and the reason, and the run stops at the end of stage 1 with a summary naming the failed files. The joints of the videos that worked are saved, so after fixing or leaving out the bad ones, `--resume` picks up where it left off.
+
 Results go to `backend/output/` (created automatically, ignored by git), wherever you run the command from: the 3D joints to `out3d.json`, the skeleton animation to `out3d.bvh` (same name as the JSON, `--no-bvh` to skip it) and the calibration to `calibration.json`. `--out take01.json` / `--calibration ...` save somewhere else instead (missing folders are created).
 
 The calibration is reused on the next run; add `--recalibrate` if a camera moved or the number of cameras changed.

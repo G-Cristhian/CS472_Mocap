@@ -233,7 +233,7 @@ def test_run_pipeline_end_to_end_on_the_synthetic_scene(tmp_path, monkeypatch):
     out = tmp_path / "output" / "take.json"
     run_pipeline.run(list(recorded), str(out), performer_height_m=PERFORMER_HEIGHT_M, model_path="unused",
                      camera=["webcam"] * 3, fov=[65.0] * 3, clap_times=scene.clap_times(),
-                     calibration_path=str(tmp_path / "output" / "calibration.json"))
+                     calibration_path=str(tmp_path / "output" / "calibration.json"), jobs=1)
 
     assert out.exists() and out.with_suffix(".bvh").exists()
     import json
@@ -255,7 +255,7 @@ def test_run_pipeline_end_to_end_on_the_synthetic_scene(tmp_path, monkeypatch):
     # resume works on the files it just wrote
     run_pipeline.run(list(recorded), str(out), performer_height_m=PERFORMER_HEIGHT_M, model_path="unused",
                      camera=["webcam"] * 3, fov=[65.0] * 3, clap_times=scene.clap_times(),
-                     calibration_path=str(tmp_path / "output" / "calibration.json"), resume=True)
+                     calibration_path=str(tmp_path / "output" / "calibration.json"), resume=True, jobs=1)
 
 
 def scene_joint_names():

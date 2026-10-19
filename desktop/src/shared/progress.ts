@@ -20,7 +20,6 @@ export class ProgressTracker {
   private stage: Stage = 'starting'
   private detail = 'Starting'
   private after = 0 // fraction of the non-detect stages completed, in WEIGHTS units
-  private current = ''
   readonly paths: { bvh?: string; json?: string; metrics?: string } = {}
   private lastError = ''
 
@@ -79,11 +78,17 @@ export class ProgressTracker {
       return
     }
     if ((m = line.match(/^Detecting joints in (.+?)( \(\w+\))?$/))) {
+      // several videos are detected at once, so one starting says nothing about the others
       const cam = this.cameraOf(m[1])
-      if (this.current) this.detectDone.set(this.current, 1)
-      this.current = cam ?? ''
       this.stage = 'detecting'
       this.detail = `Detecting joints in ${cam ?? baseName(m[1])}`
+      return
+    }
+    if ((m = line.match(/^Detected joints in (.+?)( \(.*\))?$/))) {
+      const cam = this.cameraOf(m[1])
+      if (cam) this.detectDone.set(cam, 1)
+      this.stage = 'detecting'
+      this.detail = `Detected joints in ${cam ?? baseName(m[1])}`
       return
     }
     if ((m = line.match(/^Using saved joints for (.+?) \(/))) {
@@ -163,6 +168,5 @@ export class ProgressTracker {
 
   private finishDetect(): void {
     for (const c of this.cameras) this.detectDone.set(c, 1)
-    this.current = ''
   }
 }

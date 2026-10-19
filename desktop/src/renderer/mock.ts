@@ -14,10 +14,10 @@ const VIDEOS: VideoFile[] = [
 
 function script(videos: string[], outDir: string): string[] {
   const lines = [`Cameras: ${videos.map((_, i) => `cam${i} webcam`).join(', ')}`]
-  for (const v of videos) {
-    lines.push(`Detecting joints in ${v} (mediapipe)`)
-    for (let f = 30; f <= 300; f += 30) lines.push(`progress: detect ${v} ${f}/300`)
-  }
+  for (const v of videos) lines.push(`Detecting joints in ${v} (mediapipe)`)
+  if (videos.length > 1) lines.push(`Detecting ${videos.length} videos at once, ${videos.length} processes`)
+  for (let f = 30; f <= 300; f += 30) for (const v of videos) lines.push(`progress: detect ${v} ${f}/300`)
+  for (const v of videos) lines.push(`Detected joints in ${v} (${(40 + videos.indexOf(v) * 3).toFixed(0)} s)`)
   lines.push(
     `Clap at ${videos.map((_, i) => `cam${i} ${(1 + i * 0.3).toFixed(3)} s`).join(', ')}`,
     'Calibration started from cam0 and cam1',

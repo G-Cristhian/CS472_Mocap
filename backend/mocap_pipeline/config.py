@@ -7,6 +7,13 @@ Values are starting guesses; adjust once real footage is available.
 # Path to the MediaPipe model, relative to backend/. The repo ships one in
 # backend/models/. MODEL_FILEPATH in .env or --model overrides it.
 POSE_MODEL_PATH = "models/pose_landmarker_heavy.task"
+# (ours) How many videos are detected at once, each in its own process. 0 is
+# automatic: one per video, up to the processor's core count and
+# DETECT_MAX_AUTO_JOBS (each process loads its own copy of the pose model,
+# roughly 1 to 2 GB of memory). 1 detects the videos one after another in
+# this process, as before. --jobs overrides it per run.
+DETECT_JOBS = 0
+DETECT_MAX_AUTO_JOBS = 4
 
 # ---- Cameras (ours) ----------------------------------------------------------
 # At least two cameras in a front arc, iPhones and webcams mixed; no upper
