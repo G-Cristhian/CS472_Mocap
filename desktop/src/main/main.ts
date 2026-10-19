@@ -6,7 +6,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 
-import { BACKEND_DIR, runPipeline, type RunHandle } from './pipeline'
+import { BACKEND_DIR, runCheck, runPipeline, type RunHandle } from './pipeline'
 import type { RunOptions, VideoFile } from '../shared/types'
 
 const VIDEO_EXTENSIONS = new Set(['.mov', '.mp4'])
@@ -54,6 +54,14 @@ ipcMain.handle('list-videos', async (_event, dir: string): Promise<VideoFile[]> 
 ipcMain.handle('default-out-dir', async (_event, videoDir: string): Promise<string> => {
   const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '').replace(/(\d{8})(\d{4})/, '$1-$2')
   return path.join(BACKEND_DIR, 'output', `${path.basename(videoDir)}-${stamp}`)
+})
+
+ipcMain.handle('check-videos', async (event, videos: string[], clapThreshold: number) => {
+  if (running) throw new Error('A run is already in progress')
+  const send = (channel: string, payload: unknown) => {
+    if (!event.sender.isDestroyed()) event.sender.send(channel, payload)
+  }
+  return runCheck(videos, clapThreshold, (line) => send('log', line))
 })
 
 ipcMain.handle('run', async (event, options: RunOptions) => {

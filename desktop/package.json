@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.main.json && vite build",
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json",
-    "test": "tsc -p tsconfig.main.json && node --test test/progress.test.cjs",
+    "test": "tsc -p tsconfig.main.json && node --test test/*.test.cjs",
     "preview": "vite"
   },
   "devDependencies": {
