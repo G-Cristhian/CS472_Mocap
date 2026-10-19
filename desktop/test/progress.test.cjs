@@ -116,3 +116,35 @@ test('unknown lines change nothing', () => {
   const { seen } = run(['Hello', 'warning: something odd'])
   assert.equal(seen.length, 0)
 })
+
+test('each video carries its own state, and a failed one stays failed', () => {
+  const { t, last } = run(
+    [
+      'Detecting joints in C:\\takes\\t1\\cam0.mp4 (mediapipe)',
+      'Detecting joints in C:\\takes\\t1\\cam1.mp4 (mediapipe)',
+      'progress: detect C:\\takes\\t1\\cam0.mp4 30/120',
+      'Detection failed for C:\\takes\\t1\\cam1.mp4: ValueError: No frames could be read from video',
+      'progress: detect C:\\takes\\t1\\cam1.mp4 30/120',
+      'Detected joints in C:\\takes\\t1\\cam0.mp4 (41 s)',
+    ],
+  )
+  assert.deepEqual(
+    last.videos,
+    [
+      { name: 'cam0.mp4', state: 'done', detail: '41 s' },
+      { name: 'cam1.mp4', state: 'failed', detail: 'ValueError: No frames could be read from video' },
+    ],
+  )
+  assert.equal(last.fraction, 0.75)
+  // a later stage's line does not undo the failure
+  t.feed('Clap at cam0 1.000 s, cam1 0.850 s')
+  assert.equal(t.snapshot().videos[1].state, 'failed')
+})
+
+test('reused joints show as reused, with a waiting video still waiting', () => {
+  const { last } = run(['Using saved joints for C:\\takes\\t1\\cam0.mp4 (out3d.keypoints.cam0.npz)'])
+  assert.deepEqual(
+    last.videos.map((v) => v.state),
+    ['reused', 'waiting'],
+  )
+})

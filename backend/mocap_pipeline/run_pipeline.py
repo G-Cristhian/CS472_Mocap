@@ -484,15 +484,22 @@ def _run_stages(
                 for cid, error in failures.items()
             ]
             saved = len(todo) - len(failures)
-            lines.append(
-                f"Detection failed for {len(failures)} of {len(todo)} video(s): "
-                f"{', '.join(names[c] for c in failures)}. "
-                + (
+            if saved:
+                advice = (
                     f"The other {saved} video(s)' joints are saved next to the output: "
                     f"fix or leave out the failed ones and rerun with --resume."
-                    if saved
-                    else "Check the files (are they videos the computer can play?)."
                 )
+            elif len(failures) > 1 and len(set(failures.values())) == 1:
+                # one error for every video points at the setup, not the files
+                advice = (
+                    "Every video failed the same way, so the cause is the setup "
+                    "(the pose model file or its Python packages), not the videos."
+                )
+            else:
+                advice = "Check the files (are they videos the computer can play?)."
+            lines.append(
+                f"Detection failed for {len(failures)} of {len(todo)} video(s): "
+                f"{', '.join(names[c] for c in failures)}. " + advice
             )
             raise SystemExit("\n".join(lines))
         for i, (video, cid) in enumerate(zip(video_paths, ids)):

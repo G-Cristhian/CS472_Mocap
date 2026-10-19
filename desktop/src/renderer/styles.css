@@ -48,9 +48,34 @@ progress { width: 100%; height: 14px; accent-color: var(--accent); }
 .viewer canvas { display: block; }
 .transport { display: flex; align-items: center; gap: 10px; }
 .transport input[type="range"] { flex: 1; accent-color: var(--accent); }
-.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 6px 14px; margin: 0; }
+.note { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+.note[hidden] { display: none; }
+.check { display: grid; gap: 4px; background: #181c21; border-radius: 6px; padding: 8px 10px; font-size: 12.5px; }
+.check[hidden] { display: none; }
+.check .file { display: grid; grid-template-columns: minmax(160px, 1fr) 2fr; gap: 2px 12px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.check .file:last-of-type { border-bottom: 0; }
+.check .file .name { font-family: var(--mono); }
+.check .file .facts { color: var(--muted); }
+.check .warn { color: #d29922; }
+.check .fail { color: var(--bad); }
+.check .verdict { font-weight: 600; }
+.check .verdict.good { color: var(--ok); }
+.check .verdict.bad { color: var(--bad); }
+.video-progress li .state { width: 72px; font-size: 12px; text-transform: capitalize; color: var(--muted); }
+.video-progress li .state.done, .video-progress li .state.reused { color: var(--ok); }
+.video-progress li .state.failed { color: var(--bad); }
+.video-progress li .state.detecting { color: var(--accent); }
+.video-progress li .vdetail { color: var(--muted); font-family: var(--mono); font-size: 12px; flex: 1; white-space: pre-wrap; }
+.sections { display: grid; gap: 10px; }
+.sections h3 { font-size: 13px; margin: 0 0 4px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 6px 14px; margin: 0; }
 .metrics div { background: #181c21; border-radius: 6px; padding: 6px 10px; }
 .metrics dt { color: var(--muted); font-size: 12px; }
-.metrics dd { margin: 0; font-family: var(--mono); font-size: 13px; }
+.metrics dd { margin: 0; font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap; }
 .metrics dd.good { color: var(--ok); }
 .metrics dd.bad { color: var(--bad); }
+h3 { font-size: 14px; margin: 0; }
+.runs { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.runs th, .runs td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-weight: normal; }
+.runs th { color: var(--muted); font-family: var(--font); }
+.runs tr.current td { background: #181c21; }
