@@ -10,15 +10,19 @@ starts from the last good stage instead of running the pose model again.
 --detector picks the pose model for stage 1 (stage1_keypoints/backends.py).
 --smoother picks the stage 2c smoother (stage2_reconstruct/smooth.py).
 --stop-after writes one stage's file and exits, to hand data to a teammate.
+--jobs sets how many videos stage 1 detects at once (default: all).
 
 This file is the one place that knows the order of the stages. When the web
 backend is built later, it should call run() rather than repeat this logic.
 """
 from __future__ import annotations
 import argparse
+import multiprocessing
 import os
+import time
 import numpy as np
 
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from . import config, io, metrics
 from .stage1_keypoints import detect
@@ -147,13 +151,42 @@ def _stop(stage: str, stop_after: str | None) -> bool:
     return False
 
 
+def _detect_one(video, model_path, detector):
+    """Stage 1 for one video, timed. Top level so a worker process can run it."""
+    t0 = time.perf_counter()
+    kp = detect.detect_video(video, model_path, detector=detector)
+    return kp, time.perf_counter() - t0
+
+
+def _detect_all(to_detect, model_path, detector, jobs):
+    """
+    Stage 1 for every (video, camera id) in to_detect, in order. jobs > 1 runs
+    up to that many videos at once, each in its own process (the pose model
+    is CPU-bound, so threads would not help); jobs=1 runs them here, one by one.
+    """
+    if not to_detect:
+        return []
+    jobs = min(jobs, len(to_detect))
+    for video, _ in to_detect:
+        print(f"Detecting joints in {video} ({detector})")
+    if jobs <= 1:
+        return [_detect_one(video, model_path, detector) for video, _ in to_detect]
+
+    print(f"Running {jobs} videos at once")
+    # spawn: a fresh interpreter per worker, forking a process that has
+    # already loaded OpenCV or a pose model can hang on macOS
+    with ProcessPoolExecutor(jobs, mp_context=multiprocessing.get_context("spawn")) as pool:
+        futures = [pool.submit(_detect_one, video, model_path, detector) for video, _ in to_detect]
+        return [f.result() for f in futures]
+
+
 def run(video_paths: list[str], out_path: str, performer_height_m: float | None = None,
         model_path: str | None = None, camera: list[str] | None = None, fov: list[float] | None = None,
         clap_times: list[float] | None = None, calibration_path: str = str(DEFAULT_CALIBRATION),
         recalibrate: bool = False, max_error_px: float = config.CALIB_MAX_ERROR_PX,
         charuco_videos: list[str] | None = None, smoothing: bool = True, bvh: bool = True,
         resume: bool = False, stop_after: str | None = None, detector: str = DEFAULT_BACKEND,
-        smoother: str = config.SMOOTHER) -> None:
+        smoother: str = config.SMOOTHER, jobs: int = 1) -> None:
     """
     Runs every stage in order. With resume=True a stage whose file (io.stage_paths)
     exists and is still valid is loaded instead of recomputed. stop_after names
@@ -161,7 +194,8 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
     detector is the stage 1 pose model (a name in backends.BACKENDS); saved
     joints are only reused if the same detector made them. smoother is the
     stage 2c filter (a name in smooth.SMOOTHERS); it always runs, so two runs
-    with --resume compare smoothers on the same triangulation.
+    with --resume compare smoothers on the same triangulation. jobs is how
+    many videos stage 1 detects at once, each in its own process.
 
     Every run writes <out>.metrics.json and <out>.log next to the output
     (metrics.py), also when it fails or stops early.
@@ -176,6 +210,8 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
         raise ValueError(f"detector must be one of {tuple(BACKENDS)}, got {detector!r}")
     if smoother not in smooth.SMOOTHERS:
         raise ValueError(f"smoother must be one of {smooth.SMOOTHERS}, got {smoother!r}")
+    if jobs < 1:
+        raise ValueError(f"jobs must be at least 1, got {jobs}")
 
     metrics.start(out_path, videos=[str(v) for v in video_paths], detector=detector, smoother=smoother,
                   performer_height_m=performer_height_m, resume=resume, stop_after=stop_after)
@@ -183,7 +219,7 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
         with metrics.time("total"):
             stopped = _run_stages(video_paths, out_path, performer_height_m, model_path, camera, fov, clap_times,
                                   calibration_path, recalibrate, max_error_px, charuco_videos, smoothing, bvh,
-                                  resume, stop_after, detector, smoother)
+                                  resume, stop_after, detector, smoother, jobs)
     except BaseException as e:
         path = metrics.finish("failed", f"{type(e).__name__}: {e}")
         raise
@@ -194,7 +230,7 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
 
 def _run_stages(video_paths, out_path, performer_height_m, model_path, camera, fov, clap_times,
                 calibration_path, recalibrate, max_error_px, charuco_videos, smoothing, bvh,
-                resume, stop_after, detector, smoother) -> str | None:
+                resume, stop_after, detector, smoother, jobs) -> str | None:
     """The stages in order; returns the stage name if stop_after ended the run early."""
     n = len(video_paths)
     model_path = model_path or default_model_path()
@@ -209,10 +245,10 @@ def _run_stages(video_paths, out_path, performer_height_m, model_path, camera, f
     print("Cameras: " + ", ".join(f"cam{c} {kind}" for c, kind in enumerate(types)))
 
     # Stage 1: 2D joints per camera. Saved raw (before sync resamples them).
-    keypoints = []
+    keypoints = {}
+    to_detect = []
     for video, cid in zip(video_paths, ids):
         kp_path = paths["keypoints"][cid]
-        kp = None
         if resume and kp_path.exists():
             saved, fingerprint = io.load_keypoints(str(kp_path), with_fingerprint=True)
             # files saved before --detector existed were all made by MediaPipe
@@ -223,15 +259,19 @@ def _run_stages(video_paths, out_path, performer_height_m, model_path, camera, f
                 print(f"{kp_path.name} was made with {saved_detector}, detecting again with {detector}")
             else:
                 print(f"Using saved joints for {video} ({kp_path.name})")
-                kp = saved
-        if kp is None:
-            print(f"Detecting joints in {video} ({detector})")
-            with metrics.time(f"detect.{cid}"):
-                kp = detect.detect_video(video, model_path, detector=detector)
-            kp.camera_id = cid
-            io.save_keypoints(kp, str(kp_path), {**io.video_fingerprint(video), "detector": detector})
+                keypoints[cid] = saved
+                continue
+        to_detect.append((video, cid))
+
+    for (video, cid), (kp, seconds) in zip(to_detect, _detect_all(to_detect, model_path, detector, jobs)):
+        metrics.record(f"timing.detect.{cid}_s", round(seconds, 3))
         kp.camera_id = cid
-        keypoints.append(kp)
+        io.save_keypoints(kp, str(paths["keypoints"][cid]), {**io.video_fingerprint(video), "detector": detector})
+        keypoints[cid] = kp
+
+    keypoints = [keypoints[cid] for cid in ids]
+    for kp, cid in zip(keypoints, ids):
+        kp.camera_id = cid
         metrics.record(f"stage1.{cid}", metrics.keypoints_summary(kp))
 
     if _stop("keypoints", stop_after):
@@ -387,6 +427,9 @@ def main() -> None:
                         help=f"Stage 2c filter (default: {config.SMOOTHER}). savgol: Savitzky-Golay, "
                              f"{config.SMOOTH_WINDOW_FRAMES}-frame window. butterworth: zero-phase low-pass at "
                              f"{config.BUTTER_CUTOFF_HZ:g} Hz. Runs even with --resume, so two resumed runs compare them.")
+    parser.add_argument("--jobs", type=int, default=None,
+                        help="How many videos to detect joints in at once, each in its own process "
+                             "(default: all of them, up to the number of CPU cores). 1 runs them one by one.")
     parser.add_argument("--no-smooth", action="store_true", help="Skip gap filling and smoothing.")
     parser.add_argument("--no-bvh", action="store_true",
                         help="Skip the skeleton animation (.bvh written next to the --out JSON).")
@@ -410,7 +453,8 @@ def main() -> None:
         clap_times=args.sync, calibration_path=args.calibration, recalibrate=args.recalibrate,
         max_error_px=args.max_error, charuco_videos=args.charuco_videos, smoothing=not args.no_smooth,
         bvh=not args.no_bvh, resume=args.resume, stop_after=args.stop_after,
-        detector=args.detector, smoother=args.smoother)
+        detector=args.detector, smoother=args.smoother,
+        jobs=args.jobs or min(n, os.cpu_count() or 1))
 
 
 if __name__ == "__main__":
