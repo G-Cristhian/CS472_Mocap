@@ -62,6 +62,34 @@ strict a check is, you change it there.
 | `out3d.metrics.json` | all | quality numbers from every step, and timings |
 | `out3d.log` | all | everything the run printed, with timestamps |
 
+**Where the time goes, and what hardware it runs on.** Step 1 is nearly all
+of the wall time: the pose model runs on every frame of every video, one video
+after another, one frame after another. Everything after it is seconds. As of
+2026-10-19 the whole pipeline runs on the processor, not the graphics card:
+
+- The default detector, MediaPipe, is created without a GPU delegate, so it
+  runs its model on the processor. MediaPipe's Python package does not offer a
+  GPU path on macOS at all; on Linux it can, but we do not ask for it. The
+  OpenGL libraries the README asks for on Linux are what MediaPipe needs just
+  to start, even on the processor.
+- The second detector, RTMPose, takes a `device` setting that can be `"cpu"`
+  or `"cuda"` (an NVIDIA card, needing the `onnxruntime-gpu` package instead
+  of the plain one the requirements install). It defaults to `"cpu"`, and
+  `create_backend` never passes a device, so there is no flag that reaches it
+  from the command line, the desktop tester or the API.
+- Video decoding goes through OpenCV's software decoder. Hardware decoding is
+  not requested.
+- Steps 2 and 3 are numpy, scipy, OpenCV and aniposelib arithmetic on the
+  processor. Numpy may spread a matrix operation over several cores on its
+  own; nothing in our code does.
+- Nothing runs in parallel. The videos of a take are detected one at a time,
+  and the web API processes one take at a time in one worker process.
+
+The cheapest speed-ups, in order, would be: detecting the videos of a take in
+parallel processes (the step is embarrassingly parallel, one process per
+video), exposing RTMPose's device setting for machines with an NVIDIA card,
+and only then anything deeper.
+
 ---
 
 ## 1. Shared pieces, used by every step
