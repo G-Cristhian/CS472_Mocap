@@ -16,7 +16,8 @@ import numpy as np
 AUDIO_RATE = 48000
 
 
-def write_video(path, fps, seconds, clap_at, width=640, height=360, seed=0):
+def write_video(path, fps, seconds, clap_at, width=640, height=360, seed=0, clap_gain=1.0):
+    """clap_gain scales the clap against the room noise (1.0 is a loud clap, 0.02 a faint one)."""
     rng = np.random.default_rng(seed)
     with av.open(str(path), "w") as out:
         v = out.add_stream("mpeg4", rate=fps)
@@ -40,7 +41,7 @@ def write_video(path, fps, seconds, clap_at, width=640, height=360, seed=0):
         audio = rng.normal(0, 0.003, int(seconds * AUDIO_RATE)).astype(np.float32)  # room noise
         if clap_at is not None:
             s = int(clap_at * AUDIO_RATE)
-            burst = rng.normal(0, 0.8, int(0.015 * AUDIO_RATE)).astype(np.float32)
+            burst = rng.normal(0, 0.8 * clap_gain, int(0.015 * AUDIO_RATE)).astype(np.float32)
             burst *= np.exp(-np.linspace(0, 6, len(burst)))           # sharp attack, fast decay
             audio[s:s + len(burst)] += burst
         chunk = 1024

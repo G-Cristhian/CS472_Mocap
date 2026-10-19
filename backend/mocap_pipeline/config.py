@@ -25,10 +25,14 @@ TARGET_FPS = 30.0
 CLAP_AUDIO_RATE = 16000
 CLAP_WINDOW_S = 0.002
 CLAP_SMOOTH_S = 0.01
-CLAP_MIN_PROMINENCE = 8.0
+# Lowered from 8 on 2026-10-19: real takes' claps were rejected as not loud
+# enough against the room. The rise-time test below is what keeps speech out,
+# so these two mostly decide how much background noise a clap must beat.
+# --clap-threshold multiplies both per run (0.5 accepts a clap half as strong).
+CLAP_MIN_PROMINENCE = 4.0
 # ...and must be at least this many times louder than 30-100 ms before it
-# (a clap is sharp; talking and music ramp up slowly).
-CLAP_MIN_RISE = 3.0
+# (a clap is sharp; talking and music ramp up slowly). Lowered from 3, same day.
+CLAP_MIN_RISE = 2.0
 # ...and must go from a quarter of its peak loudness to the peak within this
 # many seconds.
 CLAP_MAX_RISE_S = 0.025

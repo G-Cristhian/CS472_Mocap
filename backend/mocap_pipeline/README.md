@@ -133,7 +133,7 @@ iPhone settings, the same on every phone: same resolution and frame rate; Auto F
 3. Walk around the space for ~10 seconds, turning towards each camera and raising the arms (calibrates the cameras). Make sure the feet are seen on the floor (finds the floor).
 4. Perform.
 
-If a clap can't be found (no audio track, or no sharp loud sound in the first 10 s), it stops and says so. Then give the clap time in each video by hand, in seconds: `--sync 1.25 0.80 1.10`.
+If a clap can't be found (no audio track, or no sharp loud sound in the first 10 s), it stops and says so, and the message reports the sharpest sound it did find: when it happened, how many times louder than the room it was and how many times louder than the moment before, against the thresholds (`CLAP_MIN_PROMINENCE` and `CLAP_MIN_RISE` in `config.py`). If that sound is the clap, rerun with `--clap-threshold 0.5` (it multiplies both thresholds; `check_videos` takes the same flag). Otherwise give the clap time in each video by hand, in seconds: `--sync 1.25 0.80 1.10`.
 
 If calibration from the performer fails (too little movement, or error above `--max-error`), it stops and asks for board videos:
 ```
