@@ -153,13 +153,16 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
         recalibrate: bool = False, max_error_px: float = config.CALIB_MAX_ERROR_PX,
         charuco_videos: list[str] | None = None, smoothing: bool = True, bvh: bool = True,
         resume: bool = False, stop_after: str | None = None, detector: str = DEFAULT_BACKEND,
-        smoother: str = config.SMOOTHER) -> None:
+        smoother: str = config.SMOOTHER, clap_threshold: float = 1.0) -> None:
     """
     Runs every stage in order. With resume=True a stage whose file (io.stage_paths)
     exists and is still valid is loaded instead of recomputed. stop_after names
     the last stage to run (one of STAGES); its file is written and run() returns.
-    detector is the stage 1 pose model (a name in backends.BACKENDS); saved
-    joints are only reused if the same detector made them. smoother is the
+    clap_threshold multiplies the clap loudness thresholds in config (0.5
+    accepts a clap half as strong, for a noisy room); the clap search is
+    skipped when clap_times are given. detector is the stage 1 pose model (a
+    name in backends.BACKENDS); saved joints are only reused if the same
+    detector made them. smoother is the
     stage 2c filter (a name in smooth.SMOOTHERS); it always runs, so two runs
     with --resume compare smoothers on the same triangulation.
 
@@ -176,6 +179,8 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
         raise ValueError(f"detector must be one of {tuple(BACKENDS)}, got {detector!r}")
     if smoother not in smooth.SMOOTHERS:
         raise ValueError(f"smoother must be one of {smooth.SMOOTHERS}, got {smoother!r}")
+    if not clap_threshold > 0:
+        raise ValueError(f"clap_threshold must be positive, got {clap_threshold}")
 
     metrics.start(out_path, videos=[str(v) for v in video_paths], detector=detector, smoother=smoother,
                   performer_height_m=performer_height_m, resume=resume, stop_after=stop_after)
@@ -183,7 +188,7 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
         with metrics.time("total"):
             stopped = _run_stages(video_paths, out_path, performer_height_m, model_path, camera, fov, clap_times,
                                   calibration_path, recalibrate, max_error_px, charuco_videos, smoothing, bvh,
-                                  resume, stop_after, detector, smoother)
+                                  resume, stop_after, detector, smoother, clap_threshold)
     except BaseException as e:
         path = metrics.finish("failed", f"{type(e).__name__}: {e}")
         raise
@@ -194,7 +199,7 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
 
 def _run_stages(video_paths, out_path, performer_height_m, model_path, camera, fov, clap_times,
                 calibration_path, recalibrate, max_error_px, charuco_videos, smoothing, bvh,
-                resume, stop_after, detector, smoother) -> str | None:
+                resume, stop_after, detector, smoother, clap_threshold) -> str | None:
     """The stages in order; returns the stage name if stop_after ended the run early."""
     n = len(video_paths)
     model_path = model_path or default_model_path()
@@ -251,9 +256,10 @@ def _run_stages(video_paths, out_path, performer_height_m, model_path, camera, f
             print(f"{sync_path.name} is for different cameras, searching for the clap again")
     try:
         with metrics.time("sync"):
-            sync_result, keypoints = sync.synchronise(video_paths, keypoints, clap_times)
+            sync_result, keypoints = sync.synchronise(video_paths, keypoints, clap_times, clap_threshold)
     except sync.ClapNotFoundError as e:
-        raise SystemExit(f"{e}\nGive the clap time in each video by hand with --sync T0 T1 ... (seconds)")
+        raise SystemExit(f"{e}\n--sync takes one clap time per video in seconds, e.g. --sync 1.25 0.80 1.10; "
+                         f"a video player shows the time. --clap-threshold 0.5 accepts weaker claps.")
     # rewriting an unchanged sync file would make the saved 3D points look stale
     if not sync_from_file:
         io.save_sync(sync_result, str(sync_path))
@@ -262,6 +268,7 @@ def _run_stages(video_paths, out_path, performer_height_m, model_path, camera, f
     metrics.record("sync.clap_time_s", sync_result.clap_time_s)
     metrics.record("sync.clap_times_from", "given" if clap_times is not None and not sync_from_file
                    else "saved file" if sync_from_file else "audio")
+    metrics.record("sync.clap_threshold", float(clap_threshold))
     metrics.record("sync.common_frames", int(len(sync_result.common_timestamps)))
     metrics.record("sync.common_fps", float(config.TARGET_FPS))
 
@@ -376,6 +383,9 @@ def main() -> None:
                         help="Horizontal field of view in degrees of the non-iPhone cameras, one for all or one per video.")
     parser.add_argument("--sync", nargs="+", type=float, default=None,
                         help="Clap time in seconds in each video, one per video. Default: found from the audio.")
+    parser.add_argument("--clap-threshold", type=float, default=1.0,
+                        help="Multiplies how loud a clap must be against the room (default 1.0 = the config values). "
+                             "0.5 accepts a clap half as strong; use it when the clap is reported as not loud enough.")
     parser.add_argument("--calibration", default=str(DEFAULT_CALIBRATION),
                         help="Calibration file, reused if it exists. Default: backend/output/calibration.json")
     parser.add_argument("--recalibrate", action="store_true", help="Ignore an existing calibration file.")
@@ -410,7 +420,7 @@ def main() -> None:
         clap_times=args.sync, calibration_path=args.calibration, recalibrate=args.recalibrate,
         max_error_px=args.max_error, charuco_videos=args.charuco_videos, smoothing=not args.no_smooth,
         bvh=not args.no_bvh, resume=args.resume, stop_after=args.stop_after,
-        detector=args.detector, smoother=args.smoother)
+        detector=args.detector, smoother=args.smoother, clap_threshold=args.clap_threshold)
 
 
 if __name__ == "__main__":

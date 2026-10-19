@@ -217,7 +217,8 @@ Messages the pipeline prints, and what they mean on the day of recording.
 
 | Message | Cause | Fix |
 |---|---|---|
-| `could not find a clap` or `has no audio track` | phone muted, clap too quiet, clap after 10 s | find the clap by scrubbing each video in a player (QuickTime shows the time) and pass `--sync 1.25 0.80 1.10`, one time per video in order |
+| `no clear clap in the first 10 s. The sharpest sound is at 2.31 s: 2.9x the background (need 4.0) ...` | clap too quiet for the room, or music or talking at that moment | if the time it names is the clap, rerun with `--clap-threshold 0.5` (also works with `check_videos`); if not, scrub each video in a player (QuickTime shows the time) and pass `--sync 1.25 0.80 1.10`, one time per video in order |
+| `has no audio track` | phone muted or recorded without sound | `--sync` as above, or retake |
 | `only N distinct joints seen by cam0 and cam1 together, need 200` | the calibration walk was too short or did not cover the space, or one camera could not see the performer | retake with a longer walk; or record the ChArUco board with every camera and use `--charuco-videos` (pipeline README) |
 | `only N frames with the performer standing upright` | height pose too short or not facing the cameras | hold the pose for 3 full seconds |
 | `feet seen in too few frames to find the floor` | feet cut off at the bottom of the frame | tilt the cameras down or move them back |

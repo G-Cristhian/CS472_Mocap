@@ -19,6 +19,7 @@ class Calls:
         self.detect = []
         self.detectors = []
         self.sync_clap_times = []
+        self.sync_thresholds = []
         self.triangulate = 0
 
 
@@ -31,8 +32,9 @@ def fakes(monkeypatch, fake_videos):
         calls.detectors.append(detector)
         return make_keypoints(camera_id=Path(video_path).stem, video_path=video_path)
 
-    def fake_synchronise(video_paths, keypoints, clap_times=None):
+    def fake_synchronise(video_paths, keypoints, clap_times=None, clap_threshold=1.0):
         calls.sync_clap_times.append(clap_times)
+        calls.sync_thresholds.append(clap_threshold)
         if clap_times is None:
             clap_times = [1.0, 1.25]          # "found in the audio"
         ids = [kp.camera_id for kp in keypoints]
@@ -140,6 +142,13 @@ def test_saved_joints_without_a_detector_count_as_mediapipe(fakes, fake_videos, 
     assert len(fakes.detect) == 2                       # still reused
     run(fake_videos, tmp_path, resume=True, detector="rtmpose")
     assert fakes.detectors[-2:] == ["rtmpose", "rtmpose"]
+
+
+def test_clap_threshold_reaches_the_clap_search(fakes, fake_videos, tmp_path):
+    run(fake_videos, tmp_path, clap_threshold=0.5)
+    assert fakes.sync_thresholds == [0.5]
+    with pytest.raises(ValueError, match="clap_threshold"):
+        run(fake_videos, tmp_path, clap_threshold=0)
 
 
 def test_unknown_detector_is_rejected(fakes, fake_videos, tmp_path):
