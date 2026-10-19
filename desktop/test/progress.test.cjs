@@ -46,6 +46,42 @@ test('a full run climbs to 1 and reports done with the file paths', () => {
   assert.equal(r.metricsPath, 'C:\\out\\out3d.metrics.json')
 })
 
+test('videos detected at once finish in any order and the bar never goes backwards', () => {
+  const { seen, last } = run([
+    'Detecting joints in C:\\takes\\t1\\cam0.mp4 (mediapipe)',
+    'Detecting joints in C:\\takes\\t1\\cam1.mp4 (mediapipe)',
+    'Detecting 2 videos at once, 2 processes',
+    'progress: detect C:\\takes\\t1\\cam1.mp4 30/120',
+    'progress: detect C:\\takes\\t1\\cam0.mp4 30/120',
+    'progress: detect C:\\takes\\t1\\cam1.mp4 120/120',
+    'Detected joints in C:\\takes\\t1\\cam1.mp4 (41 s)',
+    'progress: detect C:\\takes\\t1\\cam0.mp4 90/120',
+    'Detected joints in C:\\takes\\t1\\cam0.mp4 (52 s)',
+  ])
+  const fractions = seen.map((p) => p.fraction)
+  for (let i = 1; i < fractions.length; i++) assert.ok(fractions[i] >= fractions[i - 1], `monotonic at ${i}`)
+  assert.equal(last.stage, 'detecting')
+  assert.equal(last.fraction, 0.75)                                  // both cameras done, nothing after yet
+  assert.match(last.detail, /Detected joints in cam0\.mp4/)
+})
+
+test('a failed video on stderr names the file', () => {
+  const { t } = run(
+    [
+      'Detecting joints in C:\\takes\\t1\\cam0.mp4 (mediapipe)',
+      'Detecting joints in C:\\takes\\t1\\cam1.mp4 (mediapipe)',
+      'Detected joints in C:\\takes\\t1\\cam0.mp4 (41 s)',
+      'Detection failed for C:\\takes\\t1\\cam1.mp4: ValueError: No frames could be read from video',
+      'Detection failed for cam1.mp4: ValueError: No frames could be read from video: C:\\takes\\t1\\cam1.mp4',
+      'Detection failed for 1 of 2 video(s): cam1.mp4. The other 1 video(s)\' joints are saved next to the output: fix or leave out the failed ones and rerun with --resume.',
+    ],
+    4,
+  )
+  const r = t.result(1)
+  assert.equal(r.ok, false)
+  assert.match(r.error, /^Detection failed for 1 of 2 video\(s\): cam1\.mp4/)
+})
+
 test('resume lines count a camera as finished', () => {
   const { last } = run([
     'Using saved joints for C:\\takes\\t1\\cam0.mp4 (out3d.keypoints.cam0.npz)',

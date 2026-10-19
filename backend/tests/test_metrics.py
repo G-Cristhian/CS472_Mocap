@@ -84,6 +84,7 @@ def run_synthetic(tmp_path, monkeypatch, **kw):
     monkeypatch.setattr(detect, "detect_video",
                         lambda video_path, model_path, detector="mediapipe": recorded[str(video_path)])
     out = tmp_path / "output" / "take.json"
+    kw.setdefault("jobs", 1)    # the fake detector lives in this process
     run_pipeline.run(list(recorded), str(out), performer_height_m=PERFORMER_HEIGHT_M, model_path="unused",
                      camera=["webcam"] * 3, fov=[65.0] * 3, clap_times=scene.clap_times(),
                      calibration_path=str(tmp_path / "output" / "calibration.json"), **kw)
@@ -121,10 +122,13 @@ def test_failed_run_still_writes_metrics(tmp_path, monkeypatch):
     for name in ("cam0.mp4", "cam1.mp4"):
         (tmp_path / name).write_bytes(b"x")
     out = tmp_path / "output" / "take.json"
-    with pytest.raises(RuntimeError):
-        run_pipeline.run([str(tmp_path / "cam0.mp4"), str(tmp_path / "cam1.mp4")], str(out), model_path="unused")
+    with pytest.raises(SystemExit, match="cam0.mp4.*detector exploded") as info:
+        run_pipeline.run([str(tmp_path / "cam0.mp4"), str(tmp_path / "cam1.mp4")], str(out), model_path="unused",
+                         jobs=1)
+    assert "2 of 2 video(s): cam0.mp4, cam1.mp4" in str(info.value)
     m = metrics.load(str(out))
     assert m["run"]["status"] == "failed" and "detector exploded" in m["run"]["error"]
+    assert set(m["stage1"]["failed"]) == {"cam0", "cam1"}
     assert not metrics.active()
 
 

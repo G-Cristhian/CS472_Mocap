@@ -82,13 +82,15 @@ after another, one frame after another. Everything after it is seconds. As of
 - Steps 2 and 3 are numpy, scipy, OpenCV and aniposelib arithmetic on the
   processor. Numpy may spread a matrix operation over several cores on its
   own; nothing in our code does.
-- Nothing runs in parallel. The videos of a take are detected one at a time,
-  and the web API processes one take at a time in one worker process.
+- Step 1 is the one part that runs in parallel: the videos of a take are
+  detected several at a time, each in its own process (one per video by
+  default, up to the processor's cores and `config.DETECT_MAX_AUTO_JOBS`,
+  which is 4 because each process loads its own copy of the pose model).
+  Everything after step 1 runs on one core, and the web API processes one
+  take at a time in one worker process.
 
-The cheapest speed-ups, in order, would be: detecting the videos of a take in
-parallel processes (the step is embarrassingly parallel, one process per
-video), exposing RTMPose's device setting for machines with an NVIDIA card,
-and only then anything deeper.
+The next cheapest speed-up would be exposing RTMPose's device setting for
+machines with an NVIDIA card, and only then anything deeper.
 
 ---
 
@@ -832,16 +834,23 @@ The one file that knows the order of the steps. Everything else calls `run()`.
   performer height, model path, camera types, fields of view, clap times,
   calibration path, recalibrate, the error limit, board videos, whether to
   smooth, whether to write the animation, resume, stop-after, detector,
-  smoother. It validates the counts and names, opens a metrics run, calls
+  smoother, clap threshold, and jobs (how many videos step 1 detects at
+  once; 0 means pick automatically). It validates the counts and names, opens a metrics run, calls
   `_run_stages` inside a total timer, and closes the run as done, stopped
   early, or failed with the error text. The metrics and log files are written
   even when the run fails.
 - **`_run_stages(...)`**. The steps in order.
   1. Decide the camera ids, file paths and camera types.
-  2. Step 1 per video. With resume, reuse the saved landmarks if the video's
-     fingerprint still matches and the same detector made them; otherwise
-     detect, timing it, and save with the fingerprint and detector name.
-     Record the per-camera summary.
+  2. Step 1. With resume, reuse a video's saved landmarks if the video's
+     fingerprint still matches and the same detector made them. The videos
+     still to detect go to `_detect_videos`, several at a time, each in its
+     own process (`_detect_worker`, which also saves the landmark file and
+     sends what it prints back through a queue so it lands in the main log).
+     Every video is attempted even if one fails; then each failure is
+     printed with its file and reason, and the run stops with a summary
+     naming the failed files. The landmarks of the videos that worked stay
+     saved, so a resumed run only redoes the bad ones. Record the time per
+     video and the per-camera summary.
   3. Step 2a. With resume and a saved sync file for these cameras, take the
      clap times from it instead of searching the audio; resampling always
      runs because it is cheap. Save the sync file unless it was reused. Print

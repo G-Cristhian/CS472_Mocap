@@ -27,9 +27,10 @@ That builds the app and opens the window. It finds Python on its own: the backen
 2. At least two videos must be ticked.[^5]
 3. **Performer height** in metres, from the take log; the app accepts 1 to 2.5.[^6]
 4. **Detector**: MediaPipe unless you are comparing models ([comparing-pose-models.md](comparing-pose-models.md)).
-5. **Field of view**: only used for cameras without iPhone lens metadata; 65 is the pipeline's default, the Fold is about 75.[^7]
-6. **Output folder**: defaults to `backend/output/<folder name>-<date and time>`, one folder per take.[^8] Change it to reprocess into a folder you already have.
-7. **Recalibrate** is on by default so a stale `calibration.json` in the output folder is never reused by accident; **Resume** reuses the stage files already in that folder, which turns a rerun into seconds.[^9]
+5. **Smoother**: Savitzky-Golay unless you are comparing filters. Butterworth is the other; run the take once, then again with Resume on and the other smoother, and compare `jitter_mm` in `metrics.json` and the fast moments in the preview ("Choosing the smoother" in `backend/mocap_pipeline/README.md`).
+6. **Field of view**: only used for cameras without iPhone lens metadata; 65 is the pipeline's default, the Fold is about 75.[^7]
+7. **Output folder**: defaults to `backend/output/<folder name>-<date and time>`, one folder per take.[^8] Change it to reprocess into a folder you already have.
+8. **Recalibrate** is on by default so a stale `calibration.json` in the output folder is never reused by accident; **Resume** reuses the stage files already in that folder, which turns a rerun into seconds.[^9]
 
 ## 3. Run
 
@@ -63,7 +64,7 @@ The result panel shows the pipeline's own message and opens the log. The message
 ---
 ## Sources
 
-[^1]: `desktop/src/main/pipeline.ts`, `pipelineArgs`: the command is `python -u -m mocap_pipeline.run_pipeline <videos> --height-m … --out <folder>/out3d.json --calibration <folder>/calibration.json --detector … --fov …`, run from `backend/`, the same as [processing-a-take.md](processing-a-take.md) step 3.
+[^1]: `desktop/src/main/pipeline.ts`, `pipelineArgs`: the command is `python -u -m mocap_pipeline.run_pipeline <videos> --height-m … --out <folder>/out3d.json --calibration <folder>/calibration.json --detector … --smoother … --fov …`, run from `backend/`, the same as [processing-a-take.md](processing-a-take.md) step 3.
 [^2]: The `electron` package's postinstall downloads the runtime for the platform (https://www.electronjs.org/docs/latest/tutorial/installation).
 [^3]: `desktop/src/main/pipeline.ts`, `resolvePython`: tries `backend/.venv/Scripts/python.exe` then `backend/.venv/bin/python`, then falls back to the PATH.
 [^4]: `desktop/src/main/main.ts`, the `list-videos` handler sorts with `localeCompare(…, { numeric: true })`. The naming rule is filming.md section 8.
