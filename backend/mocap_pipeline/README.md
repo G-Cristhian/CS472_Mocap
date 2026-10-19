@@ -31,6 +31,19 @@ $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --height-m 1.75 --out 
 $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --height-m 1.75 --detector rtmpose --out output/rtm/out3d.json --calibration output/rtm/calibration.json
 ```
 
+## Choosing the smoother
+`--smoother savgol|butterworth` picks the stage 2c filter that removes jitter from the 3D joints (default `savgol`). Both live in `stage2_reconstruct/smooth.py`; the constants are in `config.py`.
+
+- `savgol`: Savitzky-Golay, a quadratic fitted through each 7-frame window. Keeps the shape of a fast peak such as a punch.
+- `butterworth`: a zero-phase Butterworth low-pass at `BUTTER_CUTOFF_HZ` (8 Hz), order 2 run forward and backward. The biomechanics standard; it has a true cutoff frequency, which Savitzky-Golay does not.
+
+Smoothing always runs, even with `--resume`, so comparing them on one take costs seconds and uses the same triangulation. Rename `out3d.json` and `out3d.bvh` between the two runs, or they overwrite:
+```
+$ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --height-m 1.75 --out output/take01/out3d.json
+$ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --height-m 1.75 --out output/take01/out3d.json --resume --smoother butterworth
+```
+`out3d.metrics.json` records the smoother under `run.smoother` and `smooth`, and `pose_raw` and `pose_final` each carry `jitter_mm`, the mean frame-to-frame second difference of joint position: compare it between the two runs, and look at the fast moments in the viewer. `python -m tests.evaluate_synthetic` prints the same comparison against a known truth.
+
 ---
 # Rerunning and debugging
 Every stage saves its result next to the `--out` file, named after it. For the default `out3d.json`:
@@ -48,6 +61,7 @@ Every stage saves its result next to the `--out` file, named after it. For the d
 ```
 $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --height-m 1.75            # full run, minutes
 $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --resume --no-smooth       # seconds
+$ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --resume --smoother butterworth   # the other filter
 $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --resume --recalibrate     # redo calibration only
 ```
 `--sync` given by hand wins over the saved clap times; a changed `calibration.json` makes the pose file stale automatically.

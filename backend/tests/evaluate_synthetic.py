@@ -25,7 +25,7 @@ import warnings
 
 import numpy as np
 
-from mocap_pipeline import config
+from mocap_pipeline import config, metrics
 from mocap_pipeline.joints import JOINT_INDEX, RIG_JOINTS
 from mocap_pipeline.stage2_reconstruct import calibrate, scale_floor, smooth, sync, triangulate
 from mocap_pipeline.run_pipeline import OUTPUT_DIR
@@ -37,13 +37,14 @@ from tests.synthetic_scene import (PERFORMER_HEIGHT_M, Noise, Routine, Scene, al
 REALISTIC = Noise(pixel_sigma=1.5, dropout=0.02, outlier=0.005)
 
 
-def run_stage2(scene: Scene, intrinsics=None):
+def run_stage2(scene: Scene, intrinsics=None, smoother: str | None = config.SMOOTHER):
+    """smoother None returns the raw triangulation (gaps filled, no filter)."""
     kps = scene.synced_keypoints()
     rig = calibrate.calibrate_rig(kps, intrinsics)
     rough = triangulate.triangulate_sequence(kps, rig)
     rig = scale_floor.make_metric(rig, rough, PERFORMER_HEIGHT_M)
-    raw = triangulate.triangulate_sequence(kps, rig)
-    return smooth.smooth(smooth.fill_gaps(raw)), rig
+    raw = smooth.fill_gaps(triangulate.triangulate_sequence(kps, rig))
+    return (smooth.smooth(raw, smoother) if smoother else raw), rig
 
 
 def measure(scene: Scene, pose, rig) -> dict:
@@ -115,6 +116,17 @@ def main() -> None:
         print(row(label, measure(scene, pose, rig), time.time() - t0))
         if "3 cams, 1.5 px + 2%" in label:
             keep = (scene, pose)
+
+    print("\nStage 2c (smoothing) on the realistic 3-camera result: error against the truth and frame-to-frame jitter\n")
+    scene, _ = keep
+    raw, rig = run_stage2(scene, smoother=None)
+    truth = scene.truth_in_pipeline_frame()
+    for label, pose in [("raw (gaps filled, no filter)", raw)] + [
+            (f"{m} ({', '.join(f'{k} {v}' for k, v in s.items())})", smooth.smooth(raw, m))
+            for m, s in (("savgol", {"window": config.SMOOTH_WINDOW_FRAMES, "order": config.SMOOTH_POLYORDER}),
+                         ("butterworth", {"cutoff Hz": config.BUTTER_CUTOFF_HZ, "order": config.BUTTER_ORDER}))]:
+        al, _, _ = aligned_mpjpe(pose.points, truth)
+        print(f"  {label:44s} MPJPE aligned {al * 1000:6.1f} mm   jitter {metrics.jitter_mm(pose.points):6.2f} mm/frame²")
 
     print("\nStage 2a (sync): resampling each phone onto the shared clock, error in pixels against exact projection\n")
     # clap offsets that are not whole frames at any of these rates, so the shared clock

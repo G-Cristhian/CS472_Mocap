@@ -17,6 +17,20 @@ Do not record: variable renames, formatting, comments, test fixtures, obvious bu
 
 The sheet trains the detector in two separate ways. Whether a row stays on the sheet is the scope call. The status is a verdict on the decision. A row marked `out of scope` teaches the detector what not to record. Every other row a human has reviewed, whether approved, rejected or sent back for research, teaches it what to record, because each one was a real decision worth a human's time. Reviewing rows is therefore never wasted, even when the verdict is no.
 
+## The sheet's columns
+
+| Column | What goes in it |
+|---|---|
+| ID | `D-NNN`, sequential, never reused. Newest rows at the bottom. |
+| Lineage | `from D-NNN` and `to D-NNN` links, one layer deep (see Lineage). Empty for a root decision. |
+| Decision | The choice in one sentence, with the value: "At most 4 cameras per take". |
+| Where | File and line at the time the row was written, for example `backend/mocap_pipeline/config.py:14`. Lines drift; the ID and the commit are the stable handles. |
+| Made by, when | Author, date and short commit of the change that introduced the choice, from `git log -S`. |
+| Rationale recorded | A quote from the commit message, a comment, a docstring or a README that explains the choice, or "none recorded". |
+| Citation | A published source for the choice (see Citations), or "none". |
+| Status | One of the six statuses below. |
+| Reviewer notes | The reviewer's verdict line, dated and signed, and any lead that is not a citation. |
+
 ## Statuses
 
 | Status | Meaning | Who sets it |
@@ -51,11 +65,20 @@ Rules:
 
 ## How the detector works
 
-After every push to `main` (a pull request merge or a direct push), the workflow in `.github/workflows/design-decisions.yml` runs Claude over the commits on `main` since the one recorded in `.last-reviewed`, with the procedure below. If it adds rows, it opens a pull request against `main` from the branch `design-decisions/pending`, requests review from the maintainers, and adds later findings to that same pull request until it is merged. A push that touches only this folder, `.claude/` or `.github/` is skipped. Merging the PR is the review act: edit the Status and Reviewer notes columns in the PR before merging. (GitHub's `push` event cannot be used directly: the Claude action refuses it, so `push-to-main.yml` runs on the push and this workflow runs when it completes.)
+The detector is the GitHub workflow `.github/workflows/design-decisions.yml`. It runs after every push to `main`, whether a pull request merge or a direct push. (GitHub's `push` event cannot drive the Claude action directly, so `push-to-main.yml` runs on the push and the detector runs when it completes.) Each run:
 
-The same procedure runs locally through the `design-interrogator` subagent in `.claude/agents/`, for example "use the design-interrogator subagent on 762e384..HEAD".
+1. Checks out `main`, and merges in the branch `design-decisions/pending` if one exists, so rows found earlier and not yet reviewed are kept.
+2. Takes the range from the commit recorded in `.last-reviewed` to the head of `main`. If every commit in that range touches only this folder, `.claude/` or `.github/`, there is nothing to review and the run stops here at no cost.
+3. Runs Claude over the range with the procedure below, using the rules in this file and the working rules in `.claude/agents/design-interrogator.md`.
+4. Writes the head of `main` into `.last-reviewed`, and if the sheet changed, pushes the sheet and the marker to `design-decisions/pending` and opens a pull request against `main` titled "[AI] Design decisions found since ...", labelled `design-decision`, with Giancarlo requested as reviewer. While that pull request is open, later runs update it instead of opening another. When nothing was found, nothing is pushed and the marker stays where it was, so the next run looks at the same range plus whatever is new.
 
-The same procedure also runs as a scheduled cloud routine, "Design decisions, hourly", because the GitHub workflow needs the Claude GitHub App installed by the repository owner. The routine's prompt is kept in [routine-prompt.md](routine-prompt.md). Every hour it checks main for commits newer than the one recorded in `.last-reviewed`, reviews them, advances the marker, and pushes to the branch `design-decisions/pending`. It opens a pull request only when rows were added, and adds later findings to that pull request as comments until it is merged. The workflow and the routine share the branch and the marker, so running both never reviews a commit twice. How to review what either of them finds, from a laptop or a phone, is in `docs/procedures/reviewing-design-decisions.md`.
+Merging the pull request is the review act: set the Status and Reviewer notes of each new row on the branch, then merge. The branch is deleted on merge. The mechanics, from a laptop or a phone, are in `docs/procedures/reviewing-design-decisions.md`; switching the workflow on for a new repository is in `docs/procedures/enable-claude-on-github.md`.
+
+To run it by hand, open the Actions tab, pick "Design decisions" and press Run workflow. Two optional inputs: a commit range such as `762e384..main`, and a dry-run switch that prints the report without opening or updating the pull request. The full Claude transcript is printed in the "Interrogate the commits" step and saved as the run artifact `claude-execution-output`. Runs bill the repository's `ANTHROPIC_API_KEY` secret; one commit costs about 10 to 20 cents.
+
+The same procedure runs locally through the `design-interrogator` subagent in `.claude/agents/`, for example "use the design-interrogator subagent on 762e384..HEAD". That path writes rows to your working copy and nothing else; you commit and push them yourself.
+
+A scheduled cloud routine was planned as a stand-in while the workflow could not run. It was never created, and the workflow has run on its own since the Claude GitHub App was installed on 2026-10-17, so the routine and its prompt file were dropped on 2026-10-18.
 
 Procedure the detector follows:
 
@@ -65,8 +88,16 @@ Procedure the detector follows:
 4. For each candidate, look for the rationale in the commit message, the diff's comments and docstrings, and the READMEs. Quote it if found. Write "none recorded" if not.
 5. Search for a published source that supports the choice: a paper, a standard, or the documentation of the library or model chosen. Prefer a DOI. Mark a DOI `(unverified)` if it could not be opened. Never invent a source. If nothing is found, say so.
 6. Add a row with the next free ID, status `cited, pending review` when a source was found, otherwise `needs human research`. If the change alters a decision already on the sheet, the new row gets `from D-NNN` in Lineage and the old row gets the matching `to` link.
-7. Write a short report listing the new rows and the commits they came from.
+7. Write a short report in the shape the agent file gives: the range and commit count, the new rows with their statuses and lineage, and what was considered and skipped, with the reason. The report becomes the pull request description.
 
 ## Citations
 
 A citation is a paper, book, standard, or the official documentation of the chosen library or model. A blog post or forum answer is not a citation but may be noted in Reviewer notes as a lead. Record author, title, venue, year and DOI where one exists. When a DOI has been opened and matches, leave it bare. When it has not, append `(unverified)`.
+
+## Files in this folder
+
+| File | What it is |
+|---|---|
+| `DECISIONS.md` | The sheet. |
+| `README.md` | This file: what counts, the columns, statuses, lineage, how the detector works, citations. |
+| `.last-reviewed` | One commit SHA: the last commit on `main` the detector has reviewed. Advanced only by the detector, through the review pull request. Delete it to make the next run review everything since `0e1eea9`, the seed commit. |

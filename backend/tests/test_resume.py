@@ -10,7 +10,7 @@ import pytest
 
 from mocap_pipeline import io, run_pipeline
 from mocap_pipeline.stage1_keypoints import detect
-from mocap_pipeline.stage2_reconstruct import sync, triangulate
+from mocap_pipeline.stage2_reconstruct import smooth, sync, triangulate
 from tests.conftest import make_keypoints, make_pose, make_rig, make_sync
 
 
@@ -145,6 +145,24 @@ def test_saved_joints_without_a_detector_count_as_mediapipe(fakes, fake_videos, 
 def test_unknown_detector_is_rejected(fakes, fake_videos, tmp_path):
     with pytest.raises(ValueError, match="detector"):
         run(fake_videos, tmp_path, detector="openpose")
+
+
+def test_unknown_smoother_is_rejected(fakes, fake_videos, tmp_path):
+    with pytest.raises(ValueError, match="smoother"):
+        run(fake_videos, tmp_path, smoother="kalman")
+
+
+def test_smoother_reaches_stage_2c_on_every_run(fakes, fake_videos, tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(smooth, "smooth", lambda pose, method=None: seen.append(method) or pose)
+    out = tmp_path / "output" / "out3d.json"
+    calib = tmp_path / "output" / "calibration.json"
+    io.save_rig(make_rig(["cam0", "cam1"]), str(calib))
+    for kw in ({}, {"resume": True, "smoother": "butterworth"}, {"resume": True, "smoother": "savgol"}):
+        run_pipeline.run(fake_videos, str(out), model_path="unused.task", calibration_path=str(calib),
+                         bvh=False, **kw)
+    assert seen == ["savgol", "butterworth", "savgol"]   # smoothing reruns under --resume, with the chosen filter
+    assert fakes.triangulate == 1                        # on the same triangulation
 
 
 def test_stop_after_keypoints(fakes, fake_videos, tmp_path):

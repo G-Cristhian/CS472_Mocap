@@ -110,6 +110,7 @@ function readOptions(): RunOptions | string {
     fov,
     outDir,
     detector: $<HTMLSelectElement>('detector').value as RunOptions['detector'],
+    smoother: $<HTMLSelectElement>('smoother').value as RunOptions['smoother'],
     recalibrate: $<HTMLInputElement>('recalibrate').checked,
     resume: $<HTMLInputElement>('resume').checked,
   }
