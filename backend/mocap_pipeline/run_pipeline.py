@@ -10,15 +10,20 @@ starts from the last good stage instead of running the pose model again.
 --detector picks the pose model for stage 1 (stage1_keypoints/backends.py).
 --smoother picks the stage 2c smoother (stage2_reconstruct/smooth.py).
 --stop-after writes one stage's file and exits, to hand data to a teammate.
+--jobs sets how many videos stage 1 detects at once (default: all).
 
 This file is the one place that knows the order of the stages. When the web
 backend is built later, it should call run() rather than repeat this logic.
 """
+
 from __future__ import annotations
 import argparse
+import multiprocessing
 import os
+import time
 import numpy as np
 
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from . import config, io, metrics
 from .stage1_keypoints import detect
@@ -26,8 +31,12 @@ from .stage1_keypoints.backends import BACKENDS, DEFAULT_BACKEND
 from .stage2_reconstruct import calibrate, scale_floor, smooth, sync, triangulate
 from .stage3_rig import bvh_writer, rotations, skeleton
 from .joints import RIG_JOINTS, RIG_PARENTS
-from .stage2_reconstruct.iphone_camera import (is_iphone_video, iphone_intrinsics, IPhoneMetadataError,
-                                               MODEL_KEY)
+from .stage2_reconstruct.iphone_camera import (
+    is_iphone_video,
+    iphone_intrinsics,
+    IPhoneMetadataError,
+    MODEL_KEY,
+)
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 # where results go unless --out / --calibration say otherwise (created when needed)
@@ -43,6 +52,7 @@ def default_model_path() -> str:
     """MODEL_FILEPATH from .env if set, otherwise config.POSE_MODEL_PATH (relative to backend/)."""
     try:
         from dotenv import load_dotenv
+
         load_dotenv()
     except ImportError:
         pass
@@ -55,8 +65,10 @@ def default_model_path() -> str:
 def camera_types(video_paths, choices):
     """iPhone or webcam per video: auto-detected from the video metadata unless stated."""
 
-    return [("iphone" if is_iphone_video(v) else "webcam") if c == "auto" else c
-            for v, c in zip(video_paths, choices)]
+    return [
+        ("iphone" if is_iphone_video(v) else "webcam") if c == "auto" else c
+        for v, c in zip(video_paths, choices)
+    ]
 
 
 def camera_intrinsics(keypoints, video_paths, types, fovs):
@@ -67,7 +79,9 @@ def camera_intrinsics(keypoints, video_paths, types, fovs):
         if kind == "iphone":
             try:
                 K, metadata = iphone_intrinsics(video, size)
-                print(f"{video}: {metadata.get(MODEL_KEY, 'iPhone')}, focal length {K[0, 0]:.0f} px from metadata")
+                print(
+                    f"{video}: {metadata.get(MODEL_KEY, 'iPhone')}, focal length {K[0, 0]:.0f} px from metadata"
+                )
                 intrinsics.append(K)
                 continue
             except IPhoneMetadataError as e:
@@ -78,7 +92,9 @@ def camera_intrinsics(keypoints, video_paths, types, fovs):
     return intrinsics
 
 
-def calibrate_cameras(keypoints, video_paths, types, fovs, max_error_px, charuco_videos):
+def calibrate_cameras(
+    keypoints, video_paths, types, fovs, max_error_px, charuco_videos
+):
     """
     Our calibration from the performer; if it fails or its error is above
     max_error_px, the ChArUco board (needs one board video per camera).
@@ -86,14 +102,20 @@ def calibrate_cameras(keypoints, video_paths, types, fovs, max_error_px, charuco
     """
     ids = [kp.camera_id for kp in keypoints]
     try:
-        rig = calibrate.calibrate_rig(keypoints, camera_intrinsics(keypoints, video_paths, types, fovs))
+        rig = calibrate.calibrate_rig(
+            keypoints, camera_intrinsics(keypoints, video_paths, types, fovs)
+        )
         error = float(np.mean(list(rig.reprojection_error_px.values())))
-        print("Calibration from the performer: " + ", ".join(
-            f"{cid} {e:.2f} px" for cid, e in rig.reprojection_error_px.items()))
-        
+        print(
+            "Calibration from the performer: "
+            + ", ".join(
+                f"{cid} {e:.2f} px" for cid, e in rig.reprojection_error_px.items()
+            )
+        )
+
         if error <= max_error_px:
             return rig, False
-        
+
         reason = f"error {error:.2f} px is above --max-error {max_error_px}"
     except calibrate.CalibrationError as e:
         reason = str(e)
@@ -101,10 +123,14 @@ def calibrate_cameras(keypoints, video_paths, types, fovs, max_error_px, charuco
     # fallback: only load the board code when the performer calibration was not good enough
     if not charuco_videos:
         boards = " ".join(f"cam{c}_board.mp4" for c in range(len(video_paths)))
-        raise SystemExit(f"Calibration from the performer failed ({reason}).\n"
-                         f"Record the ChArUco board with every camera and rerun with --charuco-videos {boards}")
-    
-    print(f"Calibration from the performer failed ({reason}), falling back to the ChArUco board")
+        raise SystemExit(
+            f"Calibration from the performer failed ({reason}).\n"
+            f"Record the ChArUco board with every camera and rerun with --charuco-videos {boards}"
+        )
+
+    print(
+        f"Calibration from the performer failed ({reason}), falling back to the ChArUco board"
+    )
 
     from .stage2_reconstruct.board_calibration import calibrate_from_board
 
@@ -112,7 +138,10 @@ def calibrate_cameras(keypoints, video_paths, types, fovs, max_error_px, charuco
     calibrate._move_origin_to(cgroup, 0)
     print(f"ChArUco calibration: {info['reprojection_error_px']:.2f} px error")
 
-    return calibrate.group_to_rig(cgroup, ids, {"board": info["reprojection_error_px"]}), True
+    return (
+        calibrate.group_to_rig(cgroup, ids, {"board": info["reprojection_error_px"]}),
+        True,
+    )
 
 
 def camera_ids_for(video_paths: list[str]) -> list[str]:
@@ -147,13 +176,61 @@ def _stop(stage: str, stop_after: str | None) -> bool:
     return False
 
 
-def run(video_paths: list[str], out_path: str, performer_height_m: float | None = None,
-        model_path: str | None = None, camera: list[str] | None = None, fov: list[float] | None = None,
-        clap_times: list[float] | None = None, calibration_path: str = str(DEFAULT_CALIBRATION),
-        recalibrate: bool = False, max_error_px: float = config.CALIB_MAX_ERROR_PX,
-        charuco_videos: list[str] | None = None, smoothing: bool = True, bvh: bool = True,
-        resume: bool = False, stop_after: str | None = None, detector: str = DEFAULT_BACKEND,
-        smoother: str = config.SMOOTHER, clap_threshold: float = 1.0) -> None:
+def _detect_one(video, model_path, detector):
+    """Stage 1 for one video, timed. Top level so a worker process can run it."""
+    t0 = time.perf_counter()
+    kp = detect.detect_video(video, model_path, detector=detector)
+    return kp, time.perf_counter() - t0
+
+
+def _detect_all(to_detect, model_path, detector, jobs):
+    """
+    Stage 1 for every (video, camera id) in to_detect, in order. jobs > 1 runs
+    up to that many videos at once, each in its own process (the pose model
+    is CPU-bound, so threads would not help); jobs=1 runs them here, one by one.
+    """
+    if not to_detect:
+        return []
+    jobs = min(jobs, len(to_detect))
+    for video, _ in to_detect:
+        print(f"Detecting joints in {video} ({detector})")
+    if jobs <= 1:
+        return [_detect_one(video, model_path, detector) for video, _ in to_detect]
+
+    print(f"Running {jobs} videos at once")
+    # spawn: a fresh interpreter per worker, forking a process that has
+    # already loaded OpenCV or a pose model can hang on macOS
+    with ProcessPoolExecutor(
+        jobs, mp_context=multiprocessing.get_context("spawn")
+    ) as pool:
+        futures = [
+            pool.submit(_detect_one, video, model_path, detector)
+            for video, _ in to_detect
+        ]
+        return [f.result() for f in futures]
+
+
+def run(
+    video_paths: list[str],
+    out_path: str,
+    performer_height_m: float | None = None,
+    model_path: str | None = None,
+    camera: list[str] | None = None,
+    fov: list[float] | None = None,
+    clap_times: list[float] | None = None,
+    calibration_path: str = str(DEFAULT_CALIBRATION),
+    recalibrate: bool = False,
+    max_error_px: float = config.CALIB_MAX_ERROR_PX,
+    charuco_videos: list[str] | None = None,
+    smoothing: bool = True,
+    bvh: bool = True,
+    resume: bool = False,
+    stop_after: str | None = None,
+    detector: str = DEFAULT_BACKEND,
+    smoother: str = config.SMOOTHER,
+    clap_threshold: float = 1.0,
+    jobs: int = 1,
+) -> None:
     """
     Runs every stage in order. With resume=True a stage whose file (io.stage_paths)
     exists and is still valid is loaded instead of recomputed. stop_after names
@@ -164,7 +241,8 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
     name in backends.BACKENDS); saved joints are only reused if the same
     detector made them. smoother is the
     stage 2c filter (a name in smooth.SMOOTHERS); it always runs, so two runs
-    with --resume compare smoothers on the same triangulation.
+    with --resume compare smoothers on the same triangulation. jobs is how
+    many videos stage 1 detects at once, each in its own process.
 
     Every run writes <out>.metrics.json and <out>.log next to the output
     (metrics.py), also when it fails or stops early.
@@ -172,23 +250,54 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
     n = len(video_paths)
 
     if n < config.MIN_CAMERAS:
-        raise ValueError(f"Give at least {config.MIN_CAMERAS} videos, one per camera (got {n}).")
+        raise ValueError(
+            f"Give at least {config.MIN_CAMERAS} videos, one per camera (got {n})."
+        )
     if stop_after is not None and stop_after not in STAGES:
         raise ValueError(f"stop_after must be one of {STAGES}, got {stop_after!r}")
     if detector not in BACKENDS:
         raise ValueError(f"detector must be one of {tuple(BACKENDS)}, got {detector!r}")
     if smoother not in smooth.SMOOTHERS:
-        raise ValueError(f"smoother must be one of {smooth.SMOOTHERS}, got {smoother!r}")
+        raise ValueError(
+            f"smoother must be one of {smooth.SMOOTHERS}, got {smoother!r}"
+        )
     if not clap_threshold > 0:
         raise ValueError(f"clap_threshold must be positive, got {clap_threshold}")
+    if jobs < 1:
+        raise ValueError(f"jobs must be at least 1, got {jobs}")
 
-    metrics.start(out_path, videos=[str(v) for v in video_paths], detector=detector, smoother=smoother,
-                  performer_height_m=performer_height_m, resume=resume, stop_after=stop_after)
+    metrics.start(
+        out_path,
+        videos=[str(v) for v in video_paths],
+        detector=detector,
+        smoother=smoother,
+        performer_height_m=performer_height_m,
+        resume=resume,
+        stop_after=stop_after,
+    )
     try:
         with metrics.time("total"):
-            stopped = _run_stages(video_paths, out_path, performer_height_m, model_path, camera, fov, clap_times,
-                                  calibration_path, recalibrate, max_error_px, charuco_videos, smoothing, bvh,
-                                  resume, stop_after, detector, smoother, clap_threshold)
+            stopped = _run_stages(
+                video_paths,
+                out_path,
+                performer_height_m,
+                model_path,
+                camera,
+                fov,
+                clap_times,
+                calibration_path,
+                recalibrate,
+                max_error_px,
+                charuco_videos,
+                smoothing,
+                bvh,
+                resume,
+                stop_after,
+                detector,
+                smoother,
+                clap_threshold,
+                jobs,
+            )
     except BaseException as e:
         path = metrics.finish("failed", f"{type(e).__name__}: {e}")
         raise
@@ -197,9 +306,27 @@ def run(video_paths: list[str], out_path: str, performer_height_m: float | None 
         print(f"Saved metrics to {path}")
 
 
-def _run_stages(video_paths, out_path, performer_height_m, model_path, camera, fov, clap_times,
-                calibration_path, recalibrate, max_error_px, charuco_videos, smoothing, bvh,
-                resume, stop_after, detector, smoother, clap_threshold) -> str | None:
+def _run_stages(
+    video_paths,
+    out_path,
+    performer_height_m,
+    model_path,
+    camera,
+    fov,
+    clap_times,
+    calibration_path,
+    recalibrate,
+    max_error_px,
+    charuco_videos,
+    smoothing,
+    bvh,
+    resume,
+    stop_after,
+    detector,
+    smoother,
+    clap_threshold,
+    jobs,
+) -> str | None:
     """The stages in order; returns the stage name if stop_after ended the run early."""
     n = len(video_paths)
     model_path = model_path or default_model_path()
@@ -214,29 +341,43 @@ def _run_stages(video_paths, out_path, performer_height_m, model_path, camera, f
     print("Cameras: " + ", ".join(f"cam{c} {kind}" for c, kind in enumerate(types)))
 
     # Stage 1: 2D joints per camera. Saved raw (before sync resamples them).
-    keypoints = []
+    keypoints = {}
+    to_detect = []
     for video, cid in zip(video_paths, ids):
         kp_path = paths["keypoints"][cid]
-        kp = None
         if resume and kp_path.exists():
             saved, fingerprint = io.load_keypoints(str(kp_path), with_fingerprint=True)
             # files saved before --detector existed were all made by MediaPipe
             saved_detector = fingerprint.get("detector", "mediapipe")
             if not io.fingerprint_matches(fingerprint, video):
-                print(f"{kp_path.name} was made from a different version of {video}, detecting again")
+                print(
+                    f"{kp_path.name} was made from a different version of {video}, detecting again"
+                )
             elif saved_detector != detector:
-                print(f"{kp_path.name} was made with {saved_detector}, detecting again with {detector}")
+                print(
+                    f"{kp_path.name} was made with {saved_detector}, detecting again with {detector}"
+                )
             else:
                 print(f"Using saved joints for {video} ({kp_path.name})")
-                kp = saved
-        if kp is None:
-            print(f"Detecting joints in {video} ({detector})")
-            with metrics.time(f"detect.{cid}"):
-                kp = detect.detect_video(video, model_path, detector=detector)
-            kp.camera_id = cid
-            io.save_keypoints(kp, str(kp_path), {**io.video_fingerprint(video), "detector": detector})
+                keypoints[cid] = saved
+                continue
+        to_detect.append((video, cid))
+
+    for (video, cid), (kp, seconds) in zip(
+        to_detect, _detect_all(to_detect, model_path, detector, jobs)
+    ):
+        metrics.record(f"timing.detect.{cid}_s", round(seconds, 3))
         kp.camera_id = cid
-        keypoints.append(kp)
+        io.save_keypoints(
+            kp,
+            str(paths["keypoints"][cid]),
+            {**io.video_fingerprint(video), "detector": detector},
+        )
+        keypoints[cid] = kp
+
+    keypoints = [keypoints[cid] for cid in ids]
+    for kp, cid in zip(keypoints, ids):
+        kp.camera_id = cid
         metrics.record(f"stage1.{cid}", metrics.keypoints_summary(kp))
 
     if _stop("keypoints", stop_after):
@@ -253,21 +394,36 @@ def _run_stages(video_paths, out_path, performer_height_m, model_path, camera, f
             sync_from_file = True
             print(f"Using saved clap times from {sync_path.name}")
         except KeyError:
-            print(f"{sync_path.name} is for different cameras, searching for the clap again")
+            print(
+                f"{sync_path.name} is for different cameras, searching for the clap again"
+            )
     try:
         with metrics.time("sync"):
-            sync_result, keypoints = sync.synchronise(video_paths, keypoints, clap_times, clap_threshold)
+            sync_result, keypoints = sync.synchronise(
+                video_paths, keypoints, clap_times, clap_threshold
+            )
     except sync.ClapNotFoundError as e:
-        raise SystemExit(f"{e}\n--sync takes one clap time per video in seconds, e.g. --sync 1.25 0.80 1.10; "
-                         f"a video player shows the time. --clap-threshold 0.5 accepts weaker claps.")
+        raise SystemExit(
+            f"{e}\n--sync takes one clap time per video in seconds, e.g. --sync 1.25 0.80 1.10; "
+            f"a video player shows the time. --clap-threshold 0.5 accepts weaker claps."
+        )
     # rewriting an unchanged sync file would make the saved 3D points look stale
     if not sync_from_file:
         io.save_sync(sync_result, str(sync_path))
 
-    print("Clap at " + ", ".join(f"{cid} {t:.3f} s" for cid, t in sync_result.clap_time_s.items()))
+    print(
+        "Clap at "
+        + ", ".join(f"{cid} {t:.3f} s" for cid, t in sync_result.clap_time_s.items())
+    )
     metrics.record("sync.clap_time_s", sync_result.clap_time_s)
-    metrics.record("sync.clap_times_from", "given" if clap_times is not None and not sync_from_file
-                   else "saved file" if sync_from_file else "audio")
+    metrics.record(
+        "sync.clap_times_from",
+        (
+            "given"
+            if clap_times is not None and not sync_from_file
+            else "saved file" if sync_from_file else "audio"
+        ),
+    )
     metrics.record("sync.clap_threshold", float(clap_threshold))
     metrics.record("sync.common_frames", int(len(sync_result.common_timestamps)))
     metrics.record("sync.common_fps", float(config.TARGET_FPS))
@@ -283,19 +439,27 @@ def _run_stages(video_paths, out_path, performer_height_m, model_path, camera, f
         metrics.record("calibrate.reused_file", str(calib_path))
 
         if len(rig.cameras) != n:
-            raise SystemExit(f"{calib_path} has {len(rig.cameras)} cameras but {n} videos were given, "
-                             f"add --recalibrate")
+            raise SystemExit(
+                f"{calib_path} has {len(rig.cameras)} cameras but {n} videos were given, "
+                f"add --recalibrate"
+            )
 
     else:
         if performer_height_m is None:
-            raise SystemExit("--height-m (performer height in metres) is needed to calibrate")
+            raise SystemExit(
+                "--height-m (performer height in metres) is needed to calibrate"
+            )
 
         with metrics.time("calibrate"):
-            rig, from_board = calibrate_cameras(keypoints, video_paths, types, fov, max_error_px, charuco_videos)
+            rig, from_board = calibrate_cameras(
+                keypoints, video_paths, types, fov, max_error_px, charuco_videos
+            )
             rough_pose = triangulate.triangulate_sequence(keypoints, rig)
 
             # a board calibration is already in metres, it only needs the floor and Y up
-            rig = scale_floor.make_metric(rig, rough_pose, performer_height_m, rescale=not from_board)
+            rig = scale_floor.make_metric(
+                rig, rough_pose, performer_height_m, rescale=not from_board
+            )
         metrics.record("calibrate.from_board", bool(from_board))
         io.save_rig(rig, str(calib_path))
 
@@ -343,7 +507,10 @@ def _run_stages(video_paths, out_path, performer_height_m, model_path, camera, f
 def export_bvh(pose, bvh_path: str) -> None:
     """Stage 3: Pose3D -> H36M skeleton with fixed bone lengths -> joint rotations -> .bvh."""
     rig_positions = skeleton.rig_joint_positions(pose)
-    metrics.record("rig.bone_lengths", metrics.bone_length_summary(rig_positions, RIG_JOINTS, RIG_PARENTS))
+    metrics.record(
+        "rig.bone_lengths",
+        metrics.bone_length_summary(rig_positions, RIG_JOINTS, RIG_PARENTS),
+    )
     offsets = skeleton.rest_pose_offsets(skeleton.bone_lengths(rig_positions))
     root_positions, local_rotations = rotations.solve_rotations(rig_positions, offsets)
     euler = rotations.to_euler_degrees(local_rotations, bvh_writer.ROTATION_ORDER)
@@ -357,70 +524,165 @@ def per_camera(parser, name, values, n):
     if len(values) == 1:
         return values * n
     if len(values) != n:
-        parser.error(f"{name} takes one value for all cameras or one per camera ({n}), got {len(values)}")
+        parser.error(
+            f"{name} takes one value for all cameras or one per camera ({n}), got {len(values)}"
+        )
     return values
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Phone/webcam videos (2 or more cameras) to 3D joints.")
-    parser.add_argument("videos", nargs="+",
-                        help="One video per camera, at least 2, each starting with a clap. The first is the reference camera.")
-    parser.add_argument("--height-m", type=float, default=None,
-                        help="Performer height in metres; sets the real-world scale (needed when calibrating).")
-    parser.add_argument("--out", default=str(DEFAULT_OUT),
-                        help="Output JSON path (3D joints per frame). Default: backend/output/out3d.json")
-    parser.add_argument("--detector", choices=list(BACKENDS), default=DEFAULT_BACKEND,
-                        help=f"Pose model for stage 1 (default: {DEFAULT_BACKEND}). When comparing detectors, also "
-                             "pass --recalibrate or a separate --calibration file per detector, otherwise the "
-                             "first detector's calibration is reused.")
-    parser.add_argument("--model", default=None,
-                        help="MediaPipe pose_landmarker .task file (default: MODEL_FILEPATH in .env, or the "
-                             "repo's model). Other detectors download their own models.")
-    parser.add_argument("--camera", nargs="+", choices=["auto", "iphone", "webcam"], default=["auto"],
-                        help="Camera type, one for all or one per video. auto: iPhone if the video has Apple's "
-                             "focal length metadata, otherwise webcam (any non-iPhone camera, uses --fov).")
-    parser.add_argument("--fov", nargs="+", type=float, default=[config.DEFAULT_HFOV_DEG],
-                        help="Horizontal field of view in degrees of the non-iPhone cameras, one for all or one per video.")
-    parser.add_argument("--sync", nargs="+", type=float, default=None,
-                        help="Clap time in seconds in each video, one per video. Default: found from the audio.")
-    parser.add_argument("--clap-threshold", type=float, default=1.0,
-                        help="Multiplies how loud a clap must be against the room (default 1.0 = the config values). "
-                             "0.5 accepts a clap half as strong; use it when the clap is reported as not loud enough.")
-    parser.add_argument("--calibration", default=str(DEFAULT_CALIBRATION),
-                        help="Calibration file, reused if it exists. Default: backend/output/calibration.json")
-    parser.add_argument("--recalibrate", action="store_true", help="Ignore an existing calibration file.")
-    parser.add_argument("--max-error", type=float, default=config.CALIB_MAX_ERROR_PX,
-                        help="Calibration above this reprojection error (px) falls back to the ChArUco board.")
-    parser.add_argument("--charuco-videos", nargs="+", default=None,
-                        help="Board video from each camera, used only if calibration from the performer fails.")
-    parser.add_argument("--smoother", choices=list(smooth.SMOOTHERS), default=config.SMOOTHER,
-                        help=f"Stage 2c filter (default: {config.SMOOTHER}). savgol: Savitzky-Golay, "
-                             f"{config.SMOOTH_WINDOW_FRAMES}-frame window. butterworth: zero-phase low-pass at "
-                             f"{config.BUTTER_CUTOFF_HZ:g} Hz. Runs even with --resume, so two resumed runs compare them.")
-    parser.add_argument("--no-smooth", action="store_true", help="Skip gap filling and smoothing.")
-    parser.add_argument("--no-bvh", action="store_true",
-                        help="Skip the skeleton animation (.bvh written next to the --out JSON).")
-    parser.add_argument("--resume", action="store_true",
-                        help="Reuse the stage files saved next to --out from an earlier run (joints, clap "
-                             "times, 3D points) instead of recomputing them. Changed videos are detected.")
-    parser.add_argument("--stop-after", choices=STAGES, default=None,
-                        help="Run up to this stage, save its file next to --out, and stop.")
+    parser = argparse.ArgumentParser(
+        description="Phone/webcam videos (2 or more cameras) to 3D joints."
+    )
+    parser.add_argument(
+        "videos",
+        nargs="+",
+        help="One video per camera, at least 2, each starting with a clap. The first is the reference camera.",
+    )
+    parser.add_argument(
+        "--height-m",
+        type=float,
+        default=None,
+        help="Performer height in metres; sets the real-world scale (needed when calibrating).",
+    )
+    parser.add_argument(
+        "--out",
+        default=str(DEFAULT_OUT),
+        help="Output JSON path (3D joints per frame). Default: backend/output/out3d.json",
+    )
+    parser.add_argument(
+        "--detector",
+        choices=list(BACKENDS),
+        default=DEFAULT_BACKEND,
+        help=f"Pose model for stage 1 (default: {DEFAULT_BACKEND}). When comparing detectors, also "
+        "pass --recalibrate or a separate --calibration file per detector, otherwise the "
+        "first detector's calibration is reused.",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="MediaPipe pose_landmarker .task file (default: MODEL_FILEPATH in .env, or the "
+        "repo's model). Other detectors download their own models.",
+    )
+    parser.add_argument(
+        "--camera",
+        nargs="+",
+        choices=["auto", "iphone", "webcam"],
+        default=["auto"],
+        help="Camera type, one for all or one per video. auto: iPhone if the video has Apple's "
+        "focal length metadata, otherwise webcam (any non-iPhone camera, uses --fov).",
+    )
+    parser.add_argument(
+        "--fov",
+        nargs="+",
+        type=float,
+        default=[config.DEFAULT_HFOV_DEG],
+        help="Horizontal field of view in degrees of the non-iPhone cameras, one for all or one per video.",
+    )
+    parser.add_argument(
+        "--sync",
+        nargs="+",
+        type=float,
+        default=None,
+        help="Clap time in seconds in each video, one per video. Default: found from the audio.",
+    )
+    parser.add_argument(
+        "--clap-threshold",
+        type=float,
+        default=1.0,
+        help="Multiplies how loud a clap must be against the room (default 1.0 = the config values). "
+        "0.5 accepts a clap half as strong; use it when the clap is reported as not loud enough.",
+    )
+    parser.add_argument(
+        "--calibration",
+        default=str(DEFAULT_CALIBRATION),
+        help="Calibration file, reused if it exists. Default: backend/output/calibration.json",
+    )
+    parser.add_argument(
+        "--recalibrate",
+        action="store_true",
+        help="Ignore an existing calibration file.",
+    )
+    parser.add_argument(
+        "--max-error",
+        type=float,
+        default=config.CALIB_MAX_ERROR_PX,
+        help="Calibration above this reprojection error (px) falls back to the ChArUco board.",
+    )
+    parser.add_argument(
+        "--charuco-videos",
+        nargs="+",
+        default=None,
+        help="Board video from each camera, used only if calibration from the performer fails.",
+    )
+    parser.add_argument(
+        "--smoother",
+        choices=list(smooth.SMOOTHERS),
+        default=config.SMOOTHER,
+        help=f"Stage 2c filter (default: {config.SMOOTHER}). savgol: Savitzky-Golay, "
+        f"{config.SMOOTH_WINDOW_FRAMES}-frame window. butterworth: zero-phase low-pass at "
+        f"{config.BUTTER_CUTOFF_HZ:g} Hz. Runs even with --resume, so two resumed runs compare them.",
+    )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=None,
+        help="How many videos to detect joints in at once, each in its own process "
+        "(default: all of them, up to the number of CPU cores). 1 runs them one by one.",
+    )
+    parser.add_argument(
+        "--no-smooth", action="store_true", help="Skip gap filling and smoothing."
+    )
+    parser.add_argument(
+        "--no-bvh",
+        action="store_true",
+        help="Skip the skeleton animation (.bvh written next to the --out JSON).",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Reuse the stage files saved next to --out from an earlier run (joints, clap "
+        "times, 3D points) instead of recomputing them. Changed videos are detected.",
+    )
+    parser.add_argument(
+        "--stop-after",
+        choices=STAGES,
+        default=None,
+        help="Run up to this stage, save its file next to --out, and stop.",
+    )
     args = parser.parse_args()
 
     n = len(args.videos)
     if n < config.MIN_CAMERAS:
-        parser.error(f"give at least {config.MIN_CAMERAS} videos, one per camera (got {n})")
+        parser.error(
+            f"give at least {config.MIN_CAMERAS} videos, one per camera (got {n})"
+        )
     if args.sync is not None and len(args.sync) != n:
         parser.error(f"--sync needs one clap time per video ({n})")
     if args.charuco_videos and len(args.charuco_videos) != n:
         parser.error(f"--charuco-videos needs one board video per camera ({n})")
 
-    run(args.videos, args.out, performer_height_m=args.height_m, model_path=args.model,
-        camera=per_camera(parser, "--camera", args.camera, n), fov=per_camera(parser, "--fov", args.fov, n),
-        clap_times=args.sync, calibration_path=args.calibration, recalibrate=args.recalibrate,
-        max_error_px=args.max_error, charuco_videos=args.charuco_videos, smoothing=not args.no_smooth,
-        bvh=not args.no_bvh, resume=args.resume, stop_after=args.stop_after,
-        detector=args.detector, smoother=args.smoother, clap_threshold=args.clap_threshold)
+    run(
+        args.videos,
+        args.out,
+        performer_height_m=args.height_m,
+        model_path=args.model,
+        camera=per_camera(parser, "--camera", args.camera, n),
+        fov=per_camera(parser, "--fov", args.fov, n),
+        clap_times=args.sync,
+        calibration_path=args.calibration,
+        recalibrate=args.recalibrate,
+        max_error_px=args.max_error,
+        charuco_videos=args.charuco_videos,
+        smoothing=not args.no_smooth,
+        bvh=not args.no_bvh,
+        resume=args.resume,
+        stop_after=args.stop_after,
+        detector=args.detector,
+        smoother=args.smoother,
+        clap_threshold=args.clap_threshold,
+        jobs=args.jobs or min(n, os.cpu_count() or 1),
+    )
 
 
 if __name__ == "__main__":
