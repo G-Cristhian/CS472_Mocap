@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 import api  # noqa: E402
 from mocap_pipeline import io  # noqa: E402
+from mocap_pipeline.joints import EXTRA_JOINTS, JOINTS, MEDIAPIPE_JOINTS, NUM_JOINTS  # noqa: E402
 from tests.conftest import make_keypoints, make_sync  # noqa: E402
 
 VIDEO = b"\x00\x00\x00\x18ftypmp42" + b"not really a video" * 4
@@ -231,14 +232,26 @@ def test_keypoints_are_listed_and_served_per_camera(client):
 
     kp = client.get(f"/takes/{take_id}/keypoints/cam1.json").json()
     assert kp["camera_id"] == "cam1" and kp["clap_time_s"] == 1.25
-    assert len(kp["joints"]) == 33 and kp["joints"][0] == "NOSE"
-    assert len(kp["timestamps"]) == 12 and len(kp["points"]) == 12 and len(kp["points"][0]) == 33
+    assert kp["joints"] == JOINTS and kp["joints"][0] == "NOSE" and kp["joints"][-5:] == EXTRA_JOINTS
+    assert len(kp["timestamps"]) == 12 and len(kp["points"]) == 12 and len(kp["points"][0]) == NUM_JOINTS
     assert kp["points"][3][5] is None and kp["confidence"][3][5] == 0.0     # the gap conftest plants
     assert isinstance(kp["points"][0][0], list) and len(kp["points"][0][0]) == 2
 
     assert client.get(f"/takes/{take_id}/keypoints/cam7.json").status_code == 404
     assert client.get(f"/takes/{take_id}/keypoints/camera.json").status_code == 404
     assert client.get("/takes/20261016-000099-abcd/keypoints.json").status_code == 404
+
+
+def test_keypoints_saved_with_33_joints_are_served_with_33_names(client, output_dir):
+    # takes processed before joints.EXTRA_JOINTS existed
+    take_id = upload(client, ("cam0", "cam1")).json()["id"]
+    wait_for(client, take_id)
+    old = make_keypoints(camera_id="cam0")
+    old.points, old.confidence = old.points[:, :33], old.confidence[:, :33]
+    io.save_keypoints(old, str(output_dir / take_id / "out3d.keypoints.cam0.npz"))
+
+    kp = client.get(f"/takes/{take_id}/keypoints/cam0.json").json()
+    assert kp["joints"] == MEDIAPIPE_JOINTS and len(kp["points"][0]) == 33
 
 
 def test_stage_is_parsed_from_the_pipelines_output(client, output_dir):

@@ -163,11 +163,18 @@ export function metricSections(m: Json): MetricSection[] {
     for (const [cid, px] of Object.entries(calib)) rows.push({ label: `${cid} reprojection error`, value: fix(px, 2, ' px'), grade: grade(px, 3, 10) })
     const scale = num(m, 'scale.metres_per_unit')
     if (scale !== null) {
+      // "head top" when the detector found the top of the head (RTMPose), else "ears" plus a fixed offset
+      const to = at(m, 'scale.height_from')
       rows.push({
         label: 'Scale',
-        value: `${scale.toFixed(4)} m per unit${at(m, 'scale.rescaled_from_height') ? ', from the performer height' : ''}`,
+        value: `${scale.toFixed(4)} m per unit${at(m, 'scale.rescaled_from_height') ? ', from the performer height' : ''}`
+          + (typeof to === 'string' ? ` measured to the ${to}` : ''),
         grade: '',
       })
+    }
+    const aboveEars = num(m, 'scale.head_top_above_ears_m')
+    if (aboveEars !== null) {
+      rows.push({ label: 'Head top above the ears', value: `${(aboveEars * 100).toFixed(1)} cm, as the detector found it`, grade: '' })
     }
     sections.push({ title: 'Stage 2b, calibration', rows })
   }

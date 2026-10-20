@@ -2,10 +2,13 @@
 A synthetic performer and virtual phones, for testing stages 2 and 3 without
 footage.
 
-The performer is an articulated figure with the 33 MediaPipe joints and
+The performer is an articulated figure with every joint in joints.JOINTS and
 exactly fixed bone lengths, built so that the pipeline's height rule holds
-exactly: ears sit HEAD_TOP_ABOVE_EARS_M below the top of the head and the
-heel landmarks HEEL_ABOVE_FLOOR_M above the floor (both from config). It
+exactly: ears sit HEAD_TOP_ABOVE_EARS_M below the top of the head (HEAD_TOP)
+and the heel landmarks HEEL_ABOVE_FLOOR_M above the floor (both from config).
+The joints only RTMPose has (joints.EXTRA_JOINTS) are seen by the cameras
+only with Scene(extra_joints=True); by default they are NaN, as MediaPipe
+gives them. It
 performs the field test routine (docs/procedures/filming.md, section 5):
 stand still, walk a loop with the arms raised and the body turning, then a
 fast punching sequence.
@@ -28,7 +31,7 @@ from pathlib import Path
 import numpy as np
 
 from mocap_pipeline import config
-from mocap_pipeline.joints import JOINT_INDEX, NUM_JOINTS
+from mocap_pipeline.joints import EXTRA_JOINTS, JOINT_INDEX, MEDIAPIPE_JOINTS, NUM_JOINTS
 from mocap_pipeline.schemas import Camera, CameraRig, Keypoints2D, Pose3D
 from mocap_pipeline.stage2_reconstruct.calibrate import initial_intrinsics
 
@@ -39,6 +42,7 @@ HEEL_Y = config.HEEL_ABOVE_FLOOR_M                            # heel landmark he
 EAR_Y = PERFORMER_HEIGHT_M - config.HEAD_TOP_ABOVE_EARS_M     # ear height when standing
 HIP_Y, SHOULDER_Y = 0.93, 1.43
 HIP_HALF, SHOULDER_HALF, EAR_HALF = 0.10, 0.19, 0.075
+NECK_ABOVE_SHOULDERS, MID_HIP_ABOVE_HIPS = 0.07, 0.03       # Halpe's neck and hip (joints.EXTRA_JOINTS)
 THIGH, SHIN, UPPER_ARM, FOREARM = 0.42, 0.42, 0.28, 0.26
 ANKLE_Y = HIP_Y - THIGH - SHIN                                # 0.09 when standing
 ANKLE_ABOVE_HEEL = ANKLE_Y - HEEL_Y
@@ -62,7 +66,7 @@ def _unit(v):
 
 def _body(theta_l, theta_r, knee_l, knee_r, abduction, flex_r, elbow_l, elbow_r):
     """
-    The 33 joints in the body frame: origin on the floor under the pelvis,
+    Every joint in the body frame: origin on the floor under the pelvis,
     +Y up, +Z the way the performer faces, +X the performer's left.
       theta_*    thigh swing forward (radians), knee_* knee bend
       abduction  both arms raised sideways (0 hanging, pi/2 out, pi up)
@@ -80,6 +84,9 @@ def _body(theta_l, theta_r, knee_l, knee_r, abduction, flex_r, elbow_l, elbow_r)
     put("LEFT_SHOULDER", (SHOULDER_HALF, SHOULDER_Y, 0)); put("RIGHT_SHOULDER", (-SHOULDER_HALF, SHOULDER_Y, 0))
     put("LEFT_EAR", (EAR_HALF, EAR_Y, 0)); put("RIGHT_EAR", (-EAR_HALF, EAR_Y, 0))
     put("NOSE", (0, EAR_Y - 0.045, 0.10))
+    put("HEAD_TOP", (0, PERFORMER_HEIGHT_M, 0))
+    put("NECK", (0, SHOULDER_Y + NECK_ABOVE_SHOULDERS, 0))
+    put("MID_HIP", (0, HIP_Y + MID_HIP_ABOVE_HIPS, 0))
     for side, s in (("LEFT", 1), ("RIGHT", -1)):
         put(f"{side}_EYE_INNER", (s * 0.03, EAR_Y - 0.01, 0.085))
         put(f"{side}_EYE", (s * 0.045, EAR_Y - 0.01, 0.08))
@@ -97,6 +104,7 @@ def _body(theta_l, theta_r, knee_l, knee_r, abduction, flex_r, elbow_l, elbow_r)
         put(f"{side}_ANKLE", ankle)
         put(f"{side}_HEEL", ankle + np.array([0, -ANKLE_ABOVE_HEEL, -0.03]))
         put(f"{side}_FOOT_INDEX", ankle + np.array([0, -ANKLE_ABOVE_HEEL, 0.15]))
+        put(f"{side}_SMALL_TOE", ankle + np.array([(1 if side == "LEFT" else -1) * 0.045, -ANKLE_ABOVE_HEEL, 0.12]))
 
     # arms
     for side, s, flex, elbow in (("LEFT", 1, 0.0, elbow_l), ("RIGHT", -1, flex_r, elbow_r)):
@@ -134,7 +142,7 @@ class Routine:
 
 
 def pose_at(t: float, routine: Routine = Routine()) -> np.ndarray:
-    """The 33 joints (metres, world frame) at time t seconds after the clap."""
+    """Every joint (metres, world frame) at time t seconds after the clap."""
     if t < routine.stand_s:
         body, yaw, pos = _body(0, 0, 0, 0, 0, 0, 0, 0), 0.0, (0.0, 0.0)
     elif t < routine.stand_s + routine.walk_s:
@@ -165,7 +173,7 @@ def pose_at(t: float, routine: Routine = Routine()) -> np.ndarray:
 
 
 def truth(times, routine: Routine = Routine()) -> np.ndarray:
-    """(F, 33, 3) joints at the given times."""
+    """(F, NUM_JOINTS, 3) joints at the given times."""
     return np.stack([pose_at(float(t), routine) for t in times])
 
 
@@ -211,7 +219,18 @@ class Noise:
 
 
 def observe(points3d, cam: Camera, width: int, height: int, noise: Noise, rng: np.random.Generator):
-    """Pixels and confidence (F, J, 2) / (F, J) for one camera."""
+    """
+    Pixels and confidence (F, J, 2) / (F, J) for one camera. MediaPipe's 33
+    joints draw their noise first, so they get the same noise as before the
+    extra joints existed (tests/test_mediapipe_parity.py relies on it).
+    """
+    n = len(MEDIAPIPE_JOINTS)
+    first = _observe(points3d[:, :n], cam, width, height, noise, rng)
+    extra = _observe(points3d[:, n:], cam, width, height, noise, rng)
+    return np.concatenate([first[0], extra[0]], axis=1), np.concatenate([first[1], extra[1]], axis=1)
+
+
+def _observe(points3d, cam: Camera, width: int, height: int, noise: Noise, rng: np.random.Generator):
     px, visible = project(points3d, cam, width, height)
     confidence = np.where(visible, rng.uniform(0.85, 1.0, visible.shape), 0.0)
     if noise.pixel_sigma > 0:
@@ -248,6 +267,7 @@ class Scene:
     noise: Noise = field(default_factory=Noise)
     routine: Routine = field(default_factory=Routine)
     seed: int = 0
+    extra_joints: bool = False                   # the detector also finds joints.EXTRA_JOINTS (RTMPose)
 
     @property
     def n_cameras(self) -> int:
@@ -267,11 +287,16 @@ class Scene:
         return np.arange(0.0, self.routine.duration - 1e-9, 1.0 / config.TARGET_FPS)
 
     def truth(self, times=None) -> np.ndarray:
-        return truth(self.common_times() if times is None else times, self.routine)
+        """The joints the detector has; the extra joints are NaN unless extra_joints."""
+        pts = truth(self.common_times() if times is None else times, self.routine)
+        if not self.extra_joints:
+            pts[:, [JOINT_INDEX[n] for n in EXTRA_JOINTS]] = np.nan
+        return pts
 
     def truth_pose(self, times=None) -> Pose3D:
         pts = self.truth(times)
-        return Pose3D(fps=config.TARGET_FPS, points=pts, num_views=np.full(pts.shape[:2], self.n_cameras))
+        return Pose3D(fps=config.TARGET_FPS, points=pts,
+                      num_views=np.where(np.isfinite(pts).all(axis=2), self.n_cameras, 0))
 
     def _rng(self, camera_index: int) -> np.random.Generator:
         return np.random.default_rng(self.seed * 1000 + camera_index)

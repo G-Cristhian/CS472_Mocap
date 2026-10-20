@@ -35,7 +35,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .joints import MEDIAPIPE_JOINTS
+from .joints import JOINTS
 
 _run: dict | None = None
 _paths: dict | None = None
@@ -97,18 +97,31 @@ def keypoints_summary(kp) -> dict:
         "no_person_fraction": float(no_person.mean()) if len(conf) else None,
         "mean_confidence": float(conf[seen].mean()) if seen.any() else None,
         "mean_confidence_per_joint": {n: (float(conf[:, j][seen[:, j]].mean()) if seen[:, j].any() else None)
-                                      for j, n in enumerate(MEDIAPIPE_JOINTS)},
+                                      for j, n in enumerate(JOINTS)},
     }
 
 
-def pose_summary(pose) -> dict:
-    """Stage 2c coverage from a Pose3D: how much of the take has 3D for each joint."""
+def detected_joints(keypoints) -> np.ndarray:
+    """(J,) bool: the joints the detector gave a position for in any frame of any camera."""
+    return np.any([np.isfinite(np.asarray(kp.points, dtype=float)).all(axis=2).any(axis=0)
+                   for kp in keypoints], axis=0)
+
+
+def pose_summary(pose, detected=None) -> dict:
+    """
+    Stage 2c coverage from a Pose3D: how much of the take has 3D for each joint.
+    detected (from detected_joints) limits it to the joints the detector has,
+    so that joints it never gives (MediaPipe's HEAD_TOP, RTMPose's fingers)
+    are not counted as missing; they are reported as null.
+    """
     pts = np.asarray(pose.points)
     missing = np.isnan(pts).any(axis=2)                       # (F, J)
+    detected = np.ones(missing.shape[1], dtype=bool) if detected is None else np.asarray(detected, dtype=bool)
     return {
         "frames": int(len(pts)),
-        "missing_fraction": float(missing.mean()) if pts.size else None,
-        "missing_fraction_per_joint": {n: float(missing[:, j].mean()) for j, n in enumerate(MEDIAPIPE_JOINTS)},
+        "missing_fraction": float(missing[:, detected].mean()) if missing[:, detected].size else None,
+        "missing_fraction_per_joint": {n: float(missing[:, j].mean()) if detected[j] else None
+                                       for j, n in enumerate(JOINTS)},
         "mean_views_per_joint": float(np.asarray(pose.num_views)[~missing].mean()) if (~missing).any() else None,
         "jitter_mm": jitter_mm(pts),
     }

@@ -46,6 +46,17 @@ test('every stage gets a section, and bad numbers are graded bad', () => {
   assert.equal(rows['Gaps'].value, '3 filled, 1 too long and left missing')
 })
 
+test('the scale says what the height was measured to', () => {
+  const rtmpose = { ...M, calibrate: { reprojection_error_px: { cam0: 1.5 } },
+    scale: { upright_frames: 40, metres_per_unit: 6.5, rescaled_from_height: true, height_from: 'head top', head_top_above_ears_m: 0.134 } }
+  const rows = Object.fromEntries(metricSections(rtmpose).flatMap((s) => s.rows.map((r) => [r.label, r])))
+  assert.equal(rows['Scale'].value, '6.5000 m per unit, from the performer height measured to the head top')
+  assert.equal(rows['Head top above the ears'].value, '13.4 cm, as the detector found it')
+  const old = Object.fromEntries(metricSections({ ...M, scale: { metres_per_unit: 6.5 } }).flatMap((s) => s.rows.map((r) => [r.label, r])))
+  assert.equal(old['Scale'].value, '6.5000 m per unit')      // metrics from before height_from existed
+  assert.equal(old['Head top above the ears'], undefined)
+})
+
 test('an empty metrics file still gives the glance section with dashes', () => {
   const sections = metricSections({})
   assert.equal(sections.length, 1)

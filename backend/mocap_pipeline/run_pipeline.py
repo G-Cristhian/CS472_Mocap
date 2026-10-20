@@ -34,7 +34,7 @@ from .stage1_keypoints import detect
 from .stage1_keypoints.backends import BACKENDS, DEFAULT_BACKEND
 from .stage2_reconstruct import calibrate, scale_floor, smooth, sync, triangulate
 from .stage3_rig import bvh_writer, rotations, skeleton
-from .joints import RIG_JOINTS, RIG_PARENTS
+from .joints import NUM_JOINTS, RIG_JOINTS, RIG_PARENTS
 from .stage2_reconstruct.iphone_camera import (
     is_iphone_video,
     iphone_intrinsics,
@@ -457,6 +457,12 @@ def _run_stages(
                 print(
                     f"{kp_path.name} was made with {saved_detector}, detecting again with {detector}"
                 )
+            elif saved.points.shape[1] != NUM_JOINTS:
+                # files from before joints.EXTRA_JOINTS have MediaPipe's 33 only
+                print(
+                    f"{kp_path.name} has {saved.points.shape[1]} joints, not {NUM_JOINTS} "
+                    f"(saved by an older version), detecting again"
+                )
             else:
                 print(f"Using saved joints for {video} ({kp_path.name})")
                 saved.camera_id = cid
@@ -605,14 +611,20 @@ def _run_stages(
     # cheap step most likely to be tuned. Stale if any input file is newer.
     pose_path = paths["pose"]
     inputs = [calib_path, sync_path, *paths["keypoints"].values()]
+    pose = None
     if resume and _up_to_date(pose_path, *inputs):
-        print(f"Using saved 3D joints from {pose_path.name}")
         pose = io.load_pose3d(str(pose_path))
-    else:
+        if pose.points.shape[1] == NUM_JOINTS:
+            print(f"Using saved 3D joints from {pose_path.name}")
+        else:
+            print(f"{pose_path.name} has {pose.points.shape[1]} joints, not {NUM_JOINTS}, triangulating again")
+            pose = None
+    if pose is None:
         with metrics.time("triangulate"):
             pose = triangulate.triangulate_sequence(keypoints, rig)
         io.save_pose3d(pose, str(pose_path))
-    metrics.record("pose_raw", metrics.pose_summary(pose))
+    detected = metrics.detected_joints(keypoints)
+    metrics.record("pose_raw", metrics.pose_summary(pose, detected))
 
     if _stop("triangulate", stop_after):
         return "triangulate"
@@ -620,7 +632,7 @@ def _run_stages(
     if smoothing:
         with metrics.time("smooth"):
             pose = smooth.smooth(smooth.fill_gaps(pose), smoother)
-    metrics.record("pose_final", metrics.pose_summary(pose))
+    metrics.record("pose_final", metrics.pose_summary(pose, detected))
 
     io.save_pose3d_json(pose, out_path, sync_result.common_timestamps)
     print(f"Saved {len(pose.points)} frames of 3D joints to {out_path}")

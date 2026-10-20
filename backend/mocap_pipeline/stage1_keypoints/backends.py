@@ -1,9 +1,10 @@
 """
 Stage 1 pose models behind one interface, so the pipeline can switch models.
 
-A backend turns one RGB video frame into the 33 MediaPipe joints
-(joints.MEDIAPIPE_JOINTS order): pixel x, y plus a 0..1 confidence per joint.
-Joints a model does not have stay NaN with confidence 0. Stages 2 and 3 only
+A backend turns one RGB video frame into joints.JOINTS (MediaPipe's 33
+joints in MediaPipe's order, then the extras only some models have): pixel
+x, y plus a 0..1 confidence per joint. Joints a model does not have stay NaN
+with confidence 0. Stages 2 and 3 only
 ever see that, so adding a model means writing one class here and adding it
 to BACKENDS. detect.py handles reading the video; backends only see frames.
 """
@@ -46,7 +47,8 @@ class PoseBackend:
         """
         rgb      : (H, W, 3) uint8 frame, RGB order.
         frame_ms : time of this frame in the video, milliseconds.
-        Returns (points (33, 2) pixels, confidence (33,) 0..1), see empty_frame().
+        Returns (points (NUM_JOINTS, 2) pixels, confidence (NUM_JOINTS,) 0..1),
+        see empty_frame().
         """
         raise NotImplementedError
 
@@ -108,13 +110,15 @@ HALPE26_JOINTS = [
     "left_heel", "right_heel",
 ]
 
-# MediaPipe joint -> the Halpe-26 joint that fills it. Left/right are the
-# performer's own in both formats. MediaPipe joints missing here (inner/outer
-# eyes, mouth, fingers) stay NaN; none of them are used by stages 2 and 3.
+# Our joint (joints.JOINTS) -> the Halpe-26 joint that fills it. Left/right
+# are the performer's own in both formats. MediaPipe joints missing here
+# (inner/outer eyes, mouth, fingers) stay NaN; none of them are used by stages
+# 2 and 3. All 26 Halpe joints are kept: head, neck, hip and the small toes
+# fill joints.EXTRA_JOINTS (what each one means is written there).
 # Approximation: MediaPipe's FOOT_INDEX is the tip of the foot, filled from
 # the big toe, the nearest Halpe-26 point (scale_floor only uses it to find
 # the floor).
-MEDIAPIPE_FROM_HALPE26 = {
+JOINTS_FROM_HALPE26 = {
     "NOSE": "nose",
     "LEFT_EYE": "left_eye", "RIGHT_EYE": "right_eye",
     "LEFT_EAR": "left_ear", "RIGHT_EAR": "right_ear",
@@ -126,14 +130,16 @@ MEDIAPIPE_FROM_HALPE26 = {
     "LEFT_ANKLE": "left_ankle", "RIGHT_ANKLE": "right_ankle",
     "LEFT_HEEL": "left_heel", "RIGHT_HEEL": "right_heel",
     "LEFT_FOOT_INDEX": "left_big_toe", "RIGHT_FOOT_INDEX": "right_big_toe",
+    "HEAD_TOP": "head", "NECK": "neck", "MID_HIP": "hip",
+    "LEFT_SMALL_TOE": "left_small_toe", "RIGHT_SMALL_TOE": "right_small_toe",
 }
-_MP_SLOTS = np.array([JOINT_INDEX[mp_name] for mp_name in MEDIAPIPE_FROM_HALPE26])
-_HALPE_SLOTS = np.array([HALPE26_JOINTS.index(h) for h in MEDIAPIPE_FROM_HALPE26.values()])
+_OUR_SLOTS = np.array([JOINT_INDEX[name] for name in JOINTS_FROM_HALPE26])
+_HALPE_SLOTS = np.array([HALPE26_JOINTS.index(h) for h in JOINTS_FROM_HALPE26.values()])
 
 
-def halpe26_to_mediapipe(keypoints: np.ndarray, scores: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def halpe26_to_joints(keypoints: np.ndarray, scores: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
-    One person's Halpe-26 output -> MediaPipe-order points and confidence.
+    One person's Halpe-26 output -> points and confidence in joints.JOINTS order.
 
     keypoints : (26, 2) pixels.  scores : (26,) RTMPose scores.
     RTMPose scores are not probabilities like MediaPipe's visibility; they are
@@ -142,8 +148,8 @@ def halpe26_to_mediapipe(keypoints: np.ndarray, scores: np.ndarray) -> tuple[np.
     A joint scored 0 or less has no valid location and becomes NaN.
     """
     points, confidence = empty_frame()
-    points[_MP_SLOTS] = keypoints[_HALPE_SLOTS]
-    confidence[_MP_SLOTS] = np.clip(scores[_HALPE_SLOTS], 0.0, 1.0)
+    points[_OUR_SLOTS] = keypoints[_HALPE_SLOTS]
+    confidence[_OUR_SLOTS] = np.clip(scores[_HALPE_SLOTS], 0.0, 1.0)
     points[confidence <= 0] = np.nan
     return points, confidence
 
@@ -193,7 +199,7 @@ class RTMPoseBackend(PoseBackend):
             return empty_frame()
 
         keypoints, scores = self._model.pose_model(bgr, bboxes=[bboxes[person]])
-        return halpe26_to_mediapipe(keypoints[0], scores[0])
+        return halpe26_to_joints(keypoints[0], scores[0])
 
 
 # Detector name (what run_pipeline's --detector will take) -> backend class.

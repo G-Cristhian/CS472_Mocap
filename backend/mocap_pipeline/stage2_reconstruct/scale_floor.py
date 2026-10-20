@@ -54,21 +54,52 @@ def scale_factor_from_height(pose: Pose3D, performer_height_m: float) -> float:
     """
       1. Pick frames where the performer stands upright (heels, knees, hips,
          shoulders and ears roughly on one line).
-      2. Measure heel-to-ear distance in rig units. Ears are the highest
-         reliable landmark; the top of the skull and the heel's height above
-         the floor are added as fixed offsets (config).
+      2. Measure heel to the top of the head in rig units, if the detector
+         found the top of the head (joints.HEAD_TOP) in at least
+         MIN_UPRIGHT_FRAMES of them and config.USE_DETECTED_HEAD_TOP is on.
+         Otherwise measure heel to ear, the highest landmark every detector
+         has, and add the top of the skull above the ears as a fixed offset
+         (config.HEAD_TOP_ABOVE_EARS_M). The heel's height above the floor is
+         a fixed offset either way (config).
       3. Return (height minus offsets) / median(measured).
     """
-    _, length, upright = _body_axis(pose.points)
+    return _scale_from_height(pose, performer_height_m)[0]
+
+
+def _scale_from_height(pose: Pose3D, performer_height_m: float):
+    """scale_factor_from_height, plus what the height was measured to: "head top" or "ears"."""
+    points = pose.points
+    _, length, upright = _body_axis(points)
     metrics.record("scale.upright_frames", int(upright.sum()))
     if upright.sum() < config.MIN_UPRIGHT_FRAMES:
         raise ValueError(
             f"only {int(upright.sum())} frames with the performer standing upright, need "
             f"{config.MIN_UPRIGHT_FRAMES} to measure their height (stand still for a moment, facing the cameras)")
-    
-    heel_to_ear_m = performer_height_m - config.HEAD_TOP_ABOVE_EARS_M - config.HEEL_ABOVE_FLOOR_M
 
-    return heel_to_ear_m / float(np.median(length[upright]))
+    heel_to_ear_m = performer_height_m - config.HEAD_TOP_ABOVE_EARS_M - config.HEEL_ABOVE_FLOOR_M
+    ear_scale = heel_to_ear_m / float(np.median(length[upright]))
+
+    heel_to_top = np.linalg.norm(points[:, JOINT_INDEX["HEAD_TOP"]] - _mid(points, "LEFT_HEEL", "RIGHT_HEEL"), axis=1)
+    with np.errstate(invalid="ignore"):
+        with_top = upright & np.isfinite(heel_to_top)
+    if with_top.sum() < config.MIN_UPRIGHT_FRAMES:
+        # MediaPipe has no top of the head; another detector may rarely find it
+        metrics.record("scale.height_from", "ears")
+        return ear_scale, "ears"
+
+    top_length = float(np.median(heel_to_top[with_top]))
+    top_scale = (performer_height_m - config.HEEL_ABOVE_FLOOR_M) / top_length
+    scale, source = (top_scale, "head top") if config.USE_DETECTED_HEAD_TOP else (ear_scale, "ears")
+    metrics.record("scale.height_from", source)
+    metrics.record("scale.upright_frames_with_head_top", int(with_top.sum()))
+    # The height each rule measures at the scale used: one of them is the given
+    # height, the other shows how far apart the two rules are. They agree when
+    # HEAD_TOP_ABOVE_EARS_M is where this detector puts the top of the head.
+    metrics.record("scale.height_to_head_top_m", scale * top_length + config.HEEL_ABOVE_FLOOR_M)
+    metrics.record("scale.height_to_ears_m", scale * float(np.median(length[upright]))
+                   + config.HEAD_TOP_ABOVE_EARS_M + config.HEEL_ABOVE_FLOOR_M)
+    metrics.record("scale.head_top_above_ears_m", scale * float(np.median(heel_to_top[with_top] - length[with_top])))
+    return scale, source
 
 
 def estimate_floor(pose: Pose3D):
@@ -130,7 +161,7 @@ def make_metric(rig: CameraRig, pose: Pose3D, performer_height_m: float,
       3. Apply that world transform to every camera's R and t.
       4. Set rig.is_metric = True.
     """
-    scale = scale_factor_from_height(pose, performer_height_m) if rescale else 1.0
+    scale, source = _scale_from_height(pose, performer_height_m) if rescale else (1.0, None)
     metrics.record("scale.metres_per_unit", float(scale))
     metrics.record("scale.rescaled_from_height", bool(rescale))
     scaled = Pose3D(fps=pose.fps, points=pose.points * scale, num_views=pose.num_views)
@@ -159,6 +190,7 @@ def make_metric(rig: CameraRig, pose: Pose3D, performer_height_m: float,
         t_new = t + cam.R @ floor_point
         cameras.append(Camera(camera_id=cam.camera_id, K=cam.K, R=R_new, t=t_new))
 
-    print(f"Scale: {scale:.4f} m per unit, floor found, Y up")
+    measured = f", height measured to the {source}" if source else ""
+    print(f"Scale: {scale:.4f} m per unit{measured}, floor found, Y up")
     
     return CameraRig(cameras=cameras, reprojection_error_px=dict(rig.reprojection_error_px), is_metric=True)

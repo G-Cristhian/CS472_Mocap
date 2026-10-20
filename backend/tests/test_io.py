@@ -70,7 +70,7 @@ def test_pose3d_json_has_null_for_gaps(tmp_path):
     frames = json.load(open(path))
     assert len(frames) == len(pose.points)
     gap_frame, gap_joint = np.argwhere(pose.num_views == 0)[0]
-    name = io.MEDIAPIPE_JOINTS[gap_joint]
+    name = io.JOINTS[gap_joint]
     assert frames[gap_frame]["landmarks"][name] is None
 
 

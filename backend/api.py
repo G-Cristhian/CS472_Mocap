@@ -57,7 +57,7 @@ except ImportError:  # python-multipart older than 0.0.13
 
 from mocap_pipeline import config
 from mocap_pipeline import io as pipeline_io
-from mocap_pipeline.joints import MEDIAPIPE_JOINTS
+from mocap_pipeline.joints import JOINTS
 from mocap_pipeline.run_pipeline import OUTPUT_DIR, run
 
 TAKE_ID_RE = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
@@ -582,15 +582,17 @@ def clap_times(folder: Path) -> dict[str, float]:
 def keypoints_json(kp, clap_time_s: float | None) -> dict:
     """
     One camera's 2D joints for the frontend. Pixels, origin top-left; null
-    where the detector found nothing. timestamps are seconds from the start of
-    that video; subtract clap_time_s to get the take's clock (t = 0 at the clap).
+    where the detector found nothing or does not have the joint. joints names
+    each column (joints.JOINTS; takes saved before the extra joints existed
+    have MediaPipe's 33). timestamps are seconds from the start of that video;
+    subtract clap_time_s to get the take's clock (t = 0 at the clap).
     """
     points = np.asarray(kp.points, dtype=float)
     confidence = np.asarray(kp.confidence, dtype=float)
     return {
         "camera_id": kp.camera_id, "width": int(kp.width), "height": int(kp.height), "fps": float(kp.fps),
         "clap_time_s": None if clap_time_s is None else float(clap_time_s),
-        "joints": list(MEDIAPIPE_JOINTS),
+        "joints": JOINTS[:points.shape[1]],
         "timestamps": [round(float(t), 4) for t in kp.timestamps],
         "points": [[None if np.isnan(p).any() else [round(float(p[0]), 1), round(float(p[1]), 1)] for p in frame]
                    for frame in points],

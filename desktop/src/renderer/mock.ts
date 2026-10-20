@@ -32,7 +32,7 @@ function script(options: RunOptions): string[] {
         : `Clap at ${videos.map((_, i) => `cam${i} ${(1 + i * 0.3).toFixed(3)} s`).join(', ')}`,
       'Calibration started from cam0 and cam1',
       'Calibration from the performer: cam0 1.44 px, cam1 1.33 px, cam2 1.42 px',
-      'Scale: 6.8342 m per unit, floor found, Y up',
+      `Scale: 6.8342 m per unit, height measured to the ${detector === 'rtmpose' ? 'head top' : 'ears'}, floor found, Y up`,
       `Saved calibration to ${outDir}/calibration.json`,
     )
   }
@@ -83,7 +83,7 @@ const METRICS = {
   },
   sync: { clap_time_s: { cam0: 1.0, cam1: 1.3, cam2: 1.6 }, clap_times_from: 'audio', clap_threshold: 1.0, common_frames: 360, common_fps: 30 },
   calibrate: { reprojection_error_px: { cam0: 1.44, cam1: 1.33, cam2: 1.42 } },
-  scale: { upright_frames: 60, metres_per_unit: 6.8342, rescaled_from_height: true },
+  scale: { upright_frames: 60, metres_per_unit: 6.8342, rescaled_from_height: true, height_from: 'ears' },
   triangulate: {
     cameras: 3, frames: 360, mean_reprojection_px: 2.1,
     mean_reprojection_px_per_joint: { NOSE: 1.2, LEFT_WRIST: 4.8, RIGHT_WRIST: 5.1, LEFT_ANKLE: 3.9, RIGHT_ANKLE: 2.2, LEFT_HIP: 1.1 },
@@ -103,6 +103,7 @@ const logListeners = new Set<(line: string) => void>()
 const progressListeners = new Set<(p: Progress) => void>()
 let cancelled = false
 let lastSmoother = 'savgol'
+let lastDetector = 'mediapipe'
 
 export const mock: Backend = {
   async chooseDirectory() {
@@ -123,6 +124,7 @@ export const mock: Backend = {
   async run(options) {
     cancelled = false
     lastSmoother = options.smoother
+    lastDetector = options.detector
     const tracker = new ProgressTracker(options.videos)
     for (const line of script(options)) {
       if (cancelled) return { ok: false, exitCode: null, error: 'Cancelled' }
@@ -148,9 +150,15 @@ export const mock: Backend = {
     if (file.endsWith('.bvh')) return (await fetch('./sample_take.bvh')).text()
     if (file.endsWith('metrics.json')) {
       const butter = lastSmoother === 'butterworth'
+      // RTMPose finds the top of the head itself, so the height is measured to it
+      const rtmpose = lastDetector === 'rtmpose'
       return JSON.stringify({
         ...METRICS,
-        run: { ...METRICS.run, smoother: lastSmoother },
+        run: { ...METRICS.run, smoother: lastSmoother, detector: lastDetector },
+        scale: rtmpose ? { ...METRICS.scale, height_from: 'head top', head_top_above_ears_m: 0.131 } : METRICS.scale,
+        triangulate: rtmpose
+          ? { ...METRICS.triangulate, mean_reprojection_px_per_joint: { ...METRICS.triangulate.mean_reprojection_px_per_joint, HEAD_TOP: 3.4 } }
+          : METRICS.triangulate,
         smooth: butter
           ? { ...METRICS.smooth, method: 'butterworth', settings: { cutoff_hz: 8, order: 2 } }
           : METRICS.smooth,

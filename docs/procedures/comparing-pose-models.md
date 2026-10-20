@@ -30,8 +30,8 @@ Open each run's `out3d.metrics.json` and put these side by side, per take:
 | `calibrate.reprojection_error_px` | yes | lower: the 2D joints agree better with the geometry |
 | `triangulate.mean_reprojection_px` and `_per_joint` | yes | lower, and lower on the joints that matter for the use (wrists, ankles) |
 | `triangulate.views_dropped`, `joints_failed` | yes | fewer: fewer mis-detections that the other cameras had to outvote |
-| `pose_final.missing_fraction` and `_per_joint` | yes | lower: fewer frames where a joint was seen by under two cameras |
-| `rig.bone_lengths.mean_std_m` and `per_bone` | yes | lower: steadier joints over time |
+| `pose_final.missing_fraction` and `_per_joint` | yes, over the joints each model has (joints a model never gives are null, not missing) | lower: fewer frames where a joint was seen by under two cameras |
+| `rig.bone_lengths.mean_std_m` and `per_bone` | yes, except the Head bone: RTMPose's comes from its detected top of the head, MediaPipe's from the ears | lower: steadier joints over time |
 | `timing.detect.<camera>` | yes | faster, if the quality is equal |
 | `stage1.<camera>.mean_confidence` | **no** | each model scores on its own scale; RTMPose scores are clipped to 0..1 and are not probabilities[^5]. Do not rank models on this. |
 | `stage1.<camera>.no_person_fraction` | mostly | a model that loses the person in frames the other keeps is worse, unless those frames had nobody in them |
@@ -59,7 +59,7 @@ Keep both output folders for the takes used and the side-by-side table, so the c
 [^2]: Three takes with different motion is team judgement; one take measures that take. Team judgement, no source. A candidate row for `docs/decisions/DECISIONS.md`.
 [^3]: `backend/mocap_pipeline/README.md`, "Choosing the pose model": give each detector its own `--out` and `--calibration`, otherwise the first detector's calibration is reused. Keypoint files record the detector that made them (D-023).
 [^4]: `RTMPoseBackend` docstring in `backends.py`; rtmlib fetches ONNX weights on first use (https://github.com/Tau-J/rtmlib).
-[^5]: `halpe26_to_mediapipe` docstring in `backends.py`: RTMPose scores are clipped to 0..1 so the config thresholds can be applied, but those thresholds were tuned on MediaPipe's visibility (D-007, D-014).
+[^5]: `halpe26_to_joints` docstring in `backends.py`: RTMPose scores are clipped to 0..1 so the config thresholds can be applied, but those thresholds were tuned on MediaPipe's visibility (D-007, D-014).
 [^6]: Karashchuk et al., "Anipose: A toolkit for robust markerless 3D pose estimation", *Cell Reports* 36(13), 2021, DOI 10.1016/j.celrep.2021.109730, which evaluates its filters by reprojection error and limb-length variation. Reprojection error as a geometric quality measure: Zhang 2000, DOI 10.1109/34.888718.
 [^7]: Lineage rules in `docs/decisions/README.md`: a decision that replaces another names it with `from`, one layer deep.
 [^8]: Bazarevsky et al., "BlazePose: On-device Real-time Body Pose tracking", arXiv:2006.10204, 2020. Jiang et al., "RTMPose: Real-Time Multi-Person Pose Estimation based on MMPose", arXiv:2303.07399, 2023. Both unverified DOIs: arXiv preprints.

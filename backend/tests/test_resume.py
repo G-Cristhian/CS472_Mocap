@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 
 from mocap_pipeline import io, run_pipeline
+from mocap_pipeline.joints import NUM_JOINTS
+from mocap_pipeline.schemas import Pose3D
 from mocap_pipeline.stage1_keypoints import detect
 from mocap_pipeline.stage2_reconstruct import smooth, sync, triangulate
 from tests.conftest import make_keypoints, make_pose, make_rig, make_sync
@@ -143,6 +145,30 @@ def test_saved_joints_without_a_detector_count_as_mediapipe(fakes, fake_videos, 
     assert len(fakes.detect) == 2                       # still reused
     run(fake_videos, tmp_path, resume=True, detector="rtmpose")
     assert fakes.detectors[-2:] == ["rtmpose", "rtmpose"]
+
+
+def test_joints_saved_with_mediapipes_33_only_are_detected_again(fakes, fake_videos, tmp_path):
+    out = run(fake_videos, tmp_path)
+    paths = io.stage_paths(str(out), ["cam0", "cam1"])
+    for kp_path in paths["keypoints"].values():     # as saved before joints.EXTRA_JOINTS existed
+        kp, fingerprint = io.load_keypoints(str(kp_path), with_fingerprint=True)
+        kp.points, kp.confidence = kp.points[:, :33], kp.confidence[:, :33]
+        io.save_keypoints(kp, str(kp_path), fingerprint)
+    run(fake_videos, tmp_path, resume=True)
+    assert fakes.detect == ["cam0.mp4", "cam1.mp4"] * 2
+    assert fakes.triangulate == 2                       # the new joints files make the pose stale
+    assert io.load_keypoints(str(paths["keypoints"]["cam0"])).points.shape[1] == NUM_JOINTS
+
+
+def test_a_pose_saved_with_33_joints_is_triangulated_again(fakes, fake_videos, tmp_path):
+    out = run(fake_videos, tmp_path)
+    pose_path = io.stage_paths(str(out))["pose"]
+    pose = io.load_pose3d(str(pose_path))               # newer than its inputs, but the old size
+    io.save_pose3d(Pose3D(fps=pose.fps, points=pose.points[:, :33], num_views=pose.num_views[:, :33]),
+                   str(pose_path))
+    run(fake_videos, tmp_path, resume=True)
+    assert len(fakes.detect) == 2
+    assert fakes.triangulate == 2
 
 
 def test_clap_threshold_reaches_the_clap_search(fakes, fake_videos, tmp_path):

@@ -16,7 +16,7 @@
 #   CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #   DEALINGS IN THE SOFTWARE.
 """
-Stage 3a: turn 33 loose points into a skeleton with fixed bone lengths.
+Stage 3a: turn the loose joints (joints.JOINTS) into a skeleton with fixed bone lengths.
 
 Input : cleaned Pose3D (metres, Y up).
 Output: rig joint positions per frame + one constant length per bone.
@@ -28,7 +28,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..joints import JOINT_INDEX, RIG_END_SITES, RIG_JOINT_SOURCES, RIG_JOINTS, RIG_PARENTS
+from .. import config, metrics
+from ..joints import JOINT_INDEX, RIG_END_SITES, RIG_JOINT_DETECTED, RIG_JOINT_SOURCES, RIG_JOINTS, RIG_PARENTS
 from ..schemas import Pose3D
 
 # T-pose direction of each bone, from its parent joint to the joint (video2bvh's
@@ -85,8 +86,11 @@ def _fill_missing(positions):
 def rig_joint_positions(pose: Pose3D):
     """
     For each entry of joints.RIG_JOINT_SOURCES, average (or weight) the listed
-    MediaPipe joints. Missing frames are filled from neighbouring frames, so
-    the result has no NaN. Returns (F, len(RIG_JOINTS), 3) in RIG_JOINTS order.
+    MediaPipe joints. A rig joint in joints.RIG_JOINT_DETECTED takes the
+    detected joint instead in the frames that have it (unless
+    config.USE_DETECTED_HEAD_TOP is off). Missing frames are filled from
+    neighbouring frames, so the result has no NaN. Returns
+    (F, len(RIG_JOINTS), 3) in RIG_JOINTS order.
     """
     points = pose.points
     rig = np.empty((len(points), len(RIG_JOINTS), 3))
@@ -95,6 +99,12 @@ def rig_joint_positions(pose: Pose3D):
         source = RIG_JOINT_SOURCES[name]
         weights = source if isinstance(source, dict) else {s: 1.0 / len(source) for s in source}
         rig[:, r] = sum(w * points[:, JOINT_INDEX[s]] for s, w in weights.items())
+
+        if name in RIG_JOINT_DETECTED and config.USE_DETECTED_HEAD_TOP:
+            detected = points[:, JOINT_INDEX[RIG_JOINT_DETECTED[name]]]
+            found = np.isfinite(detected).all(axis=1)
+            rig[found, r] = detected[found]
+            metrics.record(f"rig.detected_fraction.{name}", float(found.mean()) if len(found) else 0.0)
 
     return _fill_missing(rig)
 

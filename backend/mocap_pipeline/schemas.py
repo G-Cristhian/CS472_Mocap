@@ -3,7 +3,7 @@ The contracts between stages. If a stage's output matches these shapes, the
 next stage works regardless of how the previous one was implemented.
 
 Conventions used everywhere:
-  * Arrays are numpy arrays. J = joints.NUM_JOINTS (33). F = frame count.
+  * Arrays are numpy arrays. J = joints.NUM_JOINTS (38: MediaPipe's 33, then joints.EXTRA_JOINTS). F = frame count.
   * Missing values are NaN, never 0.
   * 2D points are in pixels, origin top-left (convert MediaPipe's 0..1 values).
   * 3D points are in metres after scale_floor has run, Y up, floor at Y = 0.

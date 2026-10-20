@@ -82,9 +82,16 @@ CALIB_MAX_ERROR_PX = 10.0
 # ---- Stage 2b: scale and floor ---------------------------------------------
 # Height is measured from the heels to the ears, then these are added: the
 # top of the skull sits about this far above the ears, and the heel landmark
-# about this far above the floor.
+# about this far above the floor. A detector that finds the top of the head
+# itself (joints.HEAD_TOP) is measured to that instead, see below.
 HEAD_TOP_ABOVE_EARS_M = 0.12
 HEEL_ABOVE_FLOOR_M = 0.03
+# (ours) Use the detector's own top of the head (joints.HEAD_TOP; RTMPose has
+# it, MediaPipe does not) where it was found: the height is measured from the
+# heels to it instead of to the ears plus HEAD_TOP_ABOVE_EARS_M, and stage 3
+# puts the rig's Head on it (joints.RIG_JOINT_DETECTED). False keeps the
+# ear-based estimates for every detector, for comparing the two.
+USE_DETECTED_HEAD_TOP = True
 # A frame counts as standing upright when the hips and shoulders lie within
 # this fraction of the heel-to-ear length from the heel-ear line.
 UPRIGHT_MAX_DEVIATION = 0.05
