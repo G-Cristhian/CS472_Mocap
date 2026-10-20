@@ -91,3 +91,30 @@ export async function listKeypointCameras(id: string, signal?: AbortSignal): Pro
 export function getKeypoints(id: string, camera: string, signal?: AbortSignal): Promise<Keypoints2D> {
   return getJson<Keypoints2D>(`${API_URL}/takes/${encodeURIComponent(id)}/keypoints/${encodeURIComponent(camera)}.json`, signal)
 }
+
+export interface NewTake {
+  videos: File[]
+  heightM: number
+  name?: string
+  projectId?: string
+}
+
+export async function createTake({ videos, heightM, name, projectId }: NewTake): Promise<Take> {
+  const form = new FormData()
+  form.append('height_m', String(heightM))
+  if (name) form.append('name', name)
+  if (projectId) form.append('project_id', projectId)
+  videos.forEach((file, i) => form.append(`cam${i}`, file, file.name))
+
+  let response: Response
+  try {
+    response = await fetch(`${API_URL}/takes`, { method: 'POST', body: form })
+  } catch {
+    throw new ApiUnreachableError()
+  }
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new Error(body?.detail ?? `The API answered HTTP ${response.status}`)
+  }
+  return (await response.json()) as Take
+}
