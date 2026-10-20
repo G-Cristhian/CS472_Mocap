@@ -79,7 +79,7 @@ npm.cmd install
 npm.cmd run dev
 ```
 
-Open http://localhost:5173. The frontend looks for the API at http://localhost:8000 unless `frontend\.env` sets `VITE_API_URL` to something else.[^8]
+Open http://localhost:5173. The frontend looks for the API at http://localhost:8000 unless `frontend\.env` sets `VITE_API_URL` to something else.[^8] After a pull that adds packages to `frontend\package.json`, run `npm.cmd install` again before `npm.cmd run dev`; npm may end it with `npm warn allow-scripts`, and the install still completes.[^10]
 
 ## 6. The desktop tester
 
@@ -129,3 +129,4 @@ Both show the Windows commands next to the Mac ones.
 [^7]: Since stage 1 detects the videos in their own processes (D-048), the API's shutdown stops the take's process but not those detection processes. Seen on 2026-10-19: two detection processes and their manager kept running for minutes after the API's take worker was stopped mid-detection.
 [^8]: `frontend/src/lib/api.ts`, `API_URL`: `VITE_API_URL` if set, else `http://localhost:8000`.
 [^9]: Checked on 2026-10-20 with a `.MOV`, an `.mp4` and a `.txt` file in one folder: `$videos` held the two videos in name order, and `check_videos $videos` read both.
+[^10]: Checked on 2026-10-20, after the merge that added `@supabase/supabase-js` to the frontend: the package was missing from `frontend\node_modules` until `npm.cmd install` ran from a Restricted PowerShell. That install exited 0, printed the `allow-scripts` warning for esbuild and changed no tracked file, and the dev server then served the home page with no console errors.

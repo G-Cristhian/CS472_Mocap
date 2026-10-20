@@ -1,8 +1,11 @@
 # Hybrid Mocap — frontend
 
-A navigable React prototype of every screen in `refs/Hybrid-Mocap-Screens.pdf`. Projects, clips,
-cameras and saved devices are mocked in `src/lib/data.ts`; takes, their results and their 2D joints come from the
-backend API (`src/lib/api.ts`), at `VITE_API_URL` or http://localhost:8000.
+A navigable React prototype of every screen in `refs/Hybrid-Mocap-Screens.pdf`. Projects, cameras and
+saved devices are mocked in `src/lib/data.ts`. Clips are those mock clips plus any uploaded to Supabase
+(`src/lib/clips.ts`). The Footage page uploads raw camera videos to Supabase (`src/lib/footage.ts`) and
+sends a set of them to the backend API as one take. Takes, their results and their 2D joints come from the
+API (`src/lib/api.ts`), at `VITE_API_URL` or http://localhost:8000. Without `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_PUBLISHABLE_KEY` (see `.env.example`), uploads are off and only the mock clips show.
 
 ## Run it
 
