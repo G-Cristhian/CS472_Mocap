@@ -58,8 +58,8 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  // Where RequireAuth sent the visitor from, or the dashboard if they came here directly
-  const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname ?? '/dashboard'
+  // Where RequireAuth sent the visitor from, or the projects page if they came here directly
+  const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname ?? '/projects'
 
   if (user) return <Navigate to={from} replace />
 
@@ -109,7 +109,7 @@ export function RegisterPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  if (user) return <Navigate to="/dashboard" replace />
+  if (user) return <Navigate to="/projects" replace />
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -122,7 +122,7 @@ export function RegisterPage() {
     setError(null)
     try {
       await register({ email, password, first_name: firstName, last_name: lastName })
-      navigate('/dashboard', { replace: true })
+      navigate('/projects', { replace: true })
     } catch (err) {
       setError(messageOf(err))
     } finally {

@@ -5,7 +5,6 @@ import { displayName } from '@/lib/auth'
 import { useSettings } from '@/app/SettingsProvider'
 import { useStudio } from '@/app/StudioProvider'
 import { StickFigure } from '@/components/ui/StickFigure'
-import { Toast } from '@/components/ui/Modal'
 import {
   CheckIcon,
   ExportIcon,
@@ -54,7 +53,6 @@ export function MotionPage() {
   const [position, setPosition] = useState(0)
   const [motion, setMotion] = useState<MotionInfo | null>(null)
   const [rotation, setRotation] = useState(0)
-  const [toast, setToast] = useState<string | null>(null)
 
   const takeName = viewer.take?.name ?? viewer.take?.id ?? take.name
 
@@ -131,7 +129,7 @@ export function MotionPage() {
           <CheckIcon size={16} />
           All changes saved
         </span>
-        <button className="btn btn--ghost" onClick={() => setToast('Share link copied to clipboard')}>
+        <button className="btn btn--ghost">
           <ShareIcon />
           Share
         </button>
@@ -139,7 +137,6 @@ export function MotionPage() {
           className="btn btn--primary"
           onClick={() => {
             setTab('export')
-            setToast('Export queued — FBX at 60 fps')
           }}
         >
           <ExportIcon />
@@ -402,7 +399,7 @@ export function MotionPage() {
                 <input type="checkbox" />
                 Drop frames instead of buffering
               </label>
-              <button className="btn btn--primary" onClick={() => setToast('Live Link connected')}>
+              <button className="btn btn--primary">
                 Start streaming
               </button>
             </div>
@@ -439,7 +436,7 @@ export function MotionPage() {
                 <input type="checkbox" defaultChecked />
                 Include parts marked “needs review”
               </label>
-              <button className="btn btn--primary" onClick={() => setToast('Export queued')}>
+              <button className="btn btn--primary">
                 <ExportIcon />
                 Export take
               </button>
@@ -448,7 +445,6 @@ export function MotionPage() {
         </aside>
       </div>
 
-      {toast && <Toast message={toast} onClose={() => setToast(null)} />}
     </>
   )
 }

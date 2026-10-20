@@ -70,6 +70,8 @@ class Recording(models.Model):
 
     name = models.CharField(max_length=100, blank=True)
     video = models.FileField(upload_to=file_path)
+    # Preview image taken from the video at upload, so lists don't need to load the video
+    thumbnail = models.FileField(upload_to=file_path, blank=True)
 
     lens_source = models.CharField(max_length=20, choices=LensSource.choices, blank=True)
     # Only when the lens source is a field of view entered by hand

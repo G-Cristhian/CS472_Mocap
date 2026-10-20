@@ -28,33 +28,3 @@
   gap: 10px;
   margin-top: 26px;
 }
-
-/* toast */
-.toast {
-  position: fixed;
-  left: 24px;
-  bottom: 24px;
-  z-index: 90;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  background: var(--ink);
-  color: #fff;
-  border-radius: var(--r-md);
-  padding: 12px 12px 12px 18px;
-  box-shadow: var(--shadow-lg);
-  font-size: calc(14px * var(--font-scale));
-}
-.toast .btn {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-}
-.toast .iconbtn {
-  color: rgba(255, 255, 255, 0.7);
-  width: 32px;
-  height: 32px;
-}
-.toast .iconbtn:hover {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-}

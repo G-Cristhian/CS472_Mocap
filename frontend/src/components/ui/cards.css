@@ -135,22 +135,6 @@
   overflow: hidden;
   transition: transform 0.18s ease;
 }
-/* letterbox bars, so it reads as footage */
-.rcard__frame::before,
-.rcard__frame::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 12%;
-  background: #000;
-}
-.rcard__frame::before {
-  top: 0;
-}
-.rcard__frame::after {
-  bottom: 0;
-}
 .rcard:hover .rcard__frame {
   transform: translateY(-3px);
 }
@@ -170,6 +154,13 @@
   border-left: 12px solid var(--ink);
   border-top: 8px solid transparent;
   border-bottom: 8px solid transparent;
+}
+.rcard__image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .rcard__cam {
   position: absolute;

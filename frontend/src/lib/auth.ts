@@ -3,7 +3,9 @@
 // with every request, and POSTs also send Django's CSRF token (from the csrftoken cookie).
 // Django runs on port 8000 by default; set VITE_DJANGO_URL to point somewhere else.
 
-export const DJANGO_URL = (import.meta.env.VITE_DJANGO_URL ?? 'http://localhost:8000').replace(/\/+$/, '')
+import { DJANGO_URL, csrfHeaderFor } from '@/lib/django'
+
+export { DJANGO_URL }
 
 export interface AuthUser {
   id: number
@@ -40,23 +42,6 @@ export class AuthError extends Error {
   }
 }
 
-const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS']
-
-function csrfCookie(): string | null {
-  const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/)
-
-  return match ? decodeURIComponent(match[1]) : null
-}
-
-/** Django sets the csrftoken cookie on a GET. Fetch one if the browser doesn't have it yet. */
-async function csrfToken(): Promise<string | null> {
-  if (!csrfCookie()) {
-    await fetch(`${DJANGO_URL}/api/auth/csrf/`, { credentials: 'include' })
-  }
-
-  return csrfCookie()
-}
-
 /** Field errors look like { email: ["..."] }, other errors like { detail: "..." }. */
 function errorMessage(body: unknown, status: number): string {
   if (body && typeof body === 'object') {
@@ -78,11 +63,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   let response: Response
   try {
-    if (!SAFE_METHODS.includes(method)) {
-      const token = await csrfToken()
-      if (token) headers['X-CSRFToken'] = token
-    }
-    response = await fetch(`${DJANGO_URL}/api/auth${path}`, { ...init, headers, credentials: 'include' })
+    Object.assign(headers, await csrfHeaderFor(method))
+    response = await fetch(`${DJANGO_URL}/api/v1/auth${path}`, { ...init, headers, credentials: 'include' })
   } catch {
     throw new AuthError(`Can't reach the server at ${DJANGO_URL}. Is Django running?`)
   }

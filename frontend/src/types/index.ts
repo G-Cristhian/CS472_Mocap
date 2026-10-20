@@ -32,6 +32,10 @@ export interface Recording {
   duration: string
   camera: string
   origin: 'upload' | 'stream'
+  /** The performer chosen in the API; empty for recordings from the mock data */
+  performerId?: number | null
+  /** True when the server has a preview image for this recording */
+  hasThumbnail?: boolean
 }
 
 /** An uploaded clip kept in Supabase. Not used by the Django app; kept with the Supabase code (lib/clips.ts). */

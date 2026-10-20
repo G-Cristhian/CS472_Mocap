@@ -22,7 +22,7 @@ export function ProjectsPage() {
       </div>
 
       {projects.length === 0 ? (
-        <div className="empty">No projects yet.</div>
+        <div className="no-cards">No projects yet.</div>
       ) : (
         <div className="grid-cards">
           {projects.map((p) => (

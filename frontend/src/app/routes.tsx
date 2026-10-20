@@ -3,7 +3,6 @@ import { AppShell } from './AppShell'
 import { RequireAuth } from '@/app/RequireAuth'
 import { LandingPage } from '@/features/landing/LandingPage'
 import { ForgotPasswordPage, LoginPage, RegisterPage, ResetPasswordPage } from '@/features/auth/AuthPages'
-import { HomePage } from '@/features/home/HomePage'
 import { ProjectsPage } from '@/features/projects/ProjectsPage'
 import { ProjectDetailPage } from '@/features/projects/ProjectDetailPage'
 import { MotionPage } from '@/features/motions/MotionPage'
@@ -29,7 +28,6 @@ export const router = createBrowserRouter([
       </RequireAuth>
     ),
     children: [
-      { path: 'dashboard', element: <HomePage /> },
       { path: 'projects', element: <ProjectsPage /> },
       { path: 'projects/:projectId', element: <ProjectDetailPage /> },
       { path: 'motions', element: <MotionsPage /> },

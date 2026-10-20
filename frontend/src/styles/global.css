@@ -501,14 +501,15 @@ textarea {
   flex: none;
 }
 
-.empty {
+/* Message shown where the cards would be, e.g. "No recordings yet." Same top spacing as .grid-cards */
+.no-cards {
+  margin-top: 30px;
   border: 1px dashed var(--line);
   border-radius: var(--r-lg);
   padding: 56px 24px;
   text-align: center;
   color: var(--muted);
 }
-
 .grid-cards {
   margin-top: 30px;
   display: grid;

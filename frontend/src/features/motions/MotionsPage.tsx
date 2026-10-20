@@ -23,7 +23,7 @@ export function MotionsPage() {
       </div>
 
       {motions.length === 0 ? (
-        <div className="empty">No motions yet.</div>
+        <div className="no-cards">No motions yet.</div>
       ) : (
         <div className="grid-cards">
           {motions.map((motion) => (

@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { useAuth } from '@/app/AuthProvider'
 import { useStudio } from '@/app/StudioProvider'
 import { StickFigure } from '@/components/ui/StickFigure'
-import { Toast } from '@/components/ui/Modal'
+import { displayName } from '@/lib/auth'
 import { cameras } from '@/lib/data'
+import { getRecording, recordingVideoUrl } from '@/lib/recordings'
+import type { Recording } from '@/types'
+import { PerformerPanel } from './PerformerPanel'
 import './recordings.css'
 
 function clock(seconds: number) {
@@ -17,22 +21,28 @@ function clock(seconds: number) {
 
 /**
  * One video from one camera. Opened as /recordings/new it records from that camera;
- * opened as /recordings/:id it previews a stored video. Trim and crop are mock controls for now.
+ * opened as /recordings/:id it plays a stored video and lets you choose its performer.
  */
 export function RecordingPage() {
   const { recordingId } = useParams()
+  const { user } = useAuth()
   const { recordings, motions } = useStudio()
   const isNew = recordingId === 'new'
-  const recording = isNew ? undefined : recordings.find((r) => r.id === recordingId)
+  const found = isNew ? undefined : recordings.find((r) => r.id === recordingId)
+  // Recordings uploaded from the Recordings page are not in the studio's list, so fetch them
+  const [fetched, setFetched] = useState<Recording | null>(null)
+  const [fetchFailed, setFetchFailed] = useState(false)
+  useEffect(() => {
+    if (isNew || found || !recordingId) return
+    getRecording(recordingId).then(setFetched).catch(() => setFetchFailed(true))
+  }, [isNew, found, recordingId])
+  const recording = found ?? fetched ?? undefined
   const motion = motions.find((m) => m.id === recording?.motionId)
   const camera = cameras[0]
+  const accountName = user ? displayName(user) : ''
 
   const [live, setLive] = useState(false)
   const [elapsed, setElapsed] = useState(0)
-  const [inPoint, setInPoint] = useState(0)
-  const [outPoint, setOutPoint] = useState(100)
-  const [cropping, setCropping] = useState(false)
-  const [toast, setToast] = useState<string | null>(null)
 
   useEffect(() => {
     if (!live) return
@@ -41,6 +51,8 @@ export function RecordingPage() {
   }, [live])
 
   if (!isNew && !recording) {
+    if (!fetchFailed) return <div className="page"><p className="page-sub">Loading recording…</p></div>
+
     return (
       <div className="page">
         <h1 className="page-title">Recording not found</h1>
@@ -68,74 +80,34 @@ export function RecordingPage() {
         <div>
           <h1 className="page-title">{title}</h1>
           <p className="page-sub">
-            {isNew ? 'One camera. Trim and crop after recording.' : `${recording?.duration} · ${recording?.origin === 'stream' ? 'Streamed' : 'Uploaded'}`}
+            {isNew ? 'One camera.' : `${recording?.duration} · ${recording?.origin === 'stream' ? 'Streamed' : 'Uploaded'}`}
           </p>
         </div>
       </div>
 
       <div className="recording__layout">
         <section>
-          <div className={`recording__screen${cropping ? ' is-cropping' : ''}`}>
-            <StickFigure pose="stand" color="rgba(255, 255, 255, 0.85)" size={220} strokeWidth={5} />
-            {cropping && <div className="recording__cropbox" aria-hidden="true" />}
+          <div className="recording__screen">
+            {fetched ? (
+              <video
+                className="recording__video"
+                controls
+                crossOrigin="use-credentials"
+                src={recordingVideoUrl(fetched.id)}
+              />
+            ) : (
+              <StickFigure pose="stand" color="rgba(255, 255, 255, 0.85)" size={220} strokeWidth={5} />
+            )}
             {live && (
               <span className="recording__rec">
                 <span className="dot dot--rec" /> REC {clock(elapsed)}
               </span>
             )}
-            <span className="recording__label">
-              {camera.label} · {camera.resolution} · {camera.fps} fps
-            </span>
-          </div>
-
-          <div className="recording__timeline">
-            <label>
-              In
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={inPoint}
-                aria-label="Cut start"
-                onChange={(e) => setInPoint(Math.min(Number(e.target.value), outPoint - 1))}
-              />
-            </label>
-            <label>
-              Out
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={outPoint}
-                aria-label="Cut end"
-                onChange={(e) => setOutPoint(Math.max(Number(e.target.value), inPoint + 1))}
-              />
-            </label>
-            <div className="recording__bar">
-              <span style={{ left: `${inPoint}%`, width: `${outPoint - inPoint}%` }} />
-            </div>
-          </div>
-
-          <div className="recording__tools">
-            <button className="btn btn--ghost btn--sm" aria-pressed={cropping} onClick={() => setCropping((c) => !c)}>
-              Crop
-            </button>
-            <button
-              className="btn btn--ghost btn--sm"
-              onClick={() => setToast('Cut preview only — trimming is not built yet')}
-            >
-              Apply cut
-            </button>
-            <button
-              className="btn btn--ghost btn--sm"
-              onClick={() => {
-                setInPoint(0)
-                setOutPoint(100)
-                setCropping(false)
-              }}
-            >
-              Reset
-            </button>
+            {!fetched && (
+              <span className="recording__label">
+                {camera.label} · {camera.resolution} · {camera.fps} fps
+              </span>
+            )}
           </div>
         </section>
 
@@ -153,13 +125,21 @@ export function RecordingPage() {
             <dd>{motion ? <Link to={`/motions/${motion.id}`}>{motion.name}</Link> : 'Not in a motion yet'}</dd>
           </dl>
 
+          {fetched && (
+            <PerformerPanel
+              recordingId={fetched.id}
+              performerId={fetched.performerId ?? null}
+              accountName={accountName}
+              onSaved={(performerId) => setFetched((r) => (r ? { ...r, performerId } : r))}
+            />
+          )}
+
           {isNew && (
             <button
               className={`btn btn--block ${live ? 'btn--ghost' : 'btn--pink'}`}
               onClick={() => {
                 if (live) {
                   setLive(false)
-                  setToast('Recording saved — preview only for now')
                 } else {
                   setElapsed(0)
                   setLive(true)
@@ -171,8 +151,6 @@ export function RecordingPage() {
           )}
         </aside>
       </div>
-
-      {toast && <Toast message={toast} onClose={() => setToast(null)} />}
     </div>
   )
 }

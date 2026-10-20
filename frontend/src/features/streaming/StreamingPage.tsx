@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '@/app/AuthProvider'
 import { displayName } from '@/lib/auth'
 import { StickFigure } from '@/components/ui/StickFigure'
-import { Toast } from '@/components/ui/Modal'
 import { AlertIcon, CloseIcon, InfoIcon, LayoutIcon } from '@/components/ui/Icons'
 import { cameras as seedCameras } from '@/lib/data'
 import type { Camera } from '@/types'
@@ -25,7 +24,6 @@ export function StreamingPage() {
   const [cams, setCams] = useState<Camera[]>(seedCameras)
   const [layout, setLayout] = useState<Layout>('quad')
   const [alertOpen, setAlertOpen] = useState(true)
-  const [toast, setToast] = useState<'calibration' | 'saved' | null>('calibration')
 
   const [performer, setPerformer] = useState('self')
   const [model, setModel] = useState('balanced')
@@ -151,10 +149,8 @@ export function StreamingPage() {
                   if (recording) {
                     setRecording(false)
                     setElapsed(0)
-                    setToast('saved')
                   } else {
                     setRecording(true)
-                    setToast(null)
                   }
                 }}
               >
@@ -272,23 +268,6 @@ export function StreamingPage() {
           </div>
         )}
       </section>
-
-      {toast === 'calibration' && (
-        <Toast
-          message={<>Calibration saved to <b>Suit A</b></>}
-          actionLabel="Undo"
-          onAction={() => setToast(null)}
-          onClose={() => setToast(null)}
-        />
-      )}
-      {toast === 'saved' && (
-        <Toast
-          message="Take saved to Recordings"
-          actionLabel="View"
-          onAction={() => setToast(null)}
-          onClose={() => setToast(null)}
-        />
-      )}
     </div>
   )
 }

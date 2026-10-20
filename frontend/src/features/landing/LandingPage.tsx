@@ -85,7 +85,7 @@ export function LandingPage() {
 
   // Logged-in users skip the marketing page
   if (loading) return null
-  if (user) return <Navigate to="/dashboard" replace />
+  if (user) return <Navigate to="/projects" replace />
 
   return (
     <div className="landing">
