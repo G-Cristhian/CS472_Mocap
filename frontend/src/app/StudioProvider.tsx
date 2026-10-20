@@ -1,18 +1,23 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { clips as seedClips, projects as seedProjects } from '@/lib/data'
-import { listClips } from '@/lib/clips'
-import type { Accent, Clip, Project, Source } from '@/types'
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
+import { motions as seedMotions, projects as seedProjects, recordings as seedRecordings } from '@/lib/data'
+import type { Accent, Motion, Project, Recording } from '@/types'
 
 interface NewProjectInput {
   name: string
-  sport: string
-  source: Source
+  category: string
+}
+
+interface NewMotionInput {
+  name: string
+  projectId: string
 }
 
 interface Ctx {
   projects: Project[]
-  clips: Clip[]
+  motions: Motion[]
+  recordings: Recording[]
   createProject: (input: NewProjectInput) => Project
+  createMotion: (input: NewMotionInput) => Motion
 }
 
 const StudioContext = createContext<Ctx | null>(null)
@@ -24,42 +29,47 @@ function slugify(name: string) {
     name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '') || `project-${Date.now()}`
+      .replace(/^-|-$/g, '') || `item-${Date.now()}`
   )
 }
 
 export function StudioProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<Project[]>(seedProjects)
-  const [uploaded, setUploaded] = useState<Clip[]>([])
-  const clips = useMemo(() => [...uploaded, ...seedClips], [uploaded])
-
-  useEffect(() => {
-    listClips()
-      .then(setUploaded)
-      .catch((e) => console.error("Couldn't load uploaded clips:", e))
-  }, [])
+  const [motions, setMotions] = useState<Motion[]>(seedMotions)
+  const [recordings] = useState<Recording[]>(seedRecordings)
 
   const value = useMemo<Ctx>(
     () => ({
       projects,
-      clips,
-      createProject: ({ name, sport, source }) => {
+      motions,
+      recordings,
+      createProject: ({ name, category }) => {
         const project: Project = {
           id: slugify(name),
           name,
-          sport: sport || 'Uncategorised',
-          clips: 0,
+          category: category || 'Other',
           updated: 'Just now',
-          updatedBy: 'you',
-          source,
-          accent: ACCENTS[projects.length % ACCENTS.length],
-          pose: 'stand',
         }
         setProjects((list) => [project, ...list])
         return project
       },
+      createMotion: ({ name, projectId }) => {
+        const project = projects.find((p) => p.id === projectId)
+        const motion: Motion = {
+          id: slugify(name),
+          name,
+          projectId,
+          projectName: project?.name ?? '',
+          duration: '0:00',
+          source: 'ai',
+          accent: ACCENTS[motions.length % ACCENTS.length],
+          pose: 'stand',
+        }
+        setMotions((list) => [motion, ...list])
+        return motion
+      },
     }),
-    [projects, clips],
+    [projects, motions, recordings],
   )
 
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>

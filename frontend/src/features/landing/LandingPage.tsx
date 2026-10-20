@@ -149,7 +149,7 @@ export function LandingPage() {
 
         <section className="landing__section" id="how">
           <p className="landing__eyebrow">How it works</p>
-          <h2 className="landing__h2">From a few clips to a skeleton in four steps.</h2>
+          <h2 className="landing__h2">From a few recordings to a skeleton in four steps.</h2>
           <ol className="landing__steps">
             {STEPS.map((step, i) => (
               <li className="landing__step" key={step.title}>

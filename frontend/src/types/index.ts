@@ -2,18 +2,39 @@ export type Source = 'ai' | 'suit' | 'review'
 export type Accent = 'purple' | 'blue' | 'pink' | 'orange' | 'amber'
 export type Pose = 'stand' | 'walk' | 'run' | 'lunge' | 'serve' | 'arms-up'
 
+/** A folder of motions for one subject, e.g. "Mario" or "Athlete training". */
 export interface Project {
   id: string
   name: string
-  sport: string
-  clips: number
+  category: string
   updated: string
-  updatedBy: string
+}
+
+/** One processed skeleton, built from 2 to 4 recordings. */
+export interface Motion {
+  id: string
+  name: string
+  projectId: string
+  projectName: string
+  duration: string
   source: Source
   accent: Accent
   pose: Pose
+  // Where to download the BVH file
+  fileUrl?: string
 }
 
+/** One video from one camera. Attached to a motion, or not yet. */
+export interface Recording {
+  id: string
+  name: string
+  motionId: string | null
+  duration: string
+  camera: string
+  origin: 'upload' | 'stream'
+}
+
+/** An uploaded clip kept in Supabase. Not used by the Django app; kept with the Supabase code (lib/clips.ts). */
 export interface Clip {
   id: string
   name: string

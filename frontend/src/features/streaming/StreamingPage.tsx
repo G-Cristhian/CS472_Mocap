@@ -7,7 +7,7 @@ import { Toast } from '@/components/ui/Modal'
 import { AlertIcon, CloseIcon, InfoIcon, LayoutIcon } from '@/components/ui/Icons'
 import { cameras as seedCameras } from '@/lib/data'
 import type { Camera } from '@/types'
-import './record.css'
+import './streaming.css'
 
 type Layout = 'quad' | 'split' | 'single'
 
@@ -19,7 +19,7 @@ function formatElapsed(seconds: number) {
   return `${m}:${s}`
 }
 
-export function RecordPage() {
+export function StreamingPage() {
   const { user: account } = useAuth()
   const [tab, setTab] = useState<'capture' | 'cameras'>('capture')
   const [cams, setCams] = useState<Camera[]>(seedCameras)

@@ -1,27 +1,52 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStudio } from '@/app/StudioProvider'
-import type { Source } from '@/types'
 import { Modal } from './Modal'
+
+// Grouped the way sports-science and movement-analysis work is usually organised
+const CATEGORIES: { group: string; options: string[] }[] = [
+  {
+    group: 'Sport',
+    options: [
+      'Athletics',
+      'American football',
+      'Basketball',
+      'Fencing',
+      'Football (soccer)',
+      'Martial arts',
+      'Swimming',
+      'Table tennis',
+      'Tennis',
+      'Other sport',
+    ],
+  },
+  {
+    group: 'Health and rehabilitation',
+    options: ['Gait analysis', 'Rehabilitation', 'Ergonomics'],
+  },
+  {
+    group: 'Research and media',
+    options: ['Animation and games', 'Biomechanics research', 'Dance and performance', 'Other'],
+  },
+]
 
 export function NewProjectDialog({ onClose }: { onClose: () => void }) {
   const { createProject } = useStudio()
   const navigate = useNavigate()
   const [name, setName] = useState('')
-  const [sport, setSport] = useState('Track & Field')
-  const [source, setSource] = useState<Source>('suit')
+  const [category, setCategory] = useState('Athletics')
 
   return (
     <Modal
       title="New project"
-      subtitle="A project holds the takes from one session. You can rename it later."
+      subtitle="A project groups the recordings of one athlete, exercise or training block."
       onClose={onClose}
     >
       <form
         onSubmit={(e) => {
           e.preventDefault()
           if (!name.trim()) return
-          const project = createProject({ name: name.trim(), sport, source })
+          const project = createProject({ name: name.trim(), category })
           onClose()
           navigate(`/projects/${project.id}`)
         }}
@@ -38,26 +63,15 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
         </label>
 
         <label className="field" style={{ marginTop: 18 }}>
-          <span className="field__label">Sport or category</span>
-          <select className="select" value={sport} onChange={(e) => setSport(e.target.value)}>
-            <option>Track &amp; Field</option>
-            <option>Football</option>
-            <option>Sport</option>
-            <option>Calibration</option>
-            <option>R&amp;D</option>
-          </select>
-        </label>
-
-        <label className="field" style={{ marginTop: 18 }}>
-          <span className="field__label">Default motion source</span>
-          <span className="field__hint">How much work the AI does between suit markers.</span>
-          <select
-            className="select"
-            value={source}
-            onChange={(e) => setSource(e.target.value as Source)}
-          >
-            <option value="suit">Suit leads — AI fills gaps</option>
-            <option value="ai">AI leads — suit corrects</option>
+          <span className="field__label">Category</span>
+          <select className="select" value={category} onChange={(e) => setCategory(e.target.value)}>
+            {CATEGORIES.map((group) => (
+              <optgroup key={group.group} label={group.group}>
+                {group.options.map((option) => (
+                  <option key={option}>{option}</option>
+                ))}
+              </optgroup>
+            ))}
           </select>
         </label>
 

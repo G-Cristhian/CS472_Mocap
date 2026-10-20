@@ -45,6 +45,9 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'motionboxpro.apps.accounts',
+    'motionboxpro.apps.projects',
+    'motionboxpro.apps.motions',
+    'motionboxpro.apps.recordings',
 ]
 
 MIDDLEWARE = [

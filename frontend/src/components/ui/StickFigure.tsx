@@ -18,7 +18,7 @@ interface Props {
   className?: string
 }
 
-/** The stick figure used as the project / clip thumbnail throughout the screens. */
+/** The stick figure used as the project / recording thumbnail throughout the screens. */
 export function StickFigure({
   pose = 'stand',
   color = 'currentColor',

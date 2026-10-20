@@ -19,12 +19,16 @@
   letter-spacing: -0.01em;
   white-space: nowrap;
 }
-.topnav__brand:hover {
+/* Extra selector depth so the logo never gets the global link hover underline */
+.topnav .topnav__brand,
+.topnav .topnav__brand:hover {
   text-decoration: none;
 }
+/* Section links sit right after the logo; the actions on the right are pushed to the edge */
 .topnav__links {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 4px;
   height: 100%;
 }
@@ -55,11 +59,8 @@
   border-radius: 3px 3px 0 0;
   background: var(--purple);
 }
-.topnav__search {
-  margin-left: auto;
-  width: min(430px, 34vw);
-}
 .topnav__actions {
+  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -126,9 +127,6 @@
   .topnav {
     padding: 0 16px;
     gap: 12px;
-  }
-  .topnav__search {
-    display: none;
   }
 }
 @media (max-width: 720px) {
