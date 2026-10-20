@@ -12,6 +12,9 @@ run_pipeline.py writes every stage's result next to the output with these
 names (see stage_paths) and, with --resume, loads them instead of recomputing.
 A keypoints file also records a fingerprint of its source video so a changed
 or swapped video is detected and re-detected rather than silently reused.
+Keypoints and Pose3D arrays hold every joint in joints.JOINTS order; files
+saved before the extra joints existed have MediaPipe's 33 only, and
+run_pipeline --resume detects (or triangulates) those again.
 """
 from __future__ import annotations
 
@@ -21,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .joints import MEDIAPIPE_JOINTS
+from .joints import JOINTS
 from .schemas import Camera, CameraRig, Keypoints2D, Pose3D, SyncResult
 
 
@@ -180,14 +183,16 @@ def save_pose3d_json(pose: Pose3D, path: str, timestamps=None) -> None:
     """
     The 3D joints as JSON for the frontend:
     [{"t": seconds, "landmarks": {"NOSE": {"x":..,"y":..,"z":..} or null, ...}}, ...]
-    Metres, Y up, floor at Y = 0 (see stage2_reconstruct/scale_floor.py). t is
-    seconds from the clap. null means fewer than 2 cameras saw the joint.
+    Every joint in joints.JOINTS, by name. Metres, Y up, floor at Y = 0 (see
+    stage2_reconstruct/scale_floor.py). t is seconds from the clap. null means
+    fewer than 2 cameras saw the joint, or the detector does not have it
+    (MediaPipe has none of joints.EXTRA_JOINTS).
     """
     frames = []
     for f, frame in enumerate(pose.points):
         landmarks = {}
 
-        for name, p in zip(MEDIAPIPE_JOINTS, frame):
+        for name, p in zip(JOINTS, frame):
             landmarks[name] = None if np.isnan(p).any() else {
                 "x": round(float(p[0]), 4), "y": round(float(p[1]), 4), "z": round(float(p[2]), 4)}
 

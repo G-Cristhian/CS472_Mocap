@@ -44,7 +44,7 @@ Anything not routed falls through to a friendly not-found page.
 The viewport on `/projects/:projectId` is a three.js scene (`src/features/viewer/`, via @react-three/fiber and drei):
 
 - Plays the pipeline's skeleton animation (`.bvh`, read with three's BVHLoader) or its raw 3D joints
-  (`out3d.json`, 33 MediaPipe landmarks), over a floor grid. Drag to orbit, scroll to zoom.
+  (`out3d.json`: MediaPipe's 33 landmarks, then RTMPose's head top, neck, mid-hip and small toes), over a floor grid. Drag to orbit, scroll to zoom.
 - Opens `public/samples/sample_take.bvh` by default (made by `backend/mocap_pipeline` from simulated
   cameras). **Open .bvh / .json** (bottom right of the viewport) or drag a file onto it to play another take,
   e.g. `backend/output/out3d.bvh` or `backend/output/out3d.json`. A take processed by the API plays

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { ApiUnreachableError, API_URL, getKeypoints, listKeypointCameras } from '@/lib/api'
 import type { Keypoints2D } from '@/lib/api'
@@ -18,7 +18,12 @@ interface Props {
   time: number
 }
 
-/** MediaPipe's pose connections, by joint name so the order the API sends is what counts. */
+/**
+ * MediaPipe's pose connections, then Halpe-26's for the joints only RTMPose has
+ * (head top, neck, mid-hip, small toes; backend/mocap_pipeline/joints.py
+ * EXTRA_JOINTS). By joint name, so the order the API sends is what counts; a
+ * bone whose joints the detector lacks is simply not drawn.
+ */
 const BONES: [string, string][] = [
   ['NOSE', 'LEFT_EYE_INNER'], ['LEFT_EYE_INNER', 'LEFT_EYE'], ['LEFT_EYE', 'LEFT_EYE_OUTER'], ['LEFT_EYE_OUTER', 'LEFT_EAR'],
   ['NOSE', 'RIGHT_EYE_INNER'], ['RIGHT_EYE_INNER', 'RIGHT_EYE'], ['RIGHT_EYE', 'RIGHT_EYE_OUTER'], ['RIGHT_EYE_OUTER', 'RIGHT_EAR'],
@@ -31,6 +36,9 @@ const BONES: [string, string][] = [
   ['RIGHT_WRIST', 'RIGHT_PINKY'], ['RIGHT_WRIST', 'RIGHT_INDEX'], ['RIGHT_WRIST', 'RIGHT_THUMB'], ['RIGHT_PINKY', 'RIGHT_INDEX'],
   ['LEFT_HIP', 'LEFT_KNEE'], ['LEFT_KNEE', 'LEFT_ANKLE'], ['LEFT_ANKLE', 'LEFT_HEEL'], ['LEFT_HEEL', 'LEFT_FOOT_INDEX'], ['LEFT_ANKLE', 'LEFT_FOOT_INDEX'],
   ['RIGHT_HIP', 'RIGHT_KNEE'], ['RIGHT_KNEE', 'RIGHT_ANKLE'], ['RIGHT_ANKLE', 'RIGHT_HEEL'], ['RIGHT_HEEL', 'RIGHT_FOOT_INDEX'], ['RIGHT_ANKLE', 'RIGHT_FOOT_INDEX'],
+  ['HEAD_TOP', 'NECK'], ['NECK', 'LEFT_SHOULDER'], ['NECK', 'RIGHT_SHOULDER'],
+  ['NECK', 'MID_HIP'], ['MID_HIP', 'LEFT_HIP'], ['MID_HIP', 'RIGHT_HIP'],
+  ['LEFT_HEEL', 'LEFT_SMALL_TOE'], ['RIGHT_HEEL', 'RIGHT_SMALL_TOE'],
 ]
 
 /** the same cut-off triangulation uses (config.TRIANGULATION_MIN_CONFIDENCE) */
@@ -102,8 +110,14 @@ function draw(canvas: HTMLCanvasElement, kp: Keypoints2D, frame: number) {
   ctx.globalAlpha = 1
 }
 
+/** How many joints the detector gives at all in this camera (MediaPipe and RTMPose have different sets). */
+function detectableJoints(kp: Keypoints2D): number {
+  return kp.joints.filter((_, i) => kp.points.some((frame) => frame[i] !== null)).length
+}
+
 function CameraCanvas({ kp, time }: { kp: Keypoints2D; time: number }) {
   const ref = useRef<HTMLCanvasElement>(null)
+  const detectable = useMemo(() => detectableJoints(kp), [kp])
   const width = 240
   const height = Math.round((width * kp.height) / kp.width)
   const frame = frameAt(kp.timestamps, time + (kp.clap_time_s ?? 0))
@@ -127,7 +141,7 @@ function CameraCanvas({ kp, time }: { kp: Keypoints2D; time: number }) {
       <figcaption style={{ fontSize: 12, color: 'var(--muted)', display: 'flex', justifyContent: 'space-between' }}>
         <span className="mono">{kp.camera_id}</span>
         <span>
-          {frame < 0 ? 'no frames' : seen === 0 ? 'no person' : `${seen}/33 joints, confidence ${mean.toFixed(2)}`}
+          {frame < 0 ? 'no frames' : seen === 0 ? 'no person' : `${seen}/${detectable} joints, confidence ${mean.toFixed(2)}`}
         </span>
       </figcaption>
     </figure>

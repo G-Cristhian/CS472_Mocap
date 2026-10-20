@@ -41,6 +41,7 @@
 * def _mid(points, *names):
 * def _body_axis(points):
 * def scale_factor_from_height(pose: Pose3D, performer_height_m: float) -> float:
+* def _scale_from_height(pose: Pose3D, performer_height_m: float):
 * def estimate_floor(pose: Pose3D):
 * def make_metric(rig: CameraRig, pose: Pose3D, performer_height_m: float, rescale: bool = True) -> CameraRig:
 
@@ -83,7 +84,7 @@
 * def to_euler_degrees(local_rotations, order: str = "ZXY"):
 
 **=> [skeleton.py](/backend/mocap_pipeline/stage3_rig/skeleton.py)** 
-:: Stage 3a: turn 33 loose points into a skeleton with fixed bone lengths.
+:: Stage 3a: turn the loose joints (joints.JOINTS) into a skeleton with fixed bone lengths.
 * def _fill_missing(positions):
 * def rig_joint_positions(pose: Pose3D):
 * def bone_lengths(rig_positions):

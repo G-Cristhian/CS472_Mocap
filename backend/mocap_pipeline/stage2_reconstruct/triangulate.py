@@ -6,10 +6,12 @@ Output: Pose3D (raw, before smoothing).
 """
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 
 from .. import config, metrics
-from ..joints import MEDIAPIPE_JOINTS
+from ..joints import JOINTS
 from ..schemas import CameraRig, Keypoints2D, Pose3D
 from .calibrate import rig_to_group
 
@@ -37,6 +39,9 @@ def triangulate_sequence(keypoints: list[Keypoints2D], rig: CameraRig) -> Pose3D
     points = np.stack([kp.points for kp in keypoints])          # (n_cams, F, J, 2)
     confidence = np.stack([kp.confidence for kp in keypoints])  # (n_cams, F, J)
     n_cams, n_frames, n_joints, _ = points.shape
+    # joints the detector gives at all; the rest (MediaPipe's HEAD_TOP, RTMPose's
+    # fingers) are not counted as failures in the metrics
+    detected = np.isfinite(points).all(axis=3).any(axis=(0, 1))
 
     points = points.copy()
     points[confidence < config.TRIANGULATION_MIN_CONFIDENCE] = np.nan
@@ -67,14 +72,17 @@ def triangulate_sequence(keypoints: list[Keypoints2D], rig: CameraRig) -> Pose3D
 
     if metrics.active():
         kept = np.where(failed, np.nan, errors).reshape(n_frames, n_joints)
-        with np.errstate(all="ignore"):
+        with np.errstate(all="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)       # joints never triangulated give NaN
             per_joint = np.nanmean(kept, axis=0)
         metrics.record("triangulate", {
             "cameras": int(n_cams), "frames": int(n_frames),
             "mean_reprojection_px": float(np.nanmean(kept)) if np.isfinite(kept).any() else None,
-            "mean_reprojection_px_per_joint": {n: float(per_joint[j]) for j, n in enumerate(MEDIAPIPE_JOINTS)},
-            "views_dropped": views_dropped, "joints_failed": int(failed.sum()),
-            "joints_with_fewer_than_2_views": int((np.sum(~np.isnan(p2ds[:, :, 0]), axis=0) < 2).sum())})
+            "mean_reprojection_px_per_joint": {n: float(per_joint[j]) for j, n in enumerate(JOINTS)},
+            "views_dropped": views_dropped,
+            "joints_failed": int(failed.reshape(n_frames, n_joints)[:, detected].sum()),
+            "joints_with_fewer_than_2_views": int((np.sum(~np.isnan(p2ds[:, :, 0]), axis=0) < 2)
+                                                  .reshape(n_frames, n_joints)[:, detected].sum())})
 
     num_views = np.sum(~np.isnan(p2ds[:, :, 0]), axis=0)
     num_views[failed] = 0

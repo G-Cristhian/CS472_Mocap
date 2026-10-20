@@ -61,7 +61,7 @@ def test_scene_bone_lengths_are_constant():
 
 
 def test_scene_is_fully_visible_to_every_camera():
-    scene = Scene(routine=SHORT)
+    scene = Scene(routine=SHORT, extra_joints=True)
     for cam in scene.rig().cameras:
         _, visible = project(scene.truth(), cam, scene.width, scene.height)
         assert visible.all(), cam.camera_id
@@ -70,7 +70,7 @@ def test_scene_is_fully_visible_to_every_camera():
 # ---- stage 2c: triangulation with the true cameras ----------------------------------
 
 def test_triangulation_is_exact_without_noise():
-    scene = Scene(routine=SHORT)
+    scene = Scene(routine=SHORT, extra_joints=True)
     pose = triangulate.triangulate_sequence(scene.synced_keypoints(), scene.rig())
     err = joint_errors(pose.points, scene.truth())
     assert not np.isnan(err).any()
@@ -88,7 +88,7 @@ def test_triangulation_error_scales_with_pixel_noise():
 
 
 def test_three_cameras_reject_a_single_outlier_view():
-    scene = Scene(routine=SHORT, noise=Noise(pixel_sigma=1.0, outlier=0.01, outlier_px=60.0))
+    scene = Scene(routine=SHORT, noise=Noise(pixel_sigma=1.0, outlier=0.01, outlier_px=60.0), extra_joints=True)
     pose = triangulate.triangulate_sequence(scene.synced_keypoints(), scene.rig())
     err = joint_errors(pose.points, scene.truth())
     # an undetected 60 px outlier in one of three views would move the joint by centimetres
@@ -175,7 +175,7 @@ def test_feet_out_of_frame_fail_the_scale_step():
 # ---- stage 2a: sync's resampling ---------------------------------------------------------
 
 def test_sync_resamples_mixed_frame_rates_onto_one_clock():
-    scene = Scene(routine=SHORT, fps=(60.0, 30.0, 30.0), clap_s=(1.0, 0.85, 2.3))
+    scene = Scene(routine=SHORT, fps=(60.0, 30.0, 30.0), clap_s=(1.0, 0.85, 2.3), extra_joints=True)
     recorded = scene.recorded_keypoints()
     result, synced = sync.synchronise([k.video_path for k in recorded], recorded, scene.clap_times())
     times = result.common_timestamps
@@ -259,5 +259,5 @@ def test_run_pipeline_end_to_end_on_the_synthetic_scene(tmp_path, monkeypatch):
 
 
 def scene_joint_names():
-    from mocap_pipeline.joints import MEDIAPIPE_JOINTS
-    return MEDIAPIPE_JOINTS
+    from mocap_pipeline.joints import JOINTS
+    return JOINTS

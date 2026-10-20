@@ -58,7 +58,7 @@ function viewerStateFor(take: Take): ViewerState {
     case "done": {
       // parseMotion picks the parser from the extension, so the name must end in .bvh
       const name = `${take.name ?? take.id}.bvh`;
-      // Loads the BVH (17-joint skeleton). Consider out3d.json later: all 33 raw joints, and it shows where tracking dropped out.
+      // Loads the BVH (17-joint skeleton). Consider out3d.json later: every raw joint, and it shows where tracking dropped out.
       return { take, src: { url: takeFileUrl(take.id, "out3d.bvh"), name } };
     }
   }

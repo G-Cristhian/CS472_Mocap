@@ -41,8 +41,12 @@ const BVH_PART_JOINTS: Record<string, string> = {
   RightAnkle: 'r-foot',
 }
 
-/** The 33 MediaPipe pose landmarks, in index order (backend/mocap_pipeline/joints.py) */
-export const MEDIAPIPE_JOINTS = [
+/**
+ * The pipeline's joints in index order (backend/mocap_pipeline/joints.py JOINTS):
+ * MediaPipe's 33 pose landmarks, then the joints only RTMPose has. A detector
+ * that lacks a joint writes null for it in out3d.json.
+ */
+export const PIPELINE_JOINTS = [
   'NOSE', 'LEFT_EYE_INNER', 'LEFT_EYE', 'LEFT_EYE_OUTER',
   'RIGHT_EYE_INNER', 'RIGHT_EYE', 'RIGHT_EYE_OUTER',
   'LEFT_EAR', 'RIGHT_EAR', 'MOUTH_LEFT', 'MOUTH_RIGHT',
@@ -52,15 +56,21 @@ export const MEDIAPIPE_JOINTS = [
   'LEFT_HIP', 'RIGHT_HIP', 'LEFT_KNEE', 'RIGHT_KNEE',
   'LEFT_ANKLE', 'RIGHT_ANKLE', 'LEFT_HEEL', 'RIGHT_HEEL',
   'LEFT_FOOT_INDEX', 'RIGHT_FOOT_INDEX',
+  'HEAD_TOP', 'NECK', 'MID_HIP', 'LEFT_SMALL_TOE', 'RIGHT_SMALL_TOE',
 ]
 
-/** MediaPipe's pose connections (POSE_CONNECTIONS), as landmark index pairs */
+/**
+ * MediaPipe's pose connections (POSE_CONNECTIONS), then Halpe-26's for the
+ * extra joints (head top-neck-shoulders, neck-mid-hip-hips, heel-small toe), as
+ * index pairs into PIPELINE_JOINTS
+ */
 const MEDIAPIPE_CONNECTIONS: [number, number][] = [
   [0, 1], [1, 2], [2, 3], [3, 7], [0, 4], [4, 5], [5, 6], [6, 8], [9, 10],
   [11, 12], [11, 13], [13, 15], [15, 17], [15, 19], [15, 21], [17, 19],
   [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [18, 20],
   [11, 23], [12, 24], [23, 24], [23, 25], [24, 26], [25, 27], [26, 28],
   [27, 29], [28, 30], [29, 31], [30, 32], [27, 31], [28, 32],
+  [33, 34], [34, 11], [34, 12], [34, 35], [35, 23], [35, 24], [29, 36], [30, 37],
 ]
 
 const MEDIAPIPE_PART_JOINTS: Record<string, string> = {
@@ -143,12 +153,12 @@ export function motionFromLandmarksJson(text: string, name: string): Motion {
     throw new Error('Not a pipeline out3d.json (expected a list of {t, landmarks} frames)')
   }
   const frames = data as LandmarkFrame[]
-  const J = MEDIAPIPE_JOINTS.length
+  const J = PIPELINE_JOINTS.length
   const positions = new Float32Array(frames.length * J * 3).fill(NaN)
   const times = new Float32Array(frames.length)
   frames.forEach((frame, f) => {
     times[f] = frame.t
-    MEDIAPIPE_JOINTS.forEach((joint, j) => {
+    PIPELINE_JOINTS.forEach((joint, j) => {
       const p = frame.landmarks[joint]
       if (p) positions.set([p.x, p.y, p.z], (f * J + j) * 3)
     })
@@ -157,8 +167,8 @@ export function motionFromLandmarksJson(text: string, name: string): Motion {
   return {
     name,
     kind: 'landmarks',
-    joints: MEDIAPIPE_JOINTS,
-    partJoints: MEDIAPIPE_JOINTS.map((j) => MEDIAPIPE_PART_JOINTS[j] ?? null),
+    joints: PIPELINE_JOINTS,
+    partJoints: PIPELINE_JOINTS.map((j) => MEDIAPIPE_PART_JOINTS[j] ?? null),
     bones: MEDIAPIPE_CONNECTIONS,
     times,
     positions,

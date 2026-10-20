@@ -82,9 +82,18 @@ CALIB_MAX_ERROR_PX = 10.0
 # ---- Stage 2b: scale and floor ---------------------------------------------
 # Height is measured from the heels to the ears, then these are added: the
 # top of the skull sits about this far above the ears, and the heel landmark
-# about this far above the floor.
+# about this far above the floor. A detector that finds the top of the head
+# itself (joints.HEAD_TOP) is measured to that instead, see below.
 HEAD_TOP_ABOVE_EARS_M = 0.12
 HEEL_ABOVE_FLOOR_M = 0.03
+# (ours) Measure the height from the heels to the detector's own top of the
+# head (joints.HEAD_TOP; RTMPose has it, MediaPipe does not) instead of to the
+# ears plus HEAD_TOP_ABOVE_EARS_M. Off: on one real take (Chair Spin, RTMPose,
+# 2026-10-20) it moved the scale by 2% with nothing to say which scale is
+# right, and with it on RTMPose and MediaPipe takes would be scaled by
+# different rules. The scale step records both heights in the metrics
+# (scale.height_to_head_top_m, scale.head_top_above_ears_m) either way.
+HEIGHT_TO_HEAD_TOP = False
 # A frame counts as standing upright when the hips and shoulders lie within
 # this fraction of the heel-to-ear length from the heel-ear line.
 UPRIGHT_MAX_DEVIATION = 0.05
@@ -119,6 +128,16 @@ SMOOTHER = "savgol"
 # higher. Must be below half the frame rate. Starting guess, not measured.
 BUTTER_CUTOFF_HZ = 8.0
 BUTTER_ORDER = 2
+
+# ---- Stage 3: rig -------------------------------------------------------------
+# (ours) Put a rig joint on the detected joint that is the same point where the
+# detector has one (joints.RIG_JOINT_DETECTED: the rig's Head on RTMPose's
+# HEAD_TOP), instead of the estimate from the ears and shoulders. On the
+# Chair Spin take (RTMPose, 2026-10-20, same scale) the Head bone's length spread
+# dropped from 21 to 19 mm (median absolute deviation) and the head's frame-to-frame
+# pitch change from 2.0 to 1.5 degrees. False keeps the estimates for every
+# detector.
+RIG_USES_DETECTED_JOINTS = True
 
 # ---- Placement tool (Rahimian & Kearney 2015) ------------------------------
 # Two cameras can triangulate a point only if their viewing rays meet at an

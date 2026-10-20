@@ -32,10 +32,10 @@ Results go to `backend/output/` (created automatically, ignored by git), whereve
 The calibration is reused on the next run; add `--recalibrate` if a camera moved or the number of cameras changed.
 
 ## Choosing the pose model
-`--detector mediapipe|rtmpose` picks the stage 1 model (default `mediapipe`). Each model lives in `stage1_keypoints/backends.py` and fills the same 33 MediaPipe joints, so stages 2 and 3 do not change.
+`--detector mediapipe|rtmpose` picks the stage 1 model (default `mediapipe`). Each model lives in `stage1_keypoints/backends.py` and fills the same joint list (`joints.JOINTS`: MediaPipe's 33, then the head top, neck, mid-hip and small toes only RTMPose has), so stages 2 and 3 do not change.
 
 - `mediapipe`: MediaPipe PoseLandmarker (heavy), tracks the performer between frames.
-- `rtmpose`: RTMPose with the Halpe-26 (body with feet) model, via `rtmlib`. A person detector runs every frame and the largest person is taken as the performer. Fills 21 of the 33 joints, every one stages 2 and 3 use (eye corners, mouth and fingers stay empty; the foot tip comes from the big toe). The models download on the first run, to `~/.cache/rtmlib`; `--model` is not used.
+- `rtmpose`: RTMPose with the Halpe-26 (body with feet) model, via `rtmlib`. A person detector runs every frame and the largest person is taken as the performer. Fills 26 of the 38 joints: 21 of MediaPipe's 33, every one stages 2 and 3 use (eye corners, mouth and fingers stay empty; the foot tip comes from the big toe), plus `HEAD_TOP`, `NECK`, `MID_HIP` and both small toes. Its top of the head becomes the skeleton's Head (`config.RIG_USES_DETECTED_JOINTS`); the height for the scale is still measured to the ears, as for MediaPipe, unless `config.HEIGHT_TO_HEAD_TOP` is turned on. The models download on the first run, to `~/.cache/rtmlib`; `--model` is not used.
 
 To compare models on the same take, give each its own output and calibration, so neither reuses the other's:
 ```
@@ -120,7 +120,7 @@ It takes seconds and says which files the pipeline cannot use.
 | 2b | `stage2_reconstruct/scale_floor.py` | metres from the performer's height, floor at Y = 0, Y up |
 | 2c | `stage2_reconstruct/triangulate.py` | 3D joints from every camera that saw them, drops one bad view |
 | 2c | `stage2_reconstruct/smooth.py` | fills gaps up to 10 frames, light smoothing |
-| 3a | `stage3_rig/skeleton.py` | 33 MediaPipe joints to the 17-joint H36M skeleton, fixed bone lengths, T-pose |
+| 3a | `stage3_rig/skeleton.py` | the detected joints to the 17-joint H36M skeleton, fixed bone lengths, T-pose |
 | 3b | `stage3_rig/rotations.py` | each joint's rotation per frame |
 | 3c | `stage3_rig/bvh_writer.py` | writes the .bvh |
 | - | `placement/` | camera placement tool: scores a rig's coverage (`metric.py`) and searches for a layout by simulated annealing (`anneal.py`), Rahimian & Kearney 2015 |
@@ -159,13 +159,13 @@ $ python -m mocap_pipeline.run_pipeline cam0.mp4 cam1.mp4 --height-m 1.75 --reca
 ```
 [{"t": 0.0, "landmarks": {"NOSE": {"x": 0.12, "y": 1.62, "z": -0.3}, "LEFT_EYE_INNER": null, ...}}, ...]
 ```
-`t` is seconds after the clap. Metres; Y up with the floor at Y = 0; Z points from the performer towards camera 0; X is to the right as seen from camera 0; the origin is on the floor in the middle of where the performer walked. `null` means fewer than 2 cameras saw the joint (for longer than the 10 frames that get filled in).
+`t` is seconds after the clap. Metres; Y up with the floor at Y = 0; Z points from the performer towards camera 0; X is to the right as seen from camera 0; the origin is on the floor in the middle of where the performer walked. `null` means fewer than 2 cameras saw the joint (for longer than the 10 frames that get filled in), or the detector does not have it: after MediaPipe's 33 come `HEAD_TOP`, `NECK`, `MID_HIP`, `LEFT_SMALL_TOE` and `RIGHT_SMALL_TOE`, which only RTMPose fills.
 
 ---
 # Skeleton animation (.bvh)
 The `.bvh` holds the 17-joint Human3.6M (H36M) skeleton: Hip (root), hips, knees, ankles, Spine, Thorax, Neck, Head, shoulders, elbows, wrists. Centimetres, Y up, character facing +Z; rotation channels Z X Y. It opens in Blender (File > Import > Motion Capture (.bvh)) and three.js's BVHLoader (the frontend viewer).
 
-- MediaPipe has no spine, neck or top of head, so they are approximated (see `joints.RIG_JOINT_SOURCES`): Spine halfway between hips and shoulders, Neck halfway between shoulders and ears, Head 2/3 of the shoulder-to-ear distance above the ears.
+- MediaPipe has no spine, neck or top of head, so they are approximated (see `joints.RIG_JOINT_SOURCES`): Spine halfway between hips and shoulders, Neck halfway between shoulders and ears, Head 2/3 of the shoulder-to-ear distance above the ears. With RTMPose, Head is its detected top of the head wherever it has one (`joints.RIG_JOINT_DETECTED`); RTMPose's neck is the base of the neck, not the rig's Neck, so Neck stays approximated.
 - Bone lengths are fixed for the whole take: the median over all frames, left and right averaged.
 - Frames where a joint is missing are filled from the neighbouring frames.
 - Twist along a limb can't be measured from joint positions, so arm twist follows the body's up direction and leg twist the hip line.

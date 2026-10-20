@@ -1,15 +1,15 @@
 """
-Stage 1 pose backends: the Halpe-26 -> MediaPipe joint mapping, picking the
+Stage 1 pose backends: the Halpe-26 -> joints.JOINTS mapping, picking the
 performer, and the RTMPose backend's frame handling with a fake model in
 place of rtmlib (no model download needed).
 """
 import numpy as np
 import pytest
 
-from mocap_pipeline.joints import JOINT_INDEX, NUM_JOINTS
+from mocap_pipeline.joints import EXTRA_JOINTS, JOINT_INDEX, MEDIAPIPE_JOINTS, NUM_JOINTS
 from mocap_pipeline.stage1_keypoints import backends
-from mocap_pipeline.stage1_keypoints.backends import (HALPE26_JOINTS, MEDIAPIPE_FROM_HALPE26, RTMPoseBackend,
-                                                      halpe26_to_mediapipe, pick_person)
+from mocap_pipeline.stage1_keypoints.backends import (HALPE26_JOINTS, JOINTS_FROM_HALPE26, RTMPoseBackend,
+                                                      halpe26_to_joints, pick_person)
 
 
 def halpe_person(offset=0.0):
@@ -19,25 +19,37 @@ def halpe_person(offset=0.0):
     return keypoints, scores
 
 
-def test_mapping_puts_each_halpe_joint_in_its_mediapipe_slot():
+def test_mapping_puts_each_halpe_joint_in_its_slot():
     keypoints, scores = halpe_person()
-    points, confidence = halpe26_to_mediapipe(keypoints, scores)
+    points, confidence = halpe26_to_joints(keypoints, scores)
 
     assert points.shape == (NUM_JOINTS, 2) and confidence.shape == (NUM_JOINTS,)
-    for mp_name, halpe_name in MEDIAPIPE_FROM_HALPE26.items():
-        np.testing.assert_array_equal(points[JOINT_INDEX[mp_name]], keypoints[HALPE26_JOINTS.index(halpe_name)])
-        assert confidence[JOINT_INDEX[mp_name]] == pytest.approx(0.9)
+    for name, halpe_name in JOINTS_FROM_HALPE26.items():
+        np.testing.assert_array_equal(points[JOINT_INDEX[name]], keypoints[HALPE26_JOINTS.index(halpe_name)])
+        assert confidence[JOINT_INDEX[name]] == pytest.approx(0.9)
+
+
+def test_every_halpe_joint_is_kept_and_the_extras_come_after_mediapipes():
+    assert sorted(JOINTS_FROM_HALPE26.values()) == sorted(HALPE26_JOINTS)
+    assert len(set(JOINTS_FROM_HALPE26.values())) == 26
+    points, _ = halpe26_to_joints(*halpe_person())
+    for name, halpe_name in [("HEAD_TOP", "head"), ("NECK", "neck"), ("MID_HIP", "hip"),
+                             ("LEFT_SMALL_TOE", "left_small_toe"), ("RIGHT_SMALL_TOE", "right_small_toe")]:
+        assert points[JOINT_INDEX[name], 0] == HALPE26_JOINTS.index(halpe_name)
+    # MediaPipe's indices did not move
+    assert [JOINT_INDEX[n] for n in MEDIAPIPE_JOINTS] == list(range(33))
+    assert [JOINT_INDEX[n] for n in EXTRA_JOINTS] == list(range(33, NUM_JOINTS))
 
 
 def test_mapping_keeps_left_and_right():
     keypoints, scores = halpe_person()
-    points, _ = halpe26_to_mediapipe(keypoints, scores)
+    points, _ = halpe26_to_joints(keypoints, scores)
     assert points[JOINT_INDEX["LEFT_HEEL"], 0] == HALPE26_JOINTS.index("left_heel")
     assert points[JOINT_INDEX["RIGHT_FOOT_INDEX"], 0] == HALPE26_JOINTS.index("right_big_toe")
 
 
 def test_joints_halpe_lacks_are_missing():
-    points, confidence = halpe26_to_mediapipe(*halpe_person())
+    points, confidence = halpe26_to_joints(*halpe_person())
     for name in ("LEFT_EYE_INNER", "MOUTH_LEFT", "LEFT_PINKY", "RIGHT_THUMB"):
         assert np.isnan(points[JOINT_INDEX[name]]).all()
         assert confidence[JOINT_INDEX[name]] == 0
@@ -48,14 +60,14 @@ def test_every_joint_stages_2_and_3_use_is_filled():
     needed = ["LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_ELBOW", "RIGHT_ELBOW", "LEFT_WRIST", "RIGHT_WRIST",
               "LEFT_HIP", "RIGHT_HIP", "LEFT_KNEE", "RIGHT_KNEE", "LEFT_ANKLE", "RIGHT_ANKLE",
               "LEFT_EAR", "RIGHT_EAR", "LEFT_HEEL", "RIGHT_HEEL", "LEFT_FOOT_INDEX", "RIGHT_FOOT_INDEX"]
-    assert set(needed) <= set(MEDIAPIPE_FROM_HALPE26)
+    assert set(needed + ["HEAD_TOP"]) <= set(JOINTS_FROM_HALPE26)
 
 
 def test_scores_are_clipped_and_zero_score_joints_are_nan():
     keypoints, scores = halpe_person()
     scores[HALPE26_JOINTS.index("left_knee")] = 1.7
     scores[HALPE26_JOINTS.index("right_knee")] = 0.0
-    points, confidence = halpe26_to_mediapipe(keypoints, scores)
+    points, confidence = halpe26_to_joints(keypoints, scores)
 
     assert confidence[JOINT_INDEX["LEFT_KNEE"]] == 1.0
     assert confidence[JOINT_INDEX["RIGHT_KNEE"]] == 0.0

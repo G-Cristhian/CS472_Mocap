@@ -67,6 +67,27 @@ def test_keypoints_summary():
     assert set(s["mean_confidence_per_joint"]) == set(JOINT_INDEX)
 
 
+def test_pose_summary_leaves_out_joints_the_detector_does_not_have():
+    pose = Scene(routine=SHORT).truth_pose()            # MediaPipe-style: no extra joints
+    pose.points[:10, JOINT_INDEX["NOSE"]] = np.nan
+    detected = np.isfinite(pose.points).all(axis=2).any(axis=0)
+    s = metrics.pose_summary(pose, detected)
+    assert s["missing_fraction_per_joint"]["HEAD_TOP"] is None
+    assert s["missing_fraction_per_joint"]["NOSE"] == pytest.approx(10 / len(pose.points))
+    assert s["missing_fraction"] == pytest.approx(10 / len(pose.points) / 33)
+    assert metrics.pose_summary(pose)["missing_fraction_per_joint"]["HEAD_TOP"] == 1.0   # without detected
+
+
+def test_detected_joints_are_the_ones_any_camera_saw():
+    a, b = make_keypoints(camera_id="cam0"), make_keypoints(camera_id="cam1")
+    a.points[:, JOINT_INDEX["HEAD_TOP"]] = np.nan
+    b.points[:, JOINT_INDEX["HEAD_TOP"]] = np.nan
+    a.points[:, JOINT_INDEX["NECK"]] = np.nan          # cam1 still has it
+    detected = metrics.detected_joints([a, b])
+    assert not detected[JOINT_INDEX["HEAD_TOP"]] and detected[JOINT_INDEX["NECK"]]
+    assert detected.sum() == len(detected) - 1
+
+
 def test_bone_length_summary_is_zero_on_the_rigid_synthetic_performer():
     rig = skeleton.rig_joint_positions(Scene(routine=SHORT).truth_pose())
     s = metrics.bone_length_summary(rig, RIG_JOINTS, RIG_PARENTS)
@@ -76,8 +97,9 @@ def test_bone_length_summary_is_zero_on_the_rigid_synthetic_performer():
 
 # ---- the files a run writes ---------------------------------------------------------
 
-def run_synthetic(tmp_path, monkeypatch, **kw):
-    scene = Scene(routine=SHORT, fps=(60.0, 30.0, 30.0), clap_s=(1.0, 0.85, 2.3), noise=REALISTIC)
+def run_synthetic(tmp_path, monkeypatch, extra_joints=False, **kw):
+    scene = Scene(routine=SHORT, fps=(60.0, 30.0, 30.0), clap_s=(1.0, 0.85, 2.3), noise=REALISTIC,
+                  extra_joints=extra_joints)
     recorded = {k.video_path: k for k in scene.recorded_keypoints(str(tmp_path))}
     for path in recorded:
         (tmp_path / path.split("/")[-1]).write_bytes(b"stand-in for a phone video")
@@ -103,16 +125,34 @@ def test_run_writes_metrics_that_describe_a_good_take(tmp_path, monkeypatch):
     assert max(m["calibrate"]["reprojection_error_px"].values()) < 3.0
     assert m["calibrate"]["from_board"] is False
     assert m["scale"]["upright_frames"] >= config.MIN_UPRIGHT_FRAMES
+    assert m["scale"]["height_from"] == "ears"                  # MediaPipe-style joints: no head top
     assert m["floor"]["plane_used"] is True and m["floor"]["tilt_from_body_up_deg"] < 2.0
     assert m["triangulate"]["mean_reprojection_px"] < 3.0
     assert set(m["triangulate"]["mean_reprojection_px_per_joint"]) == set(JOINT_INDEX)
     assert m["pose_final"]["missing_fraction"] <= m["pose_raw"]["missing_fraction"]
     assert m["pose_final"]["missing_fraction"] < 0.05
+    assert m["pose_final"]["missing_fraction_per_joint"]["HEAD_TOP"] is None     # not counted as missing
+    assert m["triangulate"]["mean_reprojection_px_per_joint"]["HEAD_TOP"] is None
+    assert m["triangulate"]["joints_with_fewer_than_2_views"] < 0.05 * m["triangulate"]["frames"] * 33
+    assert m["rig"]["detected_fraction"]["Head"] == 0.0
     assert m["rig"]["bone_lengths"]["mean_std_m"] < 0.02       # realistic noise at 4 m: a few mm
     assert m["smooth"]["gaps"]["filled"] >= 0
 
     log = (out.parent / "take.log").read_text()
     assert "Saved" in log and "frames of 3D joints" in log
+
+
+def test_run_with_the_head_top_records_both_heights(tmp_path, monkeypatch):
+    out = run_synthetic(tmp_path, monkeypatch, extra_joints=True)
+    m = metrics.load(str(out))
+    assert m["scale"]["height_from"] == "ears"                  # config.HEIGHT_TO_HEAD_TOP is off
+    assert m["scale"]["upright_frames_with_head_top"] >= config.MIN_UPRIGHT_FRAMES
+    # the scene puts the head top exactly HEAD_TOP_ABOVE_EARS_M above the ears, so both rules agree
+    assert m["scale"]["height_to_ears_m"] == pytest.approx(PERFORMER_HEIGHT_M, abs=1e-9)
+    assert m["scale"]["height_to_head_top_m"] == pytest.approx(PERFORMER_HEIGHT_M, abs=0.015)
+    assert m["scale"]["head_top_above_ears_m"] == pytest.approx(config.HEAD_TOP_ABOVE_EARS_M, abs=0.015)
+    assert m["rig"]["detected_fraction"]["Head"] > 0.95
+    assert m["pose_final"]["missing_fraction_per_joint"]["HEAD_TOP"] < 0.05
 
 
 def test_failed_run_still_writes_metrics(tmp_path, monkeypatch):
