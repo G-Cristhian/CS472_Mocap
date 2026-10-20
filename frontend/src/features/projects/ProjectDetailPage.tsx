@@ -1,10 +1,11 @@
-import { Suspense, lazy, useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useSettings } from '@/app/SettingsProvider'
 import { useStudio } from '@/app/StudioProvider'
 import { StickFigure } from '@/components/ui/StickFigure'
 import { Toast } from '@/components/ui/Modal'
 import {
+  AlertIcon,
   CheckIcon,
   ExportIcon,
   InfoIcon,
@@ -13,8 +14,16 @@ import {
   ShareIcon,
 } from '@/components/ui/Icons'
 import { rigParts } from '@/lib/data'
-import { API_URL, ApiUnreachableError, getTake, listTakes, takeFileUrl } from '@/lib/api'
-import type { Take } from '@/lib/api'
+import {
+  API_URL,
+  ApiUnreachableError,
+  TakeFileError,
+  getTake,
+  getTakeFile,
+  listTakes,
+  takeFileUrl,
+} from '@/lib/api'
+import type { Take, TakeFile } from '@/lib/api'
 import type { Source } from '@/types'
 import { SOURCE_COLOR } from './SkeletonViewport'
 import type { MotionInfo, MotionSource } from '@/features/viewer/MotionViewport'
@@ -38,6 +47,19 @@ const STATUS_LABEL: Record<Take['status'], string> = {
   failed: 'Failed',
 }
 
+/** How often the take list is refreshed while a take is queued or running. */
+const POLL_MS = 3000
+
+const isProcessing = (take: Take) => take.status === 'queued' || take.status === 'running'
+
+/** The take's status in the list; a running take shows its pipeline stage. */
+function statusLabel(take: Take) {
+  if (take.status === 'running' && take.stage) {
+    return `${take.stage[0].toUpperCase()}${take.stage.slice(1)}…`
+  }
+  return STATUS_LABEL[take.status]
+}
+
 const takeLabel = (take: Take) => take.name ?? take.id
 
 /** A plain-words message for a failed API call. */
@@ -45,6 +67,59 @@ function apiErrorMessage(e: unknown, what: string) {
   return e instanceof ApiUnreachableError
     ? `Can't reach the API at ${API_URL}`
     : `Couldn't load ${what}: ${e instanceof Error ? e.message : String(e)}`
+}
+
+const EXPORT_FILES = [
+  { file: 'out3d.bvh', ext: 'bvh', kind: 'BVH', label: 'Download BVH' },
+  { file: 'out3d.json', ext: 'json', kind: 'JSON', label: 'Download JSON' },
+] as const
+type ExportFile = (typeof EXPORT_FILES)[number]
+
+/** The saved file's name: the take's name made file-safe ("Jump Test #2" -> jump-test-2.bvh), else its id. */
+function downloadName(take: Take, ext: string) {
+  const base = (take.name ?? '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '') // é -> e
+    .normalize('NFC') // recombine other scripts' marks (ダ stays ダ, not タ + mark)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, '-')
+    .slice(0, 80)
+    .replace(/^-+|-+$/g, '')
+  return `${base || take.id}.${ext}`
+}
+
+/** A plain-words message for a failed download of one of a take's files. */
+function downloadErrorMessage(e: unknown, take: Take, kind: string) {
+  if (e instanceof ApiUnreachableError) return `Can't reach the API at ${API_URL}, so nothing was downloaded.`
+  if (e instanceof TakeFileError && e.status === 404) {
+    return `The ${kind} file for ${takeLabel(take)} is missing on the server, so it can't be downloaded.`
+  }
+  if (e instanceof TakeFileError && e.status === 409) {
+    return `${takeLabel(take)} hasn't finished processing, so its files can't be downloaded yet.`
+  }
+  return `Couldn't download the ${kind} file: ${e instanceof Error ? e.message : String(e)}`
+}
+
+/** Save a blob as a file. The API is another origin, so a plain <a download> link would ignore the name. */
+function saveBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.append(link)
+  link.click()
+  link.remove()
+  // give the browser a moment to start the download before freeing the blob
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
+/** Why a take's files can't be downloaded yet. */
+function exportUnavailableReason(take: Take | undefined) {
+  if (!take) return 'Pick a take in the list to download its files.'
+  if (take.status === 'failed') {
+    return 'This take failed to process, so it has no files to download.'
+  }
+  return 'The files can be downloaded once this take has finished processing.'
 }
 
 /** What the viewer shows for the ?clip= take: a file to play, or a message. */
@@ -83,7 +158,7 @@ export function ProjectDetailPage() {
   // the project's takes from the API; null until the first answer
   const [takes, setTakes] = useState<Take[] | null>(null)
   const [takesError, setTakesError] = useState<string | null>(null)
-  const [viewer, setViewer] = useState<ViewerState>({ message: 'No take selected' })
+  const [lookup, setLookup] = useState<ViewerState>({ message: 'No take selected' })
   const [tab, setTab] = useState<'rig' | 'streaming' | 'export'>('rig')
   const [selectedPart, setSelectedPart] = useState('left-forearm')
   const [hidden, setHidden] = useState<Source[]>([])
@@ -93,9 +168,17 @@ export function ProjectDetailPage() {
   const [motion, setMotion] = useState<MotionInfo | null>(null)
   const [rotation, setRotation] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
+  // the Export tab's download in progress, and why the last one failed
+  const [downloading, setDownloading] = useState<TakeFile | null>(null)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
 
-  // the viewer follows ?clip=
+  // the viewer follows ?clip=: a take in the list stays fresh while it's polled,
+  // any other id (e.g. from an old link) is looked up once
   const selectedTake = takes?.find((t) => t.id === clip)
+  const viewer = useMemo(
+    () => (selectedTake ? viewerStateFor(selectedTake) : lookup),
+    [selectedTake, lookup],
+  )
   const shownTake = viewer.take ?? selectedTake
   const takeName = shownTake ? takeLabel(shownTake) : clip ?? 'No take selected'
 
@@ -122,18 +205,47 @@ export function ProjectDetailPage() {
     return () => controller.abort()
   }, [projectId])
 
-  // look the ?clip= take up in the API (a one-time check; live polling comes later)
+  // refresh the list while any take is queued or running; stops once none is
+  // (or the page closes). A failed refresh keeps the last list and tries again.
+  const processing = takes?.some(isProcessing) ?? false
+  useEffect(() => {
+    if (!processing || !projectId) return
+    const controller = new AbortController()
+    let timer: number
+    const poll = () => {
+      timer = window.setTimeout(() => {
+        listTakes(projectId, controller.signal)
+          .then((latest) => {
+            setTakes(latest)
+            setTakesError(null)
+          })
+          .catch((e) => {
+            if (!controller.signal.aborted) setTakesError(apiErrorMessage(e, 'the takes'))
+          })
+          .finally(() => {
+            if (!controller.signal.aborted) poll()
+          })
+      }, POLL_MS)
+    }
+    poll()
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [processing, projectId])
+
+  // look the ?clip= take up in the API (once; the list polling keeps it fresh)
   useEffect(() => {
     if (!clip) {
-      setViewer({ message: 'No take selected' })
+      setLookup({ message: 'No take selected' })
       return
     }
     const controller = new AbortController()
-    setViewer({ message: 'Loading take…' })
+    setLookup({ message: 'Loading take…' })
     getTake(clip, controller.signal)
-      .then((found) => setViewer(found ? viewerStateFor(found) : { message: 'Take not found' }))
+      .then((found) => setLookup(found ? viewerStateFor(found) : { message: 'Take not found' }))
       .catch((e) => {
-        if (!controller.signal.aborted) setViewer({ message: apiErrorMessage(e, 'the take') })
+        if (!controller.signal.aborted) setLookup({ message: apiErrorMessage(e, 'the take') })
       })
     return () => controller.abort()
   }, [clip])
@@ -141,6 +253,23 @@ export function ProjectDetailPage() {
   const length = motion?.duration ?? 0
 
   useEffect(() => setFrozen(settings.freezeViewport), [settings.freezeViewport])
+
+  // a download error is about the take it was for
+  useEffect(() => setDownloadError(null), [clip])
+
+  // fetched rather than linked, so a missing file shows an error here instead of
+  // sending the tab to the API's JSON error page
+  const downloadFile = async (take: Take, f: ExportFile) => {
+    setDownloading(f.file)
+    setDownloadError(null)
+    try {
+      saveBlob(await getTakeFile(take.id, f.file), downloadName(take, f.ext))
+    } catch (e) {
+      setDownloadError(downloadErrorMessage(e, take, f.kind))
+    } finally {
+      setDownloading(null)
+    }
+  }
 
   // with a file loaded the 3D viewport runs the clock; this is only the fallback
   useEffect(() => {
@@ -190,13 +319,7 @@ export function ProjectDetailPage() {
           <ShareIcon />
           Share
         </button>
-        <button
-          className="btn btn--primary"
-          onClick={() => {
-            setTab('export')
-            setToast('Export queued — FBX at 60 fps')
-          }}
-        >
+        <button className="btn btn--primary" onClick={() => setTab('export')}>
           <ExportIcon />
           Export
         </button>
@@ -220,7 +343,7 @@ export function ProjectDetailPage() {
                     style={{ background: t.id === clip ? 'var(--purple)' : 'var(--line)' }}
                   />
                   {takeLabel(t)}
-                  <span className="dur">{STATUS_LABEL[t.status]}</span>
+                  <span className="dur">{statusLabel(t)}</span>
                 </button>
               ))}
             </div>
@@ -464,35 +587,41 @@ export function ProjectDetailPage() {
               <p style={{ color: 'var(--muted)', fontSize: 13.5 }}>
                 {selectedTake ? takeLabel(selectedTake) : 'No take selected'}
               </p>
-              <label className="field">
-                <span className="field__label">Format</span>
-                <select className="select" defaultValue="fbx">
-                  <option value="fbx">FBX — skeleton and animation</option>
-                  <option value="bvh">BVH — animation only</option>
-                  <option value="csv">CSV — joint positions per frame</option>
-                  <option value="glb">glTF / GLB</option>
-                </select>
-              </label>
-              <label className="field">
-                <span className="field__label">Frame rate</span>
-                <select className="select" defaultValue="60">
-                  <option value="60">60 fps (native)</option>
-                  <option value="30">30 fps</option>
-                  <option value="24">24 fps</option>
-                </select>
-              </label>
-              <label className="check">
-                <input type="checkbox" defaultChecked />
-                Bake the rotation offsets
-              </label>
-              <label className="check">
-                <input type="checkbox" defaultChecked />
-                Include parts marked “needs review”
-              </label>
-              <button className="btn btn--primary" onClick={() => setToast('Export queued')}>
-                <ExportIcon />
-                Export take
-              </button>
+              {EXPORT_FILES.map((f) =>
+                selectedTake?.status === 'done' ? (
+                  <button
+                    key={f.file}
+                    className="btn btn--primary"
+                    disabled={downloading !== null}
+                    onClick={() => downloadFile(selectedTake, f)}
+                  >
+                    <ExportIcon />
+                    {downloading === f.file ? 'Downloading…' : f.label}
+                  </button>
+                ) : (
+                  <button key={f.file} className="btn btn--primary" disabled>
+                    <ExportIcon />
+                    {f.label}
+                  </button>
+                ),
+              )}
+              {downloadError && (
+                <div className="alert" role="alert">
+                  <AlertIcon />
+                  <span>{downloadError}</span>
+                </div>
+              )}
+              {selectedTake?.status === 'done' ? (
+                <p style={{ color: 'var(--muted)', fontSize: 13.5 }}>
+                  BVH is the animated skeleton for Blender, Maya or a game engine. JSON has every
+                  tracked joint's 3D position per frame.
+                </p>
+              ) : (
+                <div className="note">
+                  <InfoIcon />
+                  <span>{exportUnavailableReason(selectedTake)}</span>
+                </div>
+              )}
             </div>
           )}
         </aside>
