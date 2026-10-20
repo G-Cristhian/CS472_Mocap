@@ -5,7 +5,13 @@ HTTP API around the mocap pipeline, for the web frontend.
     python -m pip install -r requirements-api.txt
     uvicorn api:app
 
-Upload 2-4 videos as a take, the pipeline runs on it in the background (one
+On Windows, in PowerShell, from backend and without activating the venv
+(docs/procedures/windows-setup.md):
+
+    .venv\\Scripts\\python.exe -m pip install -r requirements-api.txt
+    .venv\\Scripts\\python.exe -m uvicorn api:app
+
+Upload 2 or more videos as a take, the pipeline runs on it in the background (one
 take at a time, each in its own process), then fetch out3d.json / out3d.bvh.
 
 Each take lives in backend/output/<take_id>/:
@@ -13,6 +19,8 @@ Each take lives in backend/output/<take_id>/:
     status.json               the take record returned by the API
     log.txt                   everything the pipeline printed
     calibration.json, out3d.json, out3d.bvh   pipeline outputs
+    out3d.metrics.json, out3d.log             quality numbers and the pipeline's own log
+    out3d.keypoints.<camera>.npz, out3d.sync.json   each camera's 2D joints, the clap times
 
 Environment variables:
     MOCAP_MAX_UPLOAD_MB   max size per video in MB (default 800)
@@ -34,6 +42,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import traceback
 from concurrent.futures import Future, ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
@@ -41,6 +50,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -52,11 +62,14 @@ except ImportError:  # python-multipart older than 0.0.13
     from multipart.multipart import MultipartParser, parse_options_header
 
 from mocap_pipeline import config
+from mocap_pipeline import io as pipeline_io
+from mocap_pipeline.joints import MEDIAPIPE_JOINTS
 from mocap_pipeline.run_pipeline import OUTPUT_DIR, run
 
 TAKE_ID_RE = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
 VIDEO_EXTENSIONS = {".mov", ".mp4"}
-CAMERA_FIELDS = [f"cam{c}" for c in range(config.MAX_CAMERAS)]
+# video fields are cam0, cam1, ... with no gaps; any number from config.MIN_CAMERAS up
+CAMERA_FIELD_RE = re.compile(r"^cam(\d+)$")
 MAX_NAME_LENGTH = 100
 # projects only live in the frontend mock data for now, so any well-formed id is accepted
 PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
@@ -85,22 +98,42 @@ def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def _retry_sharing(action, attempts: int = 50, pause_s: float = 0.005):
+    """
+    Runs action(), retrying briefly on OSError. On Windows a file that another
+    process has open cannot be replaced, and a file being replaced cannot be
+    opened, so the API's reads and the worker's writes of status.json can
+    collide for a few milliseconds. The last error is raised.
+    """
+    for attempt in range(attempts):
+        try:
+            return action()
+        except OSError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(pause_s)
+
+
 def write_status(folder: Path, record: dict) -> None:
     """Atomic: the API reads status.json while the worker writes it."""
     fd, tmp = tempfile.mkstemp(dir=folder, prefix=".status-", suffix=".tmp")
     try:
         with os.fdopen(fd, "w") as fp:
             json.dump(record, fp, indent=2)
-        os.replace(tmp, folder / "status.json")
+        _retry_sharing(lambda: os.replace(tmp, folder / "status.json"))
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
 
 
+def _load_json(path: Path) -> dict:
+    with open(path) as fp:
+        return json.load(fp)
+
+
 def read_status(folder: Path) -> dict | None:
     try:
-        with open(folder / "status.json") as fp:
-            record = json.load(fp)
+        record = _retry_sharing(lambda: _load_json(folder / "status.json"))
     except (OSError, ValueError):
         return None
     record.setdefault("project_id", None)  # takes recorded before project_id existed
@@ -373,14 +406,13 @@ class TakeUpload:
         self._name = name
 
         if filename is None:
-            if name in CAMERA_FIELDS:
+            if CAMERA_FIELD_RE.match(name):
                 return self.fail(422, f"{name} must be a video file")
             self._text = b""
             return
 
-        if name not in CAMERA_FIELDS:
-            return self.fail(422, f"unexpected file field {name!r}; videos go in cam0 to "
-                                  f"{CAMERA_FIELDS[-1]}")
+        if not CAMERA_FIELD_RE.match(name):
+            return self.fail(422, f"unexpected file field {name!r}; videos go in cam0, cam1, ...")
         ext = Path(filename.decode("utf-8", "replace")).suffix.lower()
         if ext not in VIDEO_EXTENSIONS:
             return self.fail(422, f"{name}: only .mov and .mp4 videos are accepted")
@@ -412,12 +444,18 @@ class TakeUpload:
             self._text = None
 
 
+def camera_number(field: str) -> int:
+    """cam12 -> 12, so camera fields sort numerically rather than as text."""
+    return int(CAMERA_FIELD_RE.match(field).group(1))
+
+
 def check_upload(upload: TakeUpload) -> tuple[list[str], float, str | None, str | None]:
     """Video paths in camera order, height, name, project id; raises UploadError (422)."""
     n = len(upload.videos)
-    if sorted(upload.videos) != CAMERA_FIELDS[:n] or not config.MIN_CAMERAS <= n <= config.MAX_CAMERAS:
-        raise UploadError(422, f"give {config.MIN_CAMERAS} to {config.MAX_CAMERAS} videos as cam0, cam1, ... "
-                               f"with no gaps (got {', '.join(sorted(upload.videos)) or 'none'})")
+    expected = [f"cam{c}" for c in range(n)]
+    if n < config.MIN_CAMERAS or sorted(upload.videos, key=camera_number) != expected:
+        raise UploadError(422, f"give at least {config.MIN_CAMERAS} videos as cam0, cam1, ... with no gaps "
+                               f"(got {', '.join(sorted(upload.videos, key=camera_number)) or 'none'})")
 
     unknown = set(upload.fields) - {"height_m", "name", "project_id"}
     if unknown:
@@ -440,7 +478,7 @@ def check_upload(upload: TakeUpload) -> tuple[list[str], float, str | None, str 
     if project_id and not PROJECT_ID_RE.match(project_id):
         raise UploadError(422, "project_id must be up to 100 letters, digits, - or _")
 
-    return [str(upload.videos[c]) for c in CAMERA_FIELDS[:n]], height_m, name, project_id
+    return [str(upload.videos[c]) for c in expected], height_m, name, project_id
 
 
 # ---- endpoints -------------------------------------------------------------------------
@@ -514,6 +552,91 @@ def get_out3d_json(take_id: str) -> FileResponse:
 @app.get("/takes/{take_id}/out3d.bvh")
 def get_out3d_bvh(take_id: str) -> FileResponse:
     return result_file(take_id, "out3d.bvh", "text/plain")
+
+
+def finished_take(take_id: str) -> tuple[Path, dict]:
+    """The take's folder and record once the pipeline has stopped, done or failed; 409 before that."""
+    folder, record = get_take(take_id)
+    if record.get("status") not in ("done", "failed"):
+        raise HTTPException(409, f"take is {record.get('status')}, not finished")
+    return folder, record
+
+
+@app.get("/takes/{take_id}/metrics.json")
+def get_metrics(take_id: str) -> FileResponse:
+    """Quality numbers for the take (mocap_pipeline/metrics.py); written for failed takes too."""
+    folder, _ = finished_take(take_id)
+    path = folder / "out3d.metrics.json"
+    if not path.is_file():
+        raise HTTPException(404, "metrics.json not found")
+    return FileResponse(path, media_type="application/json", filename="metrics.json")
+
+
+# ---- 2D keypoints: what each camera saw, for the per-camera view -------------------------------
+
+KEYPOINTS_PREFIX, KEYPOINTS_SUFFIX = "out3d.keypoints.", ".npz"
+
+
+def clap_times(folder: Path) -> dict[str, float]:
+    """camera_id -> seconds into that video at which the clap happens, from the sync file; {} if none."""
+    try:
+        return pipeline_io.load_sync(str(folder / "out3d.sync.json")).clap_time_s
+    except (OSError, ValueError, KeyError):
+        return {}
+
+
+def keypoints_json(kp, clap_time_s: float | None) -> dict:
+    """
+    One camera's 2D joints for the frontend. Pixels, origin top-left; null
+    where the detector found nothing. timestamps are seconds from the start of
+    that video; subtract clap_time_s to get the take's clock (t = 0 at the clap).
+    """
+    points = np.asarray(kp.points, dtype=float)
+    confidence = np.asarray(kp.confidence, dtype=float)
+    return {
+        "camera_id": kp.camera_id, "width": int(kp.width), "height": int(kp.height), "fps": float(kp.fps),
+        "clap_time_s": None if clap_time_s is None else float(clap_time_s),
+        "joints": list(MEDIAPIPE_JOINTS),
+        "timestamps": [round(float(t), 4) for t in kp.timestamps],
+        "points": [[None if np.isnan(p).any() else [round(float(p[0]), 1), round(float(p[1]), 1)] for p in frame]
+                   for frame in points],
+        "confidence": [[round(float(c), 3) for c in frame] for frame in confidence],
+    }
+
+
+@app.get("/takes/{take_id}/keypoints.json")
+def list_keypoints(take_id: str) -> dict:
+    """The cameras whose 2D joints are saved for this take (stage 1 output), with their clap times."""
+    folder, _ = finished_take(take_id)
+    claps = clap_times(folder)
+    cameras = []
+    for path in sorted(folder.glob(f"{KEYPOINTS_PREFIX}*{KEYPOINTS_SUFFIX}"), key=lambda p: camera_sort_key(p.name)):
+        camera_id = path.name[len(KEYPOINTS_PREFIX):-len(KEYPOINTS_SUFFIX)]
+        kp = pipeline_io.load_keypoints(str(path))
+        cameras.append({"camera_id": camera_id, "width": int(kp.width), "height": int(kp.height), "fps": float(kp.fps),
+                        "frames": int(len(kp.timestamps)), "clap_time_s": claps.get(camera_id)})
+    return {"cameras": cameras}
+
+
+def camera_sort_key(filename: str):
+    """cam2 before cam10; anything else after, alphabetically."""
+    camera_id = filename[len(KEYPOINTS_PREFIX):-len(KEYPOINTS_SUFFIX)]
+    m = CAMERA_FIELD_RE.match(camera_id)
+    return (0, int(m.group(1)), "") if m else (1, 0, camera_id)
+
+
+@app.get("/takes/{take_id}/keypoints/{camera}.json")
+def get_keypoints(take_id: str, camera: str) -> Response:
+    """One camera's 2D joints per frame (see keypoints_json). 404 for a camera the take does not have."""
+    if not CAMERA_FIELD_RE.match(camera):
+        raise HTTPException(404, "camera not found")
+    folder, _ = finished_take(take_id)
+    path = folder / f"{KEYPOINTS_PREFIX}{camera}{KEYPOINTS_SUFFIX}"
+    if not path.is_file():
+        raise HTTPException(404, "camera not found")
+    kp = pipeline_io.load_keypoints(str(path))
+    return Response(content=json.dumps(keypoints_json(kp, clap_times(folder).get(camera))),
+                    media_type="application/json")
 
 
 @app.delete("/takes/{take_id}", status_code=204)

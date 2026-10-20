@@ -1,5 +1,6 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { clips as seedClips, projects as seedProjects } from '@/lib/data'
+import { listClips } from '@/lib/clips'
 import type { Accent, Clip, Project, Source } from '@/types'
 
 interface NewProjectInput {
@@ -29,7 +30,14 @@ function slugify(name: string) {
 
 export function StudioProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<Project[]>(seedProjects)
-  const [clips] = useState<Clip[]>(seedClips)
+  const [uploaded, setUploaded] = useState<Clip[]>([])
+  const clips = useMemo(() => [...uploaded, ...seedClips], [uploaded])
+
+  useEffect(() => {
+    listClips()
+      .then(setUploaded)
+      .catch((e) => console.error("Couldn't load uploaded clips:", e))
+  }, [])
 
   const value = useMemo<Ctx>(
     () => ({

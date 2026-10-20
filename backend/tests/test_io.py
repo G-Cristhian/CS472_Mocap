@@ -1,6 +1,7 @@
 """Round trips for every schemas dataclass through io.py, and the video fingerprint."""
 import os
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -75,9 +76,9 @@ def test_pose3d_json_has_null_for_gaps(tmp_path):
 
 def test_stage_paths_follow_out_path():
     paths = io.stage_paths("/x/output/take01.json", ["cam0", "cam1"])
-    assert str(paths["sync"]) == "/x/output/take01.sync.json"
-    assert str(paths["pose"]) == "/x/output/take01.pose.npz"
-    assert str(paths["keypoints"]["cam1"]) == "/x/output/take01.keypoints.cam1.npz"
+    assert Path(paths["sync"]) == Path("/x/output/take01.sync.json")
+    assert Path(paths["pose"]) == Path("/x/output/take01.pose.npz")
+    assert Path(paths["keypoints"]["cam1"]) == Path("/x/output/take01.keypoints.cam1.npz")
 
 
 def test_fingerprint_detects_changed_video(tmp_path):

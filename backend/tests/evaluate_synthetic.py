@@ -5,7 +5,11 @@ camera layouts and noise levels and print one table of errors.
     cd backend
     python -m tests.evaluate_synthetic              # the full table, a few minutes
     python -m tests.evaluate_synthetic --quick      # fewer rows, shorter routine
-    python -m tests.evaluate_synthetic --bvh out/synthetic_take.bvh   # also write a BVH for the viewer
+    python -m tests.evaluate_synthetic --bvh out/synthetic_take.bvh   # write the BVH somewhere else
+
+The BVH of the realistic 3-camera run always goes to backend/output/
+synthetic_take.bvh (the pipeline's own output folder, ignored by git) unless
+--bvh says otherwise.
 
 Columns: mean reprojection error the calibration reports; MPJPE (mean per
 joint position error) against the truth after the best rigid alignment
@@ -21,9 +25,10 @@ import warnings
 
 import numpy as np
 
-from mocap_pipeline import config
+from mocap_pipeline import config, metrics
 from mocap_pipeline.joints import JOINT_INDEX, RIG_JOINTS
 from mocap_pipeline.stage2_reconstruct import calibrate, scale_floor, smooth, sync, triangulate
+from mocap_pipeline.run_pipeline import OUTPUT_DIR
 from mocap_pipeline.stage3_rig import bvh_writer, rotations, skeleton
 from tests import bvh_reader
 from tests.synthetic_scene import (PERFORMER_HEIGHT_M, Noise, Routine, Scene, aligned_mpjpe, camera_centre,
@@ -32,13 +37,14 @@ from tests.synthetic_scene import (PERFORMER_HEIGHT_M, Noise, Routine, Scene, al
 REALISTIC = Noise(pixel_sigma=1.5, dropout=0.02, outlier=0.005)
 
 
-def run_stage2(scene: Scene, intrinsics=None):
+def run_stage2(scene: Scene, intrinsics=None, smoother: str | None = config.SMOOTHER):
+    """smoother None returns the raw triangulation (gaps filled, no filter)."""
     kps = scene.synced_keypoints()
     rig = calibrate.calibrate_rig(kps, intrinsics)
     rough = triangulate.triangulate_sequence(kps, rig)
     rig = scale_floor.make_metric(rig, rough, PERFORMER_HEIGHT_M)
-    raw = triangulate.triangulate_sequence(kps, rig)
-    return smooth.smooth(smooth.fill_gaps(raw)), rig
+    raw = smooth.fill_gaps(triangulate.triangulate_sequence(kps, rig))
+    return (smooth.smooth(raw, smoother) if smoother else raw), rig
 
 
 def measure(scene: Scene, pose, rig) -> dict:
@@ -76,7 +82,9 @@ def row(label: str, m: dict, dt: float) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--quick", action="store_true", help="shorter routine and fewer configurations")
-    parser.add_argument("--bvh", default=None, help="write the final BVH of the 3-camera realistic run here")
+    parser.add_argument("--bvh", default=str(OUTPUT_DIR / "synthetic_take.bvh"),
+                        help="where to write the final BVH of the 3-camera realistic run "
+                             "(default: backend/output/synthetic_take.bvh)")
     args = parser.parse_args()
     warnings.filterwarnings("ignore")
 
@@ -109,6 +117,17 @@ def main() -> None:
         if "3 cams, 1.5 px + 2%" in label:
             keep = (scene, pose)
 
+    print("\nStage 2c (smoothing) on the realistic 3-camera result: error against the truth and frame-to-frame jitter\n")
+    scene, _ = keep
+    raw, rig = run_stage2(scene, smoother=None)
+    truth = scene.truth_in_pipeline_frame()
+    for label, pose in [("raw (gaps filled, no filter)", raw)] + [
+            (f"{m} ({', '.join(f'{k} {v}' for k, v in s.items())})", smooth.smooth(raw, m))
+            for m, s in (("savgol", {"window": config.SMOOTH_WINDOW_FRAMES, "order": config.SMOOTH_POLYORDER}),
+                         ("butterworth", {"cutoff Hz": config.BUTTER_CUTOFF_HZ, "order": config.BUTTER_ORDER}))]:
+        al, _, _ = aligned_mpjpe(pose.points, truth)
+        print(f"  {label:44s} MPJPE aligned {al * 1000:6.1f} mm   jitter {metrics.jitter_mm(pose.points):6.2f} mm/frame²")
+
     print("\nStage 2a (sync): resampling each phone onto the shared clock, error in pixels against exact projection\n")
     # clap offsets that are not whole frames at any of these rates, so the shared clock
     # falls between frames and the interpolation is actually exercised
@@ -133,7 +152,7 @@ def main() -> None:
     offsets = skeleton.rest_pose_offsets(skeleton.bone_lengths(rig_pos))
     root, local = rotations.solve_rotations(rig_pos, offsets)
     euler = rotations.to_euler_degrees(local, bvh_writer.ROTATION_ORDER)
-    path = args.bvh or "/tmp/synthetic_take.bvh"
+    path = args.bvh
     bvh_writer.write_bvh(path, offsets, root, euler, pose.fps)
     fk = bvh_reader.joint_positions(path)
     truth_rig = skeleton.rig_joint_positions(scene.truth_pose())

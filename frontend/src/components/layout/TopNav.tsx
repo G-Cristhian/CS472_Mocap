@@ -7,6 +7,7 @@ import './TopNav.css'
 const LINKS = [
   { to: '/', label: 'Home', end: true },
   { to: '/record', label: 'Record' },
+  { to: '/footage', label: 'Footage' },
   { to: '/projects', label: 'Projects' },
   { to: '/library', label: 'Motion Library' },
 ]

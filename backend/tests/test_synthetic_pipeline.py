@@ -110,7 +110,8 @@ def test_full_stage2_without_noise_recovers_the_truth():
     assert max(rig.reprojection_error_px.values()) < 0.1
 
 
-@pytest.mark.parametrize("angles", [(0, -60, 60), (-35, 35), (-20, -65, 20, 65)])
+@pytest.mark.parametrize("angles", [(0, -60, 60), (-35, 35), (-20, -65, 20, 65),
+                                    (-65, -40, -15, 15, 40, 65)])   # no upper limit on cameras (D-024)
 def test_full_stage2_with_realistic_noise(angles):
     scene = Scene(routine=SHORT, angles_deg=angles, noise=REALISTIC)
     pose, rig = stage2(scene)
@@ -227,12 +228,12 @@ def test_run_pipeline_end_to_end_on_the_synthetic_scene(tmp_path, monkeypatch):
     recorded = {k.video_path: k for k in scene.recorded_keypoints(str(tmp_path))}
     for path in recorded:
         (tmp_path / path.split("/")[-1]).write_bytes(b"stand-in for a phone video")
-    monkeypatch.setattr(detect, "detect_video", lambda video_path, model_path: recorded[str(video_path)])
+    monkeypatch.setattr(detect, "detect_video", lambda video_path, model_path, detector="mediapipe": recorded[str(video_path)])
 
     out = tmp_path / "output" / "take.json"
     run_pipeline.run(list(recorded), str(out), performer_height_m=PERFORMER_HEIGHT_M, model_path="unused",
                      camera=["webcam"] * 3, fov=[65.0] * 3, clap_times=scene.clap_times(),
-                     calibration_path=str(tmp_path / "output" / "calibration.json"))
+                     calibration_path=str(tmp_path / "output" / "calibration.json"), jobs=1)
 
     assert out.exists() and out.with_suffix(".bvh").exists()
     import json
@@ -254,7 +255,7 @@ def test_run_pipeline_end_to_end_on_the_synthetic_scene(tmp_path, monkeypatch):
     # resume works on the files it just wrote
     run_pipeline.run(list(recorded), str(out), performer_height_m=PERFORMER_HEIGHT_M, model_path="unused",
                      camera=["webcam"] * 3, fov=[65.0] * 3, clap_times=scene.clap_times(),
-                     calibration_path=str(tmp_path / "output" / "calibration.json"), resume=True)
+                     calibration_path=str(tmp_path / "output" / "calibration.json"), resume=True, jobs=1)
 
 
 def scene_joint_names():

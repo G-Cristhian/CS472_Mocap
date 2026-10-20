@@ -1,45 +1,34 @@
 """
-Stage 1: run the pose model on every frame of one video.
+Stage 1: run a pose model on every frame of one video.
 
-Starting point: backend/landmarks_from_image_test/ already does this for a
+Starting point: backend/legacy/landmarks_from_image_test/ already does this for a
 single image (detector.py, main.py). This module is the video version.
+
+The model itself lives in backends.py (MediaPipe by default); this module
+reads the video and builds the arrays, the same for every model.
 
 Input : path to one phone's video.
 Output: schemas.Keypoints2D for that camera.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import cv2
 import numpy as np
-import mediapipe as mp
 
 from ..joints import NUM_JOINTS
 from ..schemas import Keypoints2D
+from .backends import DEFAULT_BACKEND, create_backend
 
 
-def create_landmarker(model_path: str):
-    """
-    Build the MediaPipe PoseLandmarker in VIDEO mode.
-
-    Same options as landmarks_from_image_test/detector.py, but
-    running_mode=VIDEO so MediaPipe tracks the person between frames, and
-    num_poses=1 (single performer). Segmentation masks are not needed.
-    """
-    from mediapipe.tasks import python
-    from mediapipe.tasks.python import vision
-
-    options = vision.PoseLandmarkerOptions(
-        base_options=python.BaseOptions(model_asset_path=str(model_path)),
-        running_mode=vision.RunningMode.VIDEO,
-        num_poses=1)
-    return vision.PoseLandmarker.create_from_options(options)
-
-
-def detect_video(video_path: str, model_path: str) -> Keypoints2D:
+def detect_video(video_path: str, model_path: str, detector: str = DEFAULT_BACKEND) -> Keypoints2D:
     """
     Every frame of one video -> pixel joints + confidence + real timestamps.
+
+    detector picks the pose model (a name in backends.BACKENDS); model_path
+    is the model file for detectors that need one (MediaPipe's .task file).
 
     Frames with no person get NaN points and 0 confidence; no frame is ever
     dropped, so the arrays stay aligned with timestamps. Low-confidence joints
@@ -52,15 +41,21 @@ def detect_video(video_path: str, model_path: str) -> Keypoints2D:
         raise FileNotFoundError(f"Could not open video: {video_path}")
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    # MOCAP_PROGRESS=1 (set by the desktop tester) prints a line every 30 frames so a
+    # progress bar can follow detection, the slow stage. The frame count is the
+    # container's estimate and can be off by a few frames.
+    progress_every = 30 if os.getenv("MOCAP_PROGRESS") else 0
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    width = 0   # set to 0 for now, will be updated later!
+    height = 0  # set to 0 for now, will be updated later!
 
     points, confidence, timestamps = [], [], []
 
-    with create_landmarker(model_path) as landmarker:
+    with create_backend(detector, model_path) as backend:
         frame_idx = 0
         last_ms = -1
-        while True:
+
+        while True:     # while video can still be read, continues
             ok, frame = cap.read()
             if not ok:
                 break
@@ -77,28 +72,18 @@ def detect_video(video_path: str, model_path: str) -> Keypoints2D:
             timestamps.append(frame_ms / 1000.0)
 
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-
-            # VIDEO mode needs a strictly increasing timestamp in ms
-            timestamp_ms = max(int(round(frame_ms)), last_ms + 1)
-            last_ms = timestamp_ms
-            result = landmarker.detect_for_video(image, timestamp_ms)
-
-            frame_pts = np.full((NUM_JOINTS, 2), np.nan)
-            frame_conf = np.zeros(NUM_JOINTS)
-            
-            if result.pose_landmarks:
-                for i, lm in enumerate(result.pose_landmarks[0]):
-                    # pose_landmarks are 0-1 of the image, convert to pixels;
-                    # MediaPipe's z is a per-camera guess, stage 2 computes real depth
-                    frame_pts[i] = (lm.x * width, lm.y * height)
-                    frame_conf[i] = lm.visibility if lm.visibility is not None else 1.0
+            frame_pts, frame_conf = backend.detect(rgb, frame_ms)
 
             points.append(frame_pts)
             confidence.append(frame_conf)
             frame_idx += 1
+            if progress_every and frame_idx % progress_every == 0:
+                print(f"progress: detect {video_path} {frame_idx}/{total_frames}", flush=True)
 
     cap.release()
+
+    if frame_idx == 0:
+        raise ValueError(f"No frames could be read from video: {video_path}")
 
     return Keypoints2D(
         camera_id=Path(video_path).stem,

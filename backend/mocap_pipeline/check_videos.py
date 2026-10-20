@@ -1,6 +1,6 @@
 """
 Pre-flight check for recorded videos, meant to run at the venue before the
-tripods come down (docs/field-test-protocol.md, section 9):
+tripods come down (docs/procedures/filming.md, section 9):
 
     cd backend
     python -m mocap_pipeline.check_videos take01/*
@@ -58,16 +58,16 @@ def iphone_info(path: str) -> dict | None:
     return {"model": md.get(MODEL_KEY), "lens": md.get(LENS_KEY), "focal_35mm": md.get(FOCAL_35MM_KEY)}
 
 
-def clap_time(path: str) -> tuple[float | None, str | None]:
-    """Clap time in seconds, or (None, reason)."""
+def clap_time(path: str, threshold: float = 1.0) -> tuple[float | None, str | None]:
+    """Clap time in seconds, or (None, reason). threshold as in sync.find_clap_time."""
     try:
         audio = sync._read_audio(path, config.CLAP_SEARCH_WINDOW_S)
-        return sync._clap_from_loudness(sync._loudness(audio), path), None
+        return sync._clap_from_loudness(sync._loudness(audio), path, threshold), None
     except sync.ClapNotFoundError as e:
         return None, str(e)
 
 
-def check(video_paths: list[str]) -> int:
+def check(video_paths: list[str], threshold: float = 1.0) -> int:
     problems = 0
     results = []
 
@@ -97,7 +97,7 @@ def check(video_paths: list[str]) -> int:
         else:
             print(f"  lens    no lens metadata (not an iPhone file): needs --fov, default {config.DEFAULT_HFOV_DEG:.0f}")
 
-        t, reason = clap_time(path)
+        t, reason = clap_time(path, threshold)
         if t is None:
             print(f"  FAIL    no clap: {reason}")
             problems += 1
@@ -124,13 +124,13 @@ def check(video_paths: list[str]) -> int:
                   f"was a phone started late or stopped early?")
         if all(r["clap"] is not None for r in good) and len(good) == len(results):
             try:
-                refined = sync.detect_claps(video_paths)
+                refined = sync.detect_claps(video_paths, threshold)
                 print("  claps   " + ", ".join(f"{Path(p).name} {t:.3f} s" for p, t in zip(video_paths, refined))
                       + " (cross-checked against camera 0)")
             except sync.ClapNotFoundError as e:
                 print(f"  WARNING cross-check failed: {e}")
     elif len(video_paths) < 2:
-        print("\nWARNING one video given; the pipeline needs 2 to 4")
+        print("\nWARNING one video given; the pipeline needs at least 2")
 
     print("\n" + ("All files usable." if problems == 0 else f"{problems} file(s) the pipeline cannot use."))
     return 1 if problems else 0
@@ -139,8 +139,10 @@ def check(video_paths: list[str]) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Check recorded videos before leaving the venue.")
     parser.add_argument("videos", nargs="+", help="The videos of one take, camera 0 first.")
+    parser.add_argument("--clap-threshold", type=float, default=1.0,
+                        help="Multiplies how loud a clap must be against the room (0.5 accepts a clap half as strong).")
     args = parser.parse_args()
-    sys.exit(check(args.videos))
+    sys.exit(check(args.videos, args.clap_threshold))
 
 
 if __name__ == "__main__":

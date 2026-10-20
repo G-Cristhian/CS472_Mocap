@@ -4,14 +4,22 @@ Values are starting guesses; adjust once real footage is available.
 """
 
 # ---- Stage 1: 2D keypoints -------------------------------------------------
-# Path to the MediaPipe model, relative to backend/. The repo already ships one
-# in backend/landmarks_from_image_test/models/. MODEL_FILEPATH in .env or
-# --model overrides it.
-POSE_MODEL_PATH = "landmarks_from_image_test/models/pose_landmarker_heavy.task"
+# Path to the MediaPipe model, relative to backend/. The repo ships one in
+# backend/models/. MODEL_FILEPATH in .env or --model overrides it.
+POSE_MODEL_PATH = "models/pose_landmarker_heavy.task"
+# (ours) How many videos are detected at once, each in its own process. 0 is
+# automatic: one per video, up to the processor's core count and
+# DETECT_MAX_AUTO_JOBS (each process loads its own copy of the pose model,
+# roughly 1 to 2 GB of memory). 1 detects the videos one after another in
+# this process, as before. --jobs overrides it per run.
+DETECT_JOBS = 0
+DETECT_MAX_AUTO_JOBS = 4
 
 # ---- Cameras (ours) ----------------------------------------------------------
-# The pipeline takes 2 to 4 cameras in a front arc, iPhones and webcams mixed.
-MIN_CAMERAS, MAX_CAMERAS = 2, 4
+# At least two cameras in a front arc, iPhones and webcams mixed; no upper
+# limit (design decision D-024). Triangulating a joint needs two views, and
+# every extra camera adds detection time linearly and refinement time faster.
+MIN_CAMERAS = 2
 
 # ---- Stage 2a: sync --------------------------------------------------------
 # Only search this many seconds from the start of each video for the clap.
@@ -24,10 +32,14 @@ TARGET_FPS = 30.0
 CLAP_AUDIO_RATE = 16000
 CLAP_WINDOW_S = 0.002
 CLAP_SMOOTH_S = 0.01
-CLAP_MIN_PROMINENCE = 8.0
+# Lowered from 8 on 2026-10-19: real takes' claps were rejected as not loud
+# enough against the room. The rise-time test below is what keeps speech out,
+# so these two mostly decide how much background noise a clap must beat.
+# --clap-threshold multiplies both per run (0.5 accepts a clap half as strong).
+CLAP_MIN_PROMINENCE = 4.0
 # ...and must be at least this many times louder than 30-100 ms before it
-# (a clap is sharp; talking and music ramp up slowly).
-CLAP_MIN_RISE = 3.0
+# (a clap is sharp; talking and music ramp up slowly). Lowered from 3, same day.
+CLAP_MIN_RISE = 2.0
 # ...and must go from a quarter of its peak loudness to the peak within this
 # many seconds.
 CLAP_MAX_RISE_S = 0.025
@@ -95,6 +107,18 @@ MAX_REPROJECTION_ERROR_PX = 15.0
 # Small window so fast motion such as a punch survives.
 SMOOTH_WINDOW_FRAMES = 7
 SMOOTH_POLYORDER = 2
+# (ours) Which smoother cleans the 3D joints: "savgol" (the Savitzky-Golay
+# filter above) or "butterworth" (a zero-phase low-pass, the biomechanics
+# standard: Winter, Biomechanics and Motor Control of Human Movement, 4th ed.,
+# 2009, chapter 3). --smoother picks one per run; both are kept so they can be
+# compared on the same take.
+SMOOTHER = "savgol"
+# Butterworth: cutoff in Hz and the order of one pass. The filter runs forward
+# and then backward (scipy sosfiltfilt), so the result has no lag and twice the
+# order. Winter's gait work uses 6 Hz; punches are faster, so this starts
+# higher. Must be below half the frame rate. Starting guess, not measured.
+BUTTER_CUTOFF_HZ = 8.0
+BUTTER_ORDER = 2
 
 # ---- Placement tool (Rahimian & Kearney 2015) ------------------------------
 # Two cameras can triangulate a point only if their viewing rays meet at an
@@ -104,3 +128,16 @@ MAX_CONVERGENCE_DEG = 140.0
 # Beyond this distance a camera is treated as not seeing the point. The paper
 # used 3.65 m for marker cameras; retune for phones.
 CAMERA_EFFECTIVE_RANGE_M = 6.0
+# (ours) a target point no camera sees costs 360 plus this (the paper's
+# equation 1 penalty, our value): without it the annealer parks every camera
+# on one spot, since a point nobody sees costs no more than one everybody
+# sees from the same side.
+PLACEMENT_UNCOVERED_PENALTY_DEG = 360.0
+# (ours) fallback target points when no recording exists: a grid over the
+# capture volume, half-width and step in metres on the floor, and the heights.
+PLACEMENT_GRID_HALF_WIDTH_M = 1.5
+PLACEMENT_GRID_STEP_M = 0.5
+PLACEMENT_GRID_HEIGHTS_M = (0.1, 0.9, 1.5)
+# (ours) at most this many joint positions are sampled from a recording to
+# score a layout; the annealer evaluates the cost thousands of times.
+PLACEMENT_MAX_TARGET_POINTS = 300

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .. import config
+from .. import config, metrics
 from ..joints import JOINT_INDEX
 from ..schemas import Camera, CameraRig, Pose3D
 
@@ -60,6 +60,7 @@ def scale_factor_from_height(pose: Pose3D, performer_height_m: float) -> float:
       3. Return (height minus offsets) / median(measured).
     """
     _, length, upright = _body_axis(pose.points)
+    metrics.record("scale.upright_frames", int(upright.sum()))
     if upright.sum() < config.MIN_UPRIGHT_FRAMES:
         raise ValueError(
             f"only {int(upright.sum())} frames with the performer standing upright, need "
@@ -102,7 +103,13 @@ def estimate_floor(pose: Pose3D):
     _, s, vt = np.linalg.svd(low - centre, full_matrices=False)
     normal = vt[2] if np.dot(vt[2], up) >= 0 else -vt[2]
     spread_ok = s[1] > 3 * s[2]            # the feet covered an area, not a line or a spot
-    tilt_ok = np.degrees(np.arccos(np.clip(np.dot(normal, up), -1, 1))) < 30
+    tilt_deg = float(np.degrees(np.arccos(np.clip(np.dot(normal, up), -1, 1))))
+    tilt_ok = tilt_deg < 30
+    metrics.record("floor", {
+        "foot_points": int(len(feet)), "low_points": int(len(low)),
+        "plane_fit_residual": float(s[2] / np.sqrt(len(low))),   # rms distance of the low points to the plane, pose units
+        "spread_ratio": float(s[1] / s[2]) if s[2] > 0 else None,
+        "tilt_from_body_up_deg": tilt_deg, "plane_used": bool(spread_ok and tilt_ok)})
 
     if not (spread_ok and tilt_ok):
         normal = up
@@ -124,6 +131,8 @@ def make_metric(rig: CameraRig, pose: Pose3D, performer_height_m: float,
       4. Set rig.is_metric = True.
     """
     scale = scale_factor_from_height(pose, performer_height_m) if rescale else 1.0
+    metrics.record("scale.metres_per_unit", float(scale))
+    metrics.record("scale.rescaled_from_height", bool(rescale))
     scaled = Pose3D(fps=pose.fps, points=pose.points * scale, num_views=pose.num_views)
     normal, floor_point = estimate_floor(scaled)
 

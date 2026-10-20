@@ -26,7 +26,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from .. import config
+from .. import config, metrics
 from ..joints import CALIBRATION_JOINTS, JOINT_INDEX
 from ..schemas import Camera, CameraRig, Keypoints2D
 
@@ -235,7 +235,7 @@ def _place_camera(placed_group, flat_placed, flat_new, K_new, name):
 def calibrate_rig(keypoints: list[Keypoints2D],
                   intrinsics: "list[np.ndarray] | None" = None) -> CameraRig:
     """
-    Multi-camera calibration (2 to 4 cameras), our method:
+    Multi-camera calibration (2 or more cameras), our method:
       1. Start from the pair of cameras that saw the most distinct joints
          together (calibrate_pair's steps).
       2. Add the other cameras one at a time, the one that sees the most of
@@ -265,6 +265,8 @@ def calibrate_rig(keypoints: list[Keypoints2D],
 
     counts = {(a, b): _n_distinct(flat[a], flat[b], sizes[a], sizes[b]) for a, b in pairs}
     a, b = max(pairs, key=lambda pair: counts[pair])
+    metrics.record("calibrate.start_pair", [ids[a], ids[b]])
+    metrics.record("calibrate.distinct_correspondences", {f"{ids[x]}+{ids[y]}": n for (x, y), n in counts.items()})
 
     pts_a, pts_b = select_correspondences(keypoints[a], keypoints[b])
     R, t = estimate_relative_pose(pts_a, pts_b, intrinsics[a], intrinsics[b])

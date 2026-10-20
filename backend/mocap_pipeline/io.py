@@ -33,6 +33,8 @@ def stage_paths(out_path: str, camera_ids: list[str] | None = None) -> dict:
         keypoints  out3d.keypoints.<camera_id>.npz   (one per camera)
         sync       out3d.sync.json
         pose       out3d.pose.npz                    (triangulated, before smoothing)
+        metrics    out3d.metrics.json                (quality numbers, metrics.py)
+        log        out3d.log                         (everything printed, time-stamped)
     Calibration has its own path (--calibration), not derived from --out.
     """
     out = Path(out_path)
@@ -40,6 +42,8 @@ def stage_paths(out_path: str, camera_ids: list[str] | None = None) -> dict:
     paths = {
         "sync": Path(f"{stem}.sync.json"),
         "pose": Path(f"{stem}.pose.npz"),
+        "metrics": Path(f"{stem}.metrics.json"),
+        "log": Path(f"{stem}.log"),
     }
     if camera_ids is not None:
         paths["keypoints"] = {cid: Path(f"{stem}.keypoints.{cid}.npz") for cid in camera_ids}

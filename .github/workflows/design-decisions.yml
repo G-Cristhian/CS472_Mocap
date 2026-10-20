@@ -1,0 +1,170 @@
+# Design decision detector. After every push to main (a PR merge or a direct
+# push), Claude reads the commits on main since the one recorded in
+# docs/decisions/.last-reviewed, adds any new design decisions
+# to docs/decisions/DECISIONS.md with a citation where one exists, advances the
+# marker, and opens (or updates) one pull request for human review from the
+# branch design-decisions/pending.
+#
+# Commits that touch only docs/decisions/, .claude/ or .github/ (the sheet's own
+# machinery) are not reviewed; when the whole range is such commits the Claude
+# step is skipped, so merging the review PR itself costs nothing.
+#
+# Debugging: the full Claude transcript is printed in the job log
+# (show_full_output) and uploaded as the artifact claude-execution-output.
+# Run it by hand with dry_run to see the report without opening a PR.
+#
+# Not "on: push": anthropics/claude-code-action refuses push events
+# ("Unsupported event type: push", runs 7 to 9 on 2026-10-16). It accepts
+# workflow_run, so push-to-main.yml runs on every push to main and this
+# workflow runs when that one completes.
+# Rules and statuses: docs/decisions/README.md
+#
+# Secrets:
+#   ANTHROPIC_API_KEY     required
+name: Design decisions
+
+on:
+  workflow_run:
+    workflows: ["Push to main"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      range:
+        description: "Commit range to review, e.g. 762e384..main (default: since the marker)"
+        required: false
+        default: ""
+      dry_run:
+        description: "Print the report but do not open or update the review PR"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: design-decisions
+  cancel-in-progress: false
+
+jobs:
+  interrogate:
+    # only a completed push to main; a hand-started run always goes ahead
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Continue the pending review branch, if there is one
+        run: |
+          git config user.name "design-decisions workflow"
+          git config user.email "workflow@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin design-decisions/pending >/dev/null 2>&1; then
+            git fetch origin design-decisions/pending
+            git merge --no-edit origin/design-decisions/pending
+          fi
+
+      - name: Pick the commit range
+        id: range
+        env:
+          INPUT_RANGE: ${{ github.event.inputs.range }}
+        run: |
+          after="$(git rev-parse origin/main)"
+          echo "after=$after" >> "$GITHUB_OUTPUT"
+          if [ -n "$INPUT_RANGE" ]; then
+            range="$INPUT_RANGE"
+          else
+            marker="$(tr -d '[:space:]' < docs/decisions/.last-reviewed 2>/dev/null || true)"
+            if [ -z "$marker" ] || ! git cat-file -e "$marker" 2>/dev/null; then
+              marker="0e1eea9"
+            fi
+            range="$marker..$after"
+          fi
+          echo "range=$range" >> "$GITHUB_OUTPUT"
+          echo "Reviewing $range"
+          git log --oneline "$range"
+          if [ "$(git rev-list --count "$range")" = "0" ]; then
+            echo "empty=true" >> "$GITHUB_OUTPUT"
+            echo "Nothing new since the marker."
+            exit 0
+          fi
+          # commits that change something outside the sheet's own machinery
+          reviewable="$(git log --format=%h "$range" -- . ':!docs/decisions' ':!.claude' ':!.github' | wc -l)"
+          if [ "$reviewable" = "0" ]; then
+            echo "empty=true" >> "$GITHUB_OUTPUT"
+            echo "Every commit in the range touches only docs/decisions/, .claude/ or .github/; nothing to review."
+          else
+            echo "empty=false" >> "$GITHUB_OUTPUT"
+            echo "$reviewable commit(s) touch files outside the excluded paths."
+          fi
+
+      - name: Interrogate the commits
+        if: steps.range.outputs.empty == 'false'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are the design-interrogator for this repository. Read docs/decisions/README.md
+            and follow its procedure exactly. Then read .claude/agents/design-interrogator.md
+            for the working rules.
+
+            Review the commit range: ${{ steps.range.outputs.range }}
+
+            Ignore changes under docs/decisions/, .claude/ and .github/ when looking for
+            decisions: they are the sheet's own machinery.
+
+            Add any new design decisions to docs/decisions/DECISIONS.md. Do not commit.
+            Write your final report (the shape given in the agent file) to
+            ${{ runner.temp }}/design-report.md. If nothing counted as a decision, still write the
+            report, with "New rows: none", and leave DECISIONS.md untouched.
+          show_full_output: true
+          claude_args: >-
+            --allowedTools "Read,Grep,Glob,Edit,Write,WebSearch,WebFetch,Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git rev-parse *)"
+            --max-turns 80
+
+      - name: Keep the Claude transcript
+        if: always() && steps.range.outputs.empty == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-execution-output
+          path: ${{ runner.temp }}/claude-execution-output.json
+          if-no-files-found: ignore
+
+      - name: Did the sheet change?
+        id: changed
+        if: steps.range.outputs.empty == 'false'
+        env:
+          AFTER: ${{ steps.range.outputs.after }}
+        run: |
+          echo "$AFTER" > docs/decisions/.last-reviewed
+          if git diff --quiet -- docs/decisions/DECISIONS.md; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -f "$RUNNER_TEMP/design-report.md" ]; then
+            cat "$RUNNER_TEMP/design-report.md"
+          else
+            printf 'Range: %s\nNew rows: none\n(no report written)\n' "${{ steps.range.outputs.range }}" > "$RUNNER_TEMP/design-report.md"
+          fi
+
+      - name: Open or update the review PR
+        id: pr
+        if: steps.range.outputs.empty == 'false' && steps.changed.outputs.changed == 'true' && !inputs.dry_run
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: design-decisions/pending
+          base: main
+          title: "[AI] Design decisions found since ${{ steps.range.outputs.range }}"
+          body-path: ${{ runner.temp }}/design-report.md
+          commit-message: "[AI] docs(decisions): rows found in ${{ steps.range.outputs.range }}"
+          labels: design-decision
+          reviewers: GianniGuava
+          add-paths: docs/decisions/DECISIONS.md,docs/decisions/.last-reviewed
+          delete-branch: true

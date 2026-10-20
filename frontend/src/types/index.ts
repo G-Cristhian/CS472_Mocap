@@ -23,6 +23,8 @@ export interface Clip {
   source: Source
   accent: Accent
   pose: Pose
+  // Where to download the BVH file
+  fileUrl?: string
 }
 
 export interface Camera {
