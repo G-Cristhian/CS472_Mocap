@@ -1,0 +1,40 @@
+.footage__chips {
+  display: flex;
+  gap: 10px;
+  margin: 30px 0 20px;
+}
+.footage__status {
+  color: var(--muted);
+  margin-top: 16px;
+}
+.footrow {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.footrow__cam {
+  width: 56px;
+  color: var(--purple);
+  font-size: calc(13px * var(--font-scale));
+}
+.footrow__name {
+  font-weight: 700;
+}
+.footrow__meta {
+  color: var(--muted);
+}
+.footage__process {
+  position: sticky;
+  bottom: 16px;
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md, 12px);
+  background: var(--surface);
+}

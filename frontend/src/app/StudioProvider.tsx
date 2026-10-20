@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { clips as seedClips, projects as seedProjects } from '@/lib/data'
-import { listClips, uploadClip as storeClip, type UploadClipInput } from '@/lib/clips'
+import { listClips } from '@/lib/clips'
 import type { Accent, Clip, Project, Source } from '@/types'
 
 interface NewProjectInput {
@@ -13,7 +13,6 @@ interface Ctx {
   projects: Project[]
   clips: Clip[]
   createProject: (input: NewProjectInput) => Project
-  uploadClip: (input: UploadClipInput) => Promise<Clip>
 }
 
 const StudioContext = createContext<Ctx | null>(null)
@@ -58,11 +57,6 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         }
         setProjects((list) => [project, ...list])
         return project
-      },
-      uploadClip: async (input) => {
-        const clip = await storeClip(input)
-        setUploaded((list) => [clip, ...list])
-        return clip
       },
     }),
     [projects, clips],

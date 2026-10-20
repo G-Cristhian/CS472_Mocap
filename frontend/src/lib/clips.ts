@@ -43,32 +43,3 @@ export async function listClips(): Promise<Clip[]> {
   return (data as ClipRow[]).map(toClip)
 }
 
-/** idk claude did this frfr "m:ss" from a BVH header (Frames × Frame Time); "0:00" if the header can't be read. */
-async function bvhDuration(file: File): Promise<string> {
-  const head = await file.slice(0, 64 * 1024).text()
-  const frames = Number(/Frames:\s*(\d+)/.exec(head)?.[1])
-  const frameTime = Number(/Frame Time:\s*([\d.eE+-]+)/.exec(head)?.[1])
-  const seconds = Math.round(frames * frameTime) || 0
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
-}
-
-export interface UploadClipInput {
-  file: File
-  name: string
-  projectId: string
-  projectName: string
-  source: Source
-}
-
-// Stores the file in the bucket
-export async function uploadClip({ file, name, projectId, projectName, source }: UploadClipInput): Promise<Clip> {
-  if (!supabase) throw new Error('Supabase is not set up: add its URL and key to frontend/.env.local')
-  const path = `${projectId}/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]+/g, '_')}`
-  const stored = await supabase.storage.from(BUCKET).upload(path, file, { contentType: 'text/plain' })
-  if (stored.error) throw new Error(stored.error.message)
-
-  const row = { name, project_id: projectId, project_name: projectName, source, duration: await bvhDuration(file), file_path: path }
-  const { data, error } = await supabase.from('clips').insert(row).select().single()
-  if (error) throw new Error(error.message)
-  return toClip(data as ClipRow, 0)
-}
