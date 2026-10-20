@@ -4,6 +4,8 @@ For the laptop that goes to the recording session. Everything runs locally from 
 
 Works on Apple Silicon and Intel. Every dependency ships a macOS wheel, so nothing is compiled.[^2]
 
+On Windows, follow [windows-setup.md](windows-setup.md) instead: the same steps, with the commands PowerShell needs.
+
 ## 1. Python 3.12
 
 Check what you have:

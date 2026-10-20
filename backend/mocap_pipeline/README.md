@@ -11,6 +11,16 @@ $ cd backend
 $ python -m pip install -r mocap_pipeline/requirements.txt
 $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV cam2.mp4 --height-m 1.75
 ```
+
+On Windows, in PowerShell, from `backend` and without activating the venv:
+
+```
+cd $HOME\CS472_Mocap\backend
+.venv\Scripts\python.exe -m pip install -r mocap_pipeline\requirements.txt
+.venv\Scripts\python.exe -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV cam2.mp4 --height-m 1.75
+```
+
+The other examples in this README are written for a Mac. On Windows, put `.venv\Scripts\python.exe` in place of `python`, keep each command on one line, and list a take's videos with `Get-ChildItem` instead of `*`. [docs/procedures/windows-setup.md](../../docs/procedures/windows-setup.md) shows each of these.
 On Linux without a desktop, MediaPipe also needs the GL libraries: `sudo apt install libegl1 libgles2 libgl1`.
 
 The MediaPipe model defaults to the one in `backend/models/`. `MODEL_FILEPATH` in a `.env` file or `--model` overrides it.
@@ -70,7 +80,7 @@ $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --resume --recalibrate
 
 `--stop-after keypoints|sync|calibrate|triangulate` runs up to that stage, writes its file and stops, so one person can hand another the data for the next stage without sharing the videos. The files load with `mocap_pipeline.io` (`load_keypoints`, `load_sync`, `load_rig`, `load_pose3d`).
 
-Tests (no videos or model needed): `cd backend && python -m pytest tests`. Stages 2 and 3 are checked against a synthetic performer with exactly known joints, seen by virtual phones in the protocol's camera arc (`tests/synthetic_scene.py`); `python -m tests.evaluate_synthetic` prints the error of every stage for several camera layouts and noise levels, and `--bvh out.bvh` writes the result for the viewer.
+Tests (no videos or model needed): `cd backend && python -m pytest tests`. Stages 2 and 3 are checked against a synthetic performer with exactly known joints, seen by virtual phones in the protocol's camera arc (`tests/synthetic_scene.py`); `python -m tests.evaluate_synthetic` prints the error of every stage for several camera layouts and noise levels, and `--bvh out.bvh` writes the result for the viewer. `tests/test_desktop_tester.py` checks the desktop tester (`desktop/`) against the pipeline: the printed lines above through its progress bar, and its runner spawning a real run; it needs Node and skips without it (`-m "not desktop"` to leave it out). The whole routine, including a run on real footage through the tester, is in [`docs/procedures/testing-the-backend.md`](../../docs/procedures/testing-the-backend.md).
 
 ---
 # Metrics

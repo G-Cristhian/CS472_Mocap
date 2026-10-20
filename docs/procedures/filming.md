@@ -20,7 +20,7 @@ Everything else (occlusion, turning away from the cameras, two performers) is a 
 - One tripod or firm stand per phone, chest height. A phone wedged on a chair will move when someone brushes past it. Tape to mark tripod feet on the floor.
 - A tape measure (for the performer's height and the camera distances) and a roll of masking tape.
 - Something that claps: hands are fine. A clapperboard or two blocks of wood are louder.
-- A laptop with the repo set up (`cd backend && python -m pip install -r mocap_pipeline/requirements.txt`), a cable for each phone type, and a notebook or this file's take log.
+- A laptop with the repo set up (`cd backend && python -m pip install -r mocap_pipeline/requirements.txt`, or [windows-setup.md](windows-setup.md) on Windows), a cable for each phone type, and a notebook or this file's take log.
 - A space at least 5 m by 5 m with a flat floor, even light and a plain background. A gym or an empty classroom works. Avoid windows behind the performer.
 
 ---
@@ -172,6 +172,14 @@ cd backend
 python -m mocap_pipeline.check_videos ../field_test_2026-10/take01/*
 ```
 
+On Windows, in PowerShell ([windows-setup.md](windows-setup.md)):
+
+```
+cd $HOME\CS472_Mocap\backend
+$videos = (Get-ChildItem ..\field_test_2026-10\take01\* -Include *.MOV, *.mp4 | Sort-Object Name).FullName
+.venv\Scripts\python.exe -m mocap_pipeline.check_videos $videos
+```
+
 For each video it prints the resolution, frame rate, length, whether it has audio, whether the iPhone lens metadata is there, and the time it finds the clap. Then it cross-checks the claps between cameras. Anything it flags with WARNING or FAIL is a reason to record that take again now, while that is still cheap:
 
 - no audio or no clap found: the phone was muted or the clap was too quiet;
@@ -197,7 +205,13 @@ python -m mocap_pipeline.run_pipeline \
     --out output/take01/out3d.json --calibration output/take01/calibration.json
 ```
 
-What to write down from the console for each take: the clap time per camera, the calibration error per camera in pixels (under 10 is accepted, under 5 is good)[^26], and whether it finished. Then open `output/take01/out3d.bvh` in the frontend viewer (`cd frontend && npm install && npm run dev`, open a project, "Open .bvh / .json" bottom right of the viewport) or in Blender (File, Import, Motion Capture). The skeleton should stand on the floor, face the viewer, and look like the take.
+On Windows, the same command on one line, with `.venv\Scripts\python.exe` in place of `python` ([windows-setup.md](windows-setup.md)):
+
+```
+.venv\Scripts\python.exe -m mocap_pipeline.run_pipeline ..\field_test_2026-10\take01\take01_cam0_iphone16pro.MOV ..\field_test_2026-10\take01\take01_cam1_iphone15.MOV ..\field_test_2026-10\take01\take01_cam2_fold.mp4 --fov 75 --height-m 1.78 --out output\take01\out3d.json --calibration output\take01\calibration.json
+```
+
+What to write down from the console for each take: the clap time per camera, the calibration error per camera in pixels (under 10 is accepted, under 5 is good)[^26], and whether it finished. Then open `output/take01/out3d.bvh` in the frontend viewer (`cd frontend && npm install && npm run dev`, or on Windows [windows-setup.md](windows-setup.md) step 5; open a project, "Open .bvh / .json" bottom right of the viewport) or in Blender (File, Import, Motion Capture). The skeleton should stand on the floor, face the viewer, and look like the take.
 
 **Rerunning.** The pipeline saves every stage next to `--out`. Add `--resume` to any rerun and MediaPipe is skipped; see "Rerunning and debugging" in the pipeline README. Tuning smoothing or recalibrating takes seconds instead of minutes.
 
@@ -206,6 +220,12 @@ What to write down from the console for each take: the clap time per camera, the
 ```
 python -m mocap_pipeline.run_pipeline take01_cam0_iphone16pro.MOV take01_cam1_iphone15.MOV \
     --height-m 1.78 --out output/take01_2cams/out3d.json --calibration output/take01_2cams/calibration.json
+```
+
+On Windows, again on one line:
+
+```
+.venv\Scripts\python.exe -m mocap_pipeline.run_pipeline take01_cam0_iphone16pro.MOV take01_cam1_iphone15.MOV --height-m 1.78 --out output\take01_2cams\out3d.json --calibration output\take01_2cams\calibration.json
 ```
 
 **The 60 versus 120 comparison.** Process a set B take and its set C twin, open both BVH files, and look at the fast moments: the wrist on a punch, the foot on a kick. Jitter, a joint that lags behind, or gaps (null joints in the JSON) are what the frame rate change is supposed to reduce. Note that the pipeline currently resamples everything to 30 fps (`config.TARGET_FPS`)[^27]; the sharper frames still help, and raising the target to 60 is a one-line change planned once the footage is in.

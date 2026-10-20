@@ -19,7 +19,16 @@ python -m mocap_pipeline.run_pipeline ../session/take03/*.MOV --height-m 1.78 --
     --out output/take03_rtmpose/out3d.json --calibration output/take03_rtmpose/calibration.json
 ```
 
-RTMPose downloads its models on the first run (`~/.cache/rtmlib`)[^4], so run it once with internet before the session.
+On Windows, in PowerShell ([windows-setup.md](windows-setup.md)):
+
+```
+cd $HOME\CS472_Mocap\backend
+$videos = (Get-ChildItem ..\session\take03\* -Include *.MOV | Sort-Object Name).FullName
+.venv\Scripts\python.exe -m mocap_pipeline.run_pipeline $videos --height-m 1.78 --out output\take03_mediapipe\out3d.json --calibration output\take03_mediapipe\calibration.json
+.venv\Scripts\python.exe -m mocap_pipeline.run_pipeline $videos --height-m 1.78 --detector rtmpose --out output\take03_rtmpose\out3d.json --calibration output\take03_rtmpose\calibration.json
+```
+
+RTMPose downloads its models on the first run (`~/.cache/rtmlib`, which is `$HOME\.cache\rtmlib` on Windows)[^4], so run it once with internet before the session.
 
 ## 3. Compare the numbers
 
