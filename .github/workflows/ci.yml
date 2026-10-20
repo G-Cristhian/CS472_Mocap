@@ -1,5 +1,12 @@
 # Runs the checks on every pull request and every push to main.
 # No deploys: this project runs locally only.
+#
+# Three jobs, the same commands the docs give (docs/procedures/mac-setup.md,
+# desktop/README.md, frontend/README.md):
+#   backend   pytest in backend/, including the `desktop` tests that drive the
+#             desktop tester's compiled code with Node against the real pipeline
+#   desktop   the tester's own unit tests and typecheck
+#   frontend  typecheck and production build
 name: CI
 
 on:
@@ -15,27 +22,64 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # The desktop tests and the typecheck use Electron's types, never its binary,
+  # so skip the ~100 MB download in every job that installs desktop/.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
 jobs:
   backend:
     name: Backend (pytest)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version-file: .python-version
+          python-version: "3.12"   # what the project pins (docs/procedures/mac-setup.md)
           cache: pip
-          cache-dependency-path: backend/requirements.txt
-      # MediaPipe needs these OpenGL/EGL libraries to import on headless Linux.
+          cache-dependency-path: |
+            backend/mocap_pipeline/requirements.txt
+            backend/requirements-api.txt
+      # MediaPipe needs these OpenGL/EGL libraries on Linux without a desktop
+      # (backend/mocap_pipeline/README.md, Running).
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq libegl1 libgles2 libgl1
-      - run: pip install -r backend/requirements.txt
-      - run: python -m pytest backend/tests -q
+      - run: python -m pip install -r mocap_pipeline/requirements.txt -r requirements-api.txt pytest
+      # Node and desktop/node_modules let tests/test_desktop_tester.py run instead of skipping.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+        working-directory: desktop
+      - run: python -m pytest tests -q -rs
+
+  desktop:
+    name: Desktop tester (unit tests + typecheck)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
 
   frontend:
     name: Frontend (typecheck + build)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: frontend
@@ -43,7 +87,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
