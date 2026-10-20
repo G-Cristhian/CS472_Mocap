@@ -4,6 +4,8 @@ import { useStudio } from '@/app/StudioProvider'
 import { ClipCard } from '@/components/ui/ClipCard'
 import { StickFigure } from '@/components/ui/StickFigure'
 import { Badge } from '@/components/ui/Badge'
+import { Toast } from '@/components/ui/Modal'
+import { UploadClipDialog } from '@/components/ui/UploadClipDialog'
 import { GridIcon, ListIcon, SearchIcon } from '@/components/ui/Icons'
 import type { Source } from '@/types'
 import './library.css'
@@ -22,6 +24,8 @@ export function MotionLibraryPage() {
   const [params, setParams] = useSearchParams()
   const [filter, setFilter] = useState<Filter>('all')
   const [view, setView] = useState<'grid' | 'list'>('grid')
+  const [uploading, setUploading] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
   const query = params.get('q') ?? ''
 
   const shown = useMemo(() => {
@@ -40,10 +44,15 @@ export function MotionLibraryPage() {
           <h1 className="page-title">Motion Library</h1>
           <p className="page-sub">Every take you have recorded, across all projects.</p>
         </div>
-        <Link className="btn btn--primary" to="/record">
-          <span className="dot" style={{ background: '#fff' }} />
-          New recording
-        </Link>
+        <div className="row" style={{ gap: 10 }}>
+          <button className="btn btn--ghost" onClick={() => setUploading(true)}>
+            Upload clip
+          </button>
+          <Link className="btn btn--primary" to="/record">
+            <span className="dot" style={{ background: '#fff' }} />
+            New recording
+          </Link>
+        </div>
       </div>
 
       <div className="library__filters">
@@ -124,6 +133,11 @@ export function MotionLibraryPage() {
           ))}
         </div>
       )}
+
+      {uploading && (
+        <UploadClipDialog onClose={() => setUploading(false)} onUploaded={(name) => setToast(`Uploaded ${name}`)} />
+      )}
+      {toast && <Toast message={toast} onClose={() => setToast(null)} />}
     </div>
   )
 }

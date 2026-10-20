@@ -1,5 +1,6 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { clips as seedClips, projects as seedProjects } from '@/lib/data'
+import { listClips, uploadClip as storeClip, type UploadClipInput } from '@/lib/clips'
 import type { Accent, Clip, Project, Source } from '@/types'
 
 interface NewProjectInput {
@@ -12,6 +13,7 @@ interface Ctx {
   projects: Project[]
   clips: Clip[]
   createProject: (input: NewProjectInput) => Project
+  uploadClip: (input: UploadClipInput) => Promise<Clip>
 }
 
 const StudioContext = createContext<Ctx | null>(null)
@@ -29,7 +31,14 @@ function slugify(name: string) {
 
 export function StudioProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<Project[]>(seedProjects)
-  const [clips] = useState<Clip[]>(seedClips)
+  const [uploaded, setUploaded] = useState<Clip[]>([])
+  const clips = useMemo(() => [...uploaded, ...seedClips], [uploaded])
+
+  useEffect(() => {
+    listClips()
+      .then(setUploaded)
+      .catch((e) => console.error("Couldn't load uploaded clips:", e))
+  }, [])
 
   const value = useMemo<Ctx>(
     () => ({
@@ -49,6 +58,11 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         }
         setProjects((list) => [project, ...list])
         return project
+      },
+      uploadClip: async (input) => {
+        const clip = await storeClip(input)
+        setUploaded((list) => [clip, ...list])
+        return clip
       },
     }),
     [projects, clips],
