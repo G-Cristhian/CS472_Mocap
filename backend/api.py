@@ -5,6 +5,12 @@ HTTP API around the mocap pipeline, for the web frontend.
     python -m pip install -r requirements-api.txt
     uvicorn api:app
 
+On Windows, in PowerShell, from backend and without activating the venv
+(docs/procedures/windows-setup.md):
+
+    .venv\\Scripts\\python.exe -m pip install -r requirements-api.txt
+    .venv\\Scripts\\python.exe -m uvicorn api:app
+
 Upload 2 or more videos as a take, the pipeline runs on it in the background (one
 take at a time, each in its own process), then fetch out3d.json / out3d.bvh.
 
