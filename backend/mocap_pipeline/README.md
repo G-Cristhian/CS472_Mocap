@@ -35,7 +35,7 @@ The calibration is reused on the next run; add `--recalibrate` if a camera moved
 `--detector mediapipe|rtmpose` picks the stage 1 model (default `mediapipe`). Each model lives in `stage1_keypoints/backends.py` and fills the same 33 MediaPipe joints, so stages 2 and 3 do not change.
 
 - `mediapipe`: MediaPipe PoseLandmarker (heavy), tracks the performer between frames.
-- `rtmpose`: RTMPose with the Halpe-26 (body with feet) model, via `rtmlib`. A person detector runs every frame and the largest person is taken as the performer. Fills 21 of the 33 joints, every one stages 2 and 3 use (eye corners, mouth and fingers stay empty; the foot tip comes from the big toe). The models download on the first run, to `~/.cache/rtmlib`; `--model` is not used.
+- `rtmpose`: RTMPose with the Halpe-26 (body with feet) model, via `rtmlib`. A person detector runs every frame and the largest person is taken as the performer. Fills 21 of the 33 joints, every one stages 2 and 3 use (eye corners, mouth and fingers stay empty; the foot tip comes from the big toe). The models download on the first run, to `~/.cache/rtmlib`; `--model` is not used. It runs on the CPU with its threads told not to busy-wait (`config.RTMPOSE_THREAD_SPINNING`), so detecting several videos at once pays off: on a 16-core Ryzen a 4-phone take took 18 minutes instead of about an hour.
 
 To compare models on the same take, give each its own output and calibration, so neither reuses the other's:
 ```
