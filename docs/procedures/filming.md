@@ -45,7 +45,7 @@ Settings app, then Camera:
 | Record Slo-mo | 1080p HD at 120 fps | only used in the 120 fps take set |
 | Formats, Camera Capture | Most Compatible | H.264 files open on any laptop. High Efficiency (HEVC) also works but needs the right codecs on Windows |
 
-In the Camera app on the day: **1x lens only**, never 0.5x or the telephoto. Action mode off (the running-figure icon). Press and hold on the performer's position until "AE/AF LOCK" appears, after framing and before the clap, so focus and exposure cannot drift. Airplane mode or Do Not Disturb so a call does not interrupt recording.
+In the Camera app on the day: **Video mode** (not Cinematic, whose framing can differ from the lens metadata) and the **1x lens only**, never 0.5x or the telephoto. Action mode off (the running-figure icon). Press and hold on the performer's position until "AE/AF LOCK" appears, after framing and before the clap, so focus and exposure cannot drift. Airplane mode or Do Not Disturb so a call does not interrupt recording.
 
 Original iPhone files carry the lens focal length in their metadata and the pipeline reads it[^9] (`stage2_reconstruct/iphone_camera.py`). This is why iPhones need no field of view number and why section 8 insists on original files.
 
@@ -176,7 +176,8 @@ For each video it prints the resolution, frame rate, length, whether it has audi
 
 - no audio or no clap found: the phone was muted or the clap was too quiet;
 - frame rate not what was set, or different between phones in a take[^25]: a setting was missed;
-- "no iPhone lens metadata" on an iPhone video: the file was re-exported, copy it again;
+- "no iPhone lens metadata" on a .MOV: the file was re-exported, copy it again;
+- "0.5x ultra wide lens" or "telephoto lens" (read from the file's lens metadata), or "Cinematic mode": the phone was not in Video mode at 1x;
 - clap later than 10 seconds: it will not be found; retake or note the times by hand.
 
 The full pipeline takes minutes per take and does not need to run at the venue.
@@ -224,6 +225,7 @@ Messages the pipeline prints, and what they mean on the day of recording.
 | `feet seen in too few frames to find the floor` | feet cut off at the bottom of the frame | tilt the cameras down or move them back |
 | `error X px is above --max-error` | a phone moved, the lens switched, a wrong `--fov` | check the take log for bumps; measure the Fold's field of view; `--recalibrate` |
 | `has no focal length metadata (is it straight from an iPhone, not re-exported?)` | the file was re-encoded on the way off the phone | copy the original again (section 8); or run with `--camera webcam --fov 70` for that video as a stopgap |
+| `has no focal length metadata, though Apple's make and model tags are there` | an original file whose iOS version stores the lens somewhere the pipeline does not read yet | `--camera webcam --fov` with the field of view measured as for the Fold (section 3); report the iPhone model and iOS version it prints |
 | `calibration.json has 3 cameras but 2 videos were given` | reusing a calibration from a different camera set | `--recalibrate`, or a separate `--calibration` path per camera set |
 | the skeleton tracks the wrong person or jumps between people | a bystander was in frame | nothing to fix afterwards; keep the view clear |
 
@@ -252,7 +254,7 @@ Where each choice above comes from: a constant in the pipeline, a row on the des
 [^6]: Team judgement on frame rate: at auto exposure the shutter time roughly halves from 30 to 60 fps, so motion blur halves. No measurement yet; set C exists to make one.
 [^7]: MediaPipe's pose model runs on a 256 x 256 crop: Bazarevsky et al., "BlazePose: On-device Real-time Body Pose tracking", arXiv:2006.10204, 2020 (unverified). RTMPose uses 256 x 192 (`stage1_keypoints/backends.py`).
 [^8]: The camera model is a pinhole with fixed intrinsics and no distortion (`schemas.Camera`, D-010). Stabilisation re-projects the image per frame, which that model cannot represent.
-[^9]: `stage2_reconstruct/iphone_camera.py` reads `com.apple.quicktime.camera.focal_length.35mm_equivalent` from the QuickTime `moov` atom and turns it into the focal length in pixels.
+[^9]: `stage2_reconstruct/iphone_camera.py` reads `com.apple.quicktime.camera.focal_length.35mm_equivalent` from the QuickTime `meta` atom of the movie or, as iOS 26 and later write it, of the video track, and turns it into the focal length in pixels. Apple documents the key as "track-level metadata for video track that is associated with the camera" (AVFoundation, `AVMetadataIdentifier.quickTimeMetadataCameraFocalLength35mmEquivalent`, https://developer.apple.com/documentation/avfoundation/avmetadataidentifier/quicktimemetadatacamerafocallength35mmequivalent).
 [^10]: Team observation while writing `iphone_camera.py`: the Fold's MP4 carries no focal length key the pipeline can use. Not verified against Samsung documentation. Team judgement, no source. A candidate row for `docs/decisions/DECISIONS.md`.
 [^11]: Pinhole geometry: the horizontal field of view of a lens that sees width W at distance D (Hartley & Zisserman, *Multiple View Geometry in Computer Vision*, 2nd ed., Cambridge University Press, 2004, DOI 10.1017/CBO9780511811685, ch. 6).
 [^12]: 70 to 78 degrees is an estimate from phone main-camera specifications, not a measurement. The default 65 is `DEFAULT_HFOV_DEG` in `backend/mocap_pipeline/config.py`. `tests/test_synthetic_pipeline.py::test_wrong_field_of_view_costs_accuracy_but_still_runs` shows what a 10 degree error costs.

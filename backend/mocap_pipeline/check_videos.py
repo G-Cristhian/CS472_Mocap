@@ -22,13 +22,17 @@ import cv2
 
 from . import config
 from .stage2_reconstruct import sync
-from .stage2_reconstruct.iphone_camera import (FOCAL_35MM_KEY, LENS_KEY, MODEL_KEY, IPhoneMetadataError,
-                                               read_metadata)
+from .stage2_reconstruct.iphone_camera import (CINEMATIC_INTENT_KEY, CINEMATIC_KEY, LENS_KEY, MAKE_KEY, MODEL_KEY,
+                                               SOFTWARE_KEY, focal_35mm, read_metadata)
 
 # frame rates below this get a warning: the protocol asks for 60 or 120
 MIN_RECOMMENDED_FPS = 50.0
 # videos in one take should be about the same length
 MAX_DURATION_SPREAD_S = 5.0
+# 35 mm equivalent focal lengths of the 1x lens. Apple's tech specs (support.apple.com/121032, /125089,
+# /125090) list the main camera at 24 mm (16 Pro Max, 17 Pro) or 26 mm (17), the 0.5x ultra wide at 13 mm
+# and 2x and telephoto at 48 mm and up; their video files read 25 and 14
+MAIN_LENS_35MM = (20.0, 35.0)
 
 
 def video_info(path: str) -> dict:
@@ -48,14 +52,39 @@ def video_info(path: str) -> dict:
 
 
 def iphone_info(path: str) -> dict | None:
-    """Model, lens and 35 mm focal length if the file carries Apple's metadata, else None."""
+    """Apple's tags from the file (make, model, iOS version, lens, 35 mm focal length, Cinematic mode), None if unreadable."""
     try:
         md = read_metadata(path)
-    except (IPhoneMetadataError, OSError, Exception):
+    except Exception:
         return None
-    if not md.get(FOCAL_35MM_KEY):
-        return None
-    return {"model": md.get(MODEL_KEY), "lens": md.get(LENS_KEY), "focal_35mm": md.get(FOCAL_35MM_KEY)}
+    return {"apple": md.get(MAKE_KEY) == "Apple", "model": md.get(MODEL_KEY), "software": md.get(SOFTWARE_KEY),
+            "lens": md.get(LENS_KEY), "focal_35mm": focal_35mm(md),
+            "cinematic": CINEMATIC_KEY in md or md.get(CINEMATIC_INTENT_KEY) == 1}
+
+
+def lens_report(path: str) -> list[str]:
+    """The lens lines check() prints for one video."""
+    apple = iphone_info(path) or {}
+    focal = apple.get("focal_35mm")
+    lines = []
+    if focal:
+        lines.append(f"  lens    {apple['model']}, {apple['lens']}, {focal:g} mm (35 mm equiv.) from metadata")
+        if focal < MAIN_LENS_35MM[0]:
+            lines.append("  WARNING that is the 0.5x ultra wide lens; the protocol asks for 1x")
+        elif focal > MAIN_LENS_35MM[1]:
+            lines.append("  WARNING that is a telephoto lens or zoomed in; the protocol asks for 1x")
+    elif apple.get("apple"):
+        lines.append(f"  WARNING {apple['model']} (iOS {apple['software']}) file without a focal length in its metadata: "
+                     f"the pipeline will use --fov, default {config.DEFAULT_HFOV_DEG:.0f}; pass the measured value")
+    elif Path(path).suffix.lower() == ".mov":
+        lines.append("  WARNING .MOV without iPhone lens metadata: re-exported? Copy the original again, "
+                     "or run with --camera webcam --fov")
+    else:
+        lines.append(f"  lens    no lens metadata (not an iPhone file): needs --fov, default {config.DEFAULT_HFOV_DEG:.0f}")
+    if apple.get("cinematic"):
+        lines.append("  WARNING recorded in Cinematic mode: its picture can be narrower than the lens metadata says; "
+                     "record in Video mode")
+    return lines
 
 
 def clap_time(path: str, threshold: float = 1.0) -> tuple[float | None, str | None]:
@@ -87,15 +116,8 @@ def check(video_paths: list[str], threshold: float = 1.0) -> int:
         if info["fps"] and info["fps"] < MIN_RECOMMENDED_FPS:
             print(f"  WARNING frame rate under {MIN_RECOMMENDED_FPS:.0f}; the protocol asks for 60 (or 120 for set C)")
 
-        apple = iphone_info(path)
-        is_mov = Path(path).suffix.lower() == ".mov"
-        if apple:
-            print(f"  lens    {apple['model']}, {apple['lens']}, {apple['focal_35mm']} mm (35 mm equiv.) from metadata")
-        elif is_mov:
-            print("  WARNING .MOV without iPhone lens metadata: re-exported? Copy the original again, "
-                  "or run with --camera webcam --fov")
-        else:
-            print(f"  lens    no lens metadata (not an iPhone file): needs --fov, default {config.DEFAULT_HFOV_DEG:.0f}")
+        for line in lens_report(path):
+            print(line)
 
         t, reason = clap_time(path, threshold)
         if t is None:

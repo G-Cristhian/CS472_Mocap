@@ -5,15 +5,25 @@
 # so camera matrix is computed instead of guessed from fov
 # additionally, uses recorded variable frame rate to match videos bt frame
 
+import re
 import struct
 import sys
 
 import numpy as np
 
 # grabbed from iPhone video's metadata
+# Apple's AVMetadataIdentifier docs (iOS 26+) call the two camera keys "track-level metadata for
+# video track that is associated with the camera", so iOS 26 and later write them in the video
+# trak's meta atom, not the movie's (checked on iPhone 16 Pro Max to 18 Pro files, iOS 26.6.2 and 27.0)
 FOCAL_35MM_KEY = "com.apple.quicktime.camera.focal_length.35mm_equivalent"
-MODEL_KEY = "com.apple.quicktime.model"
 LENS_KEY = "com.apple.quicktime.camera.lens_model"
+MAKE_KEY = "com.apple.quicktime.make"
+MODEL_KEY = "com.apple.quicktime.model"
+SOFTWARE_KEY = "com.apple.quicktime.software"
+# movie-level Cinematic mode keys: the intent is Apple's quickTimeMetadataCinematicVideoIntent
+# (1 = treat as Cinematic), the other is undocumented but written by Cinematic mode recordings
+CINEMATIC_KEY = "com.apple.quicktime.cinematic-video"
+CINEMATIC_INTENT_KEY = "com.apple.quicktime.cinematic-video-intent"
 
 # diagonal of a 35mm film frame (36 x 24 mm)
 FULL_FRAME_DIAGONAL_MM = 43.27
@@ -66,16 +76,8 @@ def _read_moov(path):
                 raise IPhoneMetadataError(f"{path} has no QuickTime metadata (not a .MOV/.MP4?)")
             fp.seek(size - header_len, 1)
 
-# read the metadata of an iPhone video into a dict
-def read_metadata(path):
-    moov = _read_moov(path)
-    found = _find(moov, 0, len(moov), "meta")
-
-    if found is None:
-        return {}
-    
-    meta_start, meta_end = found
-
+# keys + values of one meta atom (s, e = its payload) into a dict
+def _read_meta(moov, meta_start, meta_end):
     keys_atom = _find(moov, meta_start, meta_end, "keys")
     ilst_atom = _find(moov, meta_start, meta_end, "ilst")
 
@@ -116,6 +118,49 @@ def read_metadata(path):
 
     return metadata
 
+# the meta atom of the first video track (handler type "vide"), or None
+def _video_track_meta(moov):
+    for kind, s, e in _atoms(moov, 0, len(moov)):
+        if kind != "trak":
+            continue
+        mdia = _find(moov, s, e, "mdia")
+        hdlr = mdia and _find(moov, *mdia, "hdlr")
+        # hdlr: version/flags (4), component type (4), then the handler type
+        if hdlr and moov[hdlr[0] + 8:hdlr[0] + 12] == b"vide":
+            return _find(moov, s, e, "meta")
+
+    return None
+
+# read the metadata of an iPhone video into a dict:
+#   the movie's meta atom, plus the video track's for keys the movie does not have
+def read_metadata(path):
+    moov = _read_moov(path)
+    metadata = {}
+
+    found = _find(moov, 0, len(moov), "meta")
+    if found is not None:
+        metadata.update(_read_meta(moov, *found))
+
+    found = _video_track_meta(moov)
+    if found is not None:
+        for key, value in _read_meta(moov, *found).items():
+            metadata.setdefault(key, value)
+
+    return metadata
+
+# 35 mm equivalent focal length in mm, or None
+#   iPhones write it as text: "25" in the files we have, "50.00mm" in Apple's docs
+def focal_35mm(metadata):
+    value = metadata.get(FOCAL_35MM_KEY)
+
+    if isinstance(value, str):
+        match = re.match(r"\s*(\d+(?:\.\d+)?)", value)
+        value = float(match.group(1)) if match else None
+    if isinstance(value, (int, float)) and value > 0:
+        return float(value)
+
+    return None
+
 # function to create camera matrix!
 #   uses diagonal so it works for portrait and landscape videos
 def intrinsics_from_focal(size, focal_35mm):
@@ -129,16 +174,20 @@ def intrinsics_from_focal(size, focal_35mm):
 # boolean function that returns true if video is from iPhone
 def is_iphone_video(path):
     try:
-        return bool(read_metadata(path).get(FOCAL_35MM_KEY))
+        return focal_35mm(read_metadata(path)) is not None
     except (IPhoneMetadataError, OSError, struct.error):
         return False
 
 # function to create camera matrix for one video
 def iphone_intrinsics(path, size):
     metadata = read_metadata(path)
-    focal = metadata.get(FOCAL_35MM_KEY)
+    focal = focal_35mm(metadata)
 
-    if not focal:
+    if focal is None and metadata.get(MAKE_KEY) == "Apple":
+        raise IPhoneMetadataError(
+            f"{path} has no focal length metadata, though Apple's make and model tags are there "
+            f"({metadata.get(MODEL_KEY)}, iOS {metadata.get(SOFTWARE_KEY)})")
+    if focal is None:
         raise IPhoneMetadataError(
             f"{path} has no focal length metadata (is it straight from an iPhone, not re-exported?)")
     
@@ -156,4 +205,4 @@ if __name__ == "__main__":
             print(f"{video}: {e}")
             continue
         print(f"{video}: model={md.get(MODEL_KEY)}, lens={md.get(LENS_KEY)}, "
-              f"focal_35mm={md.get(FOCAL_35MM_KEY)}")
+              f"focal_35mm={focal_35mm(md)}, cinematic={CINEMATIC_KEY in md}")
