@@ -89,6 +89,8 @@ export function runPipeline(
       cwd: BACKEND_DIR,
       env: { ...process.env, ...PYTHON_ENV },
       windowsHide: true,
+      // its own process group, so cancel can reach the detection workers too (see killTree)
+      detached: process.platform !== 'win32',
     })
     child.on('error', (e) => {
       onLine(`Could not start ${python}: ${e.message}`)
@@ -108,8 +110,27 @@ export function runPipeline(
     done,
     cancel() {
       cancelled = true
-      child?.kill()
+      if (child) killTree(child)
     },
+  }
+}
+
+/**
+ * Stops the pipeline together with the worker processes stage 1 spawns for
+ * `--jobs`. Killing the parent alone leaves them detecting: they keep the
+ * output pipes open, so the run would never report back, and they would still
+ * write their joints files.
+ */
+function killTree(child: ChildProcess): void {
+  if (child.exitCode !== null || child.pid === undefined) return
+  if (process.platform === 'win32') {
+    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }).on('error', () => child.kill())
+  } else {
+    try {
+      process.kill(-child.pid, 'SIGTERM') // the whole group: the child was spawned detached
+    } catch {
+      child.kill()
+    }
   }
 }
 
