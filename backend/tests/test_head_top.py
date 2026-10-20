@@ -1,9 +1,9 @@
 """
 The detected top of the head (joints.HEAD_TOP, RTMPose only) in the scale
-step and the rig's Head, with the ear-based estimates as the fallback: for
-MediaPipe, in frames where it is missing, and with
-config.USE_DETECTED_HEAD_TOP off. Checked on the synthetic performer's true
-pose, so no calibration runs.
+step (config.HEIGHT_TO_HEAD_TOP) and the rig's Head
+(config.RIG_USES_DETECTED_JOINTS), with the ear-based estimates as the
+fallback: for MediaPipe, in frames where it is missing, and with the setting
+off. Checked on the synthetic performer's true pose, so no calibration runs.
 """
 import numpy as np
 import pytest
@@ -40,23 +40,27 @@ def wrong_ear_offset(monkeypatch):
     monkeypatch.setattr(config, "HEAD_TOP_ABOVE_EARS_M", WRONG_EAR_OFFSET)
 
 
-def test_height_is_measured_to_the_detected_head_top(wrong_ear_offset):
+@pytest.fixture
+def height_to_head_top(monkeypatch):
+    monkeypatch.setattr(config, "HEIGHT_TO_HEAD_TOP", True)
+
+
+def test_height_is_measured_to_the_ears_by_default(wrong_ear_offset):
+    scale = scale_floor.scale_factor_from_height(unscaled(extra_joints=True), PERFORMER_HEIGHT_M)
+    assert scale == pytest.approx(EAR_RULE_SCALE, rel=1e-3)
+
+
+def test_height_is_measured_to_the_detected_head_top(wrong_ear_offset, height_to_head_top):
     scale = scale_floor.scale_factor_from_height(unscaled(extra_joints=True), PERFORMER_HEIGHT_M)
     assert scale == pytest.approx(1 / UNITS, rel=1e-3)
 
 
-def test_mediapipe_takes_measure_to_the_ears(wrong_ear_offset):
+def test_mediapipe_takes_measure_to_the_ears(wrong_ear_offset, height_to_head_top):
     scale = scale_floor.scale_factor_from_height(unscaled(extra_joints=False), PERFORMER_HEIGHT_M)
     assert scale == pytest.approx(EAR_RULE_SCALE, rel=1e-3)
 
 
-def test_switched_off_the_head_top_is_ignored(wrong_ear_offset, monkeypatch):
-    monkeypatch.setattr(config, "USE_DETECTED_HEAD_TOP", False)
-    scale = scale_floor.scale_factor_from_height(unscaled(extra_joints=True), PERFORMER_HEIGHT_M)
-    assert scale == pytest.approx(EAR_RULE_SCALE, rel=1e-3)
-
-
-def test_a_head_top_seen_in_too_few_upright_frames_falls_back_to_the_ears(wrong_ear_offset):
+def test_a_head_top_seen_in_too_few_upright_frames_falls_back_to_the_ears(wrong_ear_offset, height_to_head_top):
     pose = unscaled(extra_joints=True)
     pose.points[config.MIN_UPRIGHT_FRAMES - 1:, TOP] = np.nan
     scale = scale_floor.scale_factor_from_height(pose, PERFORMER_HEIGHT_M)
@@ -83,7 +87,7 @@ def test_rig_head_falls_back_to_the_estimate_where_the_head_top_is_missing():
 
 
 def test_switched_off_the_rig_head_is_the_estimate(monkeypatch):
-    monkeypatch.setattr(config, "USE_DETECTED_HEAD_TOP", False)
+    monkeypatch.setattr(config, "RIG_USES_DETECTED_JOINTS", False)
     with_top = skeleton.rig_joint_positions(Scene(routine=SHORT, extra_joints=True).truth_pose())
     without = skeleton.rig_joint_positions(Scene(routine=SHORT).truth_pose())
     np.testing.assert_allclose(with_top, without, atol=1e-12)

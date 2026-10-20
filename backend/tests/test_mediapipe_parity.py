@@ -11,11 +11,15 @@ frame, the scale and the bone lengths. It was written with
 
 Rewrite it the same way only when a change is meant to alter MediaPipe's
 result (say so in the commit). aniposelib's bundle adjustment samples points
-with numpy's global random generator, so the run seeds it first.
+with numpy's global random generator, so the run seeds it first. The test
+runs the pipeline in a process of its own, as the reference was written: a
+calibration earlier in the same process (another test's) moves the result by
+about 0.03 % even with the generator seeded.
 """
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -79,7 +83,11 @@ def test_mediapipe_result_matches_the_33_joint_pipeline(tmp_path):
     from mocap_pipeline.joints import EXTRA_JOINTS, MEDIAPIPE_JOINTS
 
     reference = json.loads(REFERENCE.read_text())
-    result = run_synthetic(tmp_path)
+    out = tmp_path / "result.json"
+    run = subprocess.run([sys.executable, "-m", "tests.test_mediapipe_parity", "--result", str(out)],
+                         cwd=Path(__file__).parent.parent, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr[-3000:]
+    result = json.loads(out.read_text())
 
     assert result["frames"] == reference["frames"]
     assert result["bvh_hierarchy"] == reference["bvh_hierarchy"]
@@ -101,11 +109,15 @@ def test_mediapipe_result_matches_the_33_joint_pipeline(tmp_path):
 if __name__ == "__main__":
     import tempfile
 
-    if "--write" not in sys.argv:
-        sys.exit("usage: python -m tests.test_mediapipe_parity --write   (rewrites the reference file)")
+    if sys.argv[1:2] not in (["--write"], ["--result"]):
+        sys.exit("usage: python -m tests.test_mediapipe_parity --write          (rewrites the reference file)\n"
+                 "       python -m tests.test_mediapipe_parity --result FILE    (what the test compares)")
     with tempfile.TemporaryDirectory() as tmp:
         result = run_synthetic(Path(tmp))
-    result.pop("_all_landmark_names")
-    REFERENCE.parent.mkdir(exist_ok=True)
-    REFERENCE.write_text(json.dumps(result, separators=(",", ":")) + "\n")
-    print(f"Wrote {REFERENCE}")
+    if sys.argv[1] == "--result":
+        Path(sys.argv[2]).write_text(json.dumps(result))
+    else:
+        result.pop("_all_landmark_names")
+        REFERENCE.parent.mkdir(exist_ok=True)
+        REFERENCE.write_text(json.dumps(result, separators=(",", ":")) + "\n")
+        print(f"Wrote {REFERENCE}")

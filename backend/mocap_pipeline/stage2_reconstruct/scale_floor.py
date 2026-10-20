@@ -54,13 +54,13 @@ def scale_factor_from_height(pose: Pose3D, performer_height_m: float) -> float:
     """
       1. Pick frames where the performer stands upright (heels, knees, hips,
          shoulders and ears roughly on one line).
-      2. Measure heel to the top of the head in rig units, if the detector
-         found the top of the head (joints.HEAD_TOP) in at least
-         MIN_UPRIGHT_FRAMES of them and config.USE_DETECTED_HEAD_TOP is on.
-         Otherwise measure heel to ear, the highest landmark every detector
-         has, and add the top of the skull above the ears as a fixed offset
-         (config.HEAD_TOP_ABOVE_EARS_M). The heel's height above the floor is
-         a fixed offset either way (config).
+      2. Measure heel to ear in rig units, the highest landmark every
+         detector has, and add the top of the skull above the ears as a fixed
+         offset (config.HEAD_TOP_ABOVE_EARS_M). With config.HEIGHT_TO_HEAD_TOP
+         on, measure heel to the top of the head instead, if the detector
+         found it (joints.HEAD_TOP) in at least MIN_UPRIGHT_FRAMES of those
+         frames. The heel's height above the floor is a fixed offset either
+         way (config).
       3. Return (height minus offsets) / median(measured).
     """
     return _scale_from_height(pose, performer_height_m)[0]
@@ -89,7 +89,7 @@ def _scale_from_height(pose: Pose3D, performer_height_m: float):
 
     top_length = float(np.median(heel_to_top[with_top]))
     top_scale = (performer_height_m - config.HEEL_ABOVE_FLOOR_M) / top_length
-    scale, source = (top_scale, "head top") if config.USE_DETECTED_HEAD_TOP else (ear_scale, "ears")
+    scale, source = (top_scale, "head top") if config.HEIGHT_TO_HEAD_TOP else (ear_scale, "ears")
     metrics.record("scale.height_from", source)
     metrics.record("scale.upright_frames_with_head_top", int(with_top.sum()))
     # The height each rule measures at the scale used: one of them is the given

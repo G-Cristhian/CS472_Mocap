@@ -142,14 +142,14 @@ def test_run_writes_metrics_that_describe_a_good_take(tmp_path, monkeypatch):
     assert "Saved" in log and "frames of 3D joints" in log
 
 
-def test_run_with_the_head_top_measures_the_height_to_it(tmp_path, monkeypatch):
+def test_run_with_the_head_top_records_both_heights(tmp_path, monkeypatch):
     out = run_synthetic(tmp_path, monkeypatch, extra_joints=True)
     m = metrics.load(str(out))
-    assert m["scale"]["height_from"] == "head top"
+    assert m["scale"]["height_from"] == "ears"                  # config.HEIGHT_TO_HEAD_TOP is off
     assert m["scale"]["upright_frames_with_head_top"] >= config.MIN_UPRIGHT_FRAMES
     # the scene puts the head top exactly HEAD_TOP_ABOVE_EARS_M above the ears, so both rules agree
-    assert m["scale"]["height_to_head_top_m"] == pytest.approx(PERFORMER_HEIGHT_M, abs=1e-9)
-    assert m["scale"]["height_to_ears_m"] == pytest.approx(PERFORMER_HEIGHT_M, abs=0.015)
+    assert m["scale"]["height_to_ears_m"] == pytest.approx(PERFORMER_HEIGHT_M, abs=1e-9)
+    assert m["scale"]["height_to_head_top_m"] == pytest.approx(PERFORMER_HEIGHT_M, abs=0.015)
     assert m["scale"]["head_top_above_ears_m"] == pytest.approx(config.HEAD_TOP_ABOVE_EARS_M, abs=0.015)
     assert m["rig"]["detected_fraction"]["Head"] > 0.95
     assert m["pose_final"]["missing_fraction_per_joint"]["HEAD_TOP"] < 0.05

@@ -32,7 +32,7 @@ function script(options: RunOptions): string[] {
         : `Clap at ${videos.map((_, i) => `cam${i} ${(1 + i * 0.3).toFixed(3)} s`).join(', ')}`,
       'Calibration started from cam0 and cam1',
       'Calibration from the performer: cam0 1.44 px, cam1 1.33 px, cam2 1.42 px',
-      `Scale: 6.8342 m per unit, height measured to the ${detector === 'rtmpose' ? 'head top' : 'ears'}, floor found, Y up`,
+      'Scale: 6.8342 m per unit, height measured to the ears, floor found, Y up',
       `Saved calibration to ${outDir}/calibration.json`,
     )
   }
@@ -150,12 +150,12 @@ export const mock: Backend = {
     if (file.endsWith('.bvh')) return (await fetch('./sample_take.bvh')).text()
     if (file.endsWith('metrics.json')) {
       const butter = lastSmoother === 'butterworth'
-      // RTMPose finds the top of the head itself, so the height is measured to it
+      // RTMPose finds the top of the head itself; the metrics say how far above the ears it sat
       const rtmpose = lastDetector === 'rtmpose'
       return JSON.stringify({
         ...METRICS,
         run: { ...METRICS.run, smoother: lastSmoother, detector: lastDetector },
-        scale: rtmpose ? { ...METRICS.scale, height_from: 'head top', head_top_above_ears_m: 0.131 } : METRICS.scale,
+        scale: rtmpose ? { ...METRICS.scale, head_top_above_ears_m: 0.149 } : METRICS.scale,
         triangulate: rtmpose
           ? { ...METRICS.triangulate, mean_reprojection_px_per_joint: { ...METRICS.triangulate.mean_reprojection_px_per_joint, HEAD_TOP: 3.4 } }
           : METRICS.triangulate,

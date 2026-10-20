@@ -86,8 +86,9 @@ RIG_JOINT_SOURCES = {
 
 # Rig joint -> a detected joint that is the same point. Where the detected
 # joint was triangulated it replaces the estimate above; in frames where it is
-# missing, and in MediaPipe takes, the estimate stays. config.USE_DETECTED_HEAD_TOP
-# switches it off.
+# missing, and in MediaPipe takes, the estimate stays. config.RIG_USES_DETECTED_JOINTS
+# switches it off. (The scale step can measure the height to HEAD_TOP too:
+# config.HEIGHT_TO_HEAD_TOP, off by default.)
 #   Head <- HEAD_TOP: both are the top of the skull.
 # Extra joints left out because they are not the point the rig means:
 #   NECK is the base of the neck (blended with MPII's upper neck, see
