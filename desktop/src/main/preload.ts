@@ -13,6 +13,7 @@ const backend: Backend = {
   chooseDirectory: () => ipcRenderer.invoke('choose-directory'),
   listVideos: (dir) => ipcRenderer.invoke('list-videos', dir),
   defaultOutDir: (videoDir) => ipcRenderer.invoke('default-out-dir', videoDir),
+  checkVideos: (videos, clapThreshold) => ipcRenderer.invoke('check-videos', videos, clapThreshold),
   run: (options: RunOptions) => ipcRenderer.invoke('run', options),
   cancel: () => ipcRenderer.invoke('cancel'),
   onLog: (callback) => subscribe<string>('log', callback),

@@ -56,6 +56,7 @@ def run(fake_videos, tmp_path, **kw):
     calib = tmp_path / "output" / "calibration.json"
     if not calib.exists():
         io.save_rig(make_rig(["cam0", "cam1"]), str(calib))
+    kw.setdefault("jobs", 1)    # the fakes patch detect_video in this process
     run_pipeline.run(fake_videos, str(out), model_path="unused.task", calibration_path=str(calib),
                      smoothing=False, bvh=False, **kw)
     return out
@@ -169,14 +170,14 @@ def test_smoother_reaches_stage_2c_on_every_run(fakes, fake_videos, tmp_path, mo
     io.save_rig(make_rig(["cam0", "cam1"]), str(calib))
     for kw in ({}, {"resume": True, "smoother": "butterworth"}, {"resume": True, "smoother": "savgol"}):
         run_pipeline.run(fake_videos, str(out), model_path="unused.task", calibration_path=str(calib),
-                         bvh=False, **kw)
+                         bvh=False, jobs=1, **kw)
     assert seen == ["savgol", "butterworth", "savgol"]   # smoothing reruns under --resume, with the chosen filter
     assert fakes.triangulate == 1                        # on the same triangulation
 
 
 def test_stop_after_keypoints(fakes, fake_videos, tmp_path):
     out = tmp_path / "output" / "out3d.json"
-    run_pipeline.run(fake_videos, str(out), model_path="unused.task", stop_after="keypoints")
+    run_pipeline.run(fake_videos, str(out), model_path="unused.task", stop_after="keypoints", jobs=1)
     paths = io.stage_paths(str(out), ["cam0", "cam1"])
     assert all(p.exists() for p in paths["keypoints"].values())
     assert not paths["sync"].exists() and not out.exists()
@@ -198,7 +199,7 @@ def test_five_videos_run_and_one_is_rejected(fakes, tmp_path):
     calib = tmp_path / "output" / "calibration.json"
     io.save_rig(make_rig([f"cam{c}" for c in range(5)]), str(calib))
     run_pipeline.run(videos, str(tmp_path / "output" / "out3d.json"), model_path="unused.task",
-                     calibration_path=str(calib), smoothing=False, bvh=False)
+                     calibration_path=str(calib), smoothing=False, bvh=False, jobs=1)
     assert fakes.detect == [f"cam{c}.mp4" for c in range(5)]
 
     with pytest.raises(ValueError, match="at least 2"):

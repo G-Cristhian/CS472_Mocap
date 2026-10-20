@@ -23,8 +23,16 @@
         <p class="muted small">The folder should hold one take: one video per camera, named so that sorting by name gives camera order (cam0 first). Tick the ones to use.</p>
         <ul id="videos" class="videos"></ul>
 
+        <div class="row">
+          <button id="check" class="btn" disabled>Check the videos</button>
+          <span class="muted small">Frame rate, lens metadata and the clap in each file, in seconds, without running the pose model. Worth doing before a long run.</span>
+        </div>
+        <div id="check-result" class="check" hidden></div>
+
         <div class="grid">
-          <label>Performer height (m)<input id="height" type="number" step="0.01" min="1" max="2.5" value="1.75" /></label>
+          <label>Performer height (m)<input id="height" type="number" step="0.01" min="1" max="2.5" value="1.75" />
+            <span id="height-note" class="note" hidden>Only used while calibrating. With Recalibrate off and a calibration.json already in the output folder, it is ignored.</span>
+          </label>
           <label>Detector
             <select id="detector">
               <option value="mediapipe">MediaPipe (default)</option>
@@ -38,6 +46,15 @@
             </select>
           </label>
           <label>Field of view, non-iPhone cameras (°)<input id="fov" type="number" step="1" min="30" max="120" value="65" /></label>
+          <label>Clap loudness threshold<input id="clap-threshold" type="number" step="0.1" min="0.05" max="10" value="1" />
+            <span class="note">1 is the normal setting. 0.5 accepts a clap half as strong, for a noisy room or a faint clap.</span>
+          </label>
+          <label>Clap times (s), one per video, camera 0 first<input id="clap-times" type="text" class="mono" placeholder="blank = find them from the audio" />
+            <span class="note">For when the search picks the wrong sound: read the times off a video player.</span>
+          </label>
+          <label>Videos detected at once<input id="jobs" type="number" step="1" min="0" max="16" value="0" />
+            <span class="note">0 picks automatically (one process per video, up to 4). 1 runs them one after another.</span>
+          </label>
           <label class="wide">Output folder<input id="outdir" type="text" class="mono" /></label>
           <label class="check"><input id="recalibrate" type="checkbox" checked /> Recalibrate (ignore an existing calibration.json)</label>
           <label class="check"><input id="resume" type="checkbox" /> Resume (reuse saved stage files in the output folder)</label>
@@ -57,6 +74,7 @@
           <span class="spacer"></span>
           <button id="cancel" class="btn">Cancel</button>
         </div>
+        <ul id="video-progress" class="videos video-progress"></ul>
         <details id="log-box">
           <summary>Log</summary>
           <pre id="log" class="log"></pre>
@@ -72,8 +90,14 @@
           <input id="time" type="range" min="0" max="1000" value="0" aria-label="Time" />
           <span id="clock" class="mono">0.00 / 0.00 s</span>
         </div>
-        <dl id="metrics" class="metrics"></dl>
+        <div id="metrics" class="sections"></div>
+        <div id="runs-box" hidden>
+          <h3>Runs of this take</h3>
+          <p class="muted small">One row per run since the app was opened. "Rerun with the other smoother" keeps the detected joints, clap times, calibration and 3D points, and only redoes the smoothing, so two rows differ by the smoother alone.</p>
+          <table id="runs" class="runs"></table>
+        </div>
         <div class="row">
+          <button id="rerun-smoother" class="btn">Rerun with the other smoother</button>
           <button id="open-folder" class="btn">Open the output folder</button>
           <button id="again" class="btn">Run another take</button>
         </div>

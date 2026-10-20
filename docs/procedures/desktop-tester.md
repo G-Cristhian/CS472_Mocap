@@ -25,15 +25,20 @@ That builds the app and opens the window. It finds Python on its own: the backen
 
 1. **Choose folder…** and pick the take's folder. Every `.mov` and `.mp4` in it is listed, sorted by name with numbers in natural order, so `cam2` comes before `cam10`.[^4] The list order is the camera order the pipeline gets, camera 0 first; the arrows move a file up or down, the tick leaves it out.
 2. At least two videos must be ticked.[^5]
-3. **Performer height** in metres, from the take log; the app accepts 1 to 2.5.[^6]
-4. **Detector**: MediaPipe unless you are comparing models ([comparing-pose-models.md](comparing-pose-models.md)).
-5. **Field of view**: only used for cameras without iPhone lens metadata; 65 is the pipeline's default, the Fold is about 75.[^7]
-6. **Output folder**: defaults to `backend/output/<folder name>-<date and time>`, one folder per take.[^8] Change it to reprocess into a folder you already have.
-7. **Recalibrate** is on by default so a stale `calibration.json` in the output folder is never reused by accident; **Resume** reuses the stage files already in that folder, which turns a rerun into seconds.[^9]
+3. **Check the videos** before a long run. It runs the pre-flight check from [filming.md](filming.md) section 9 on the ticked files, in seconds, without the pose model: resolution, frame rate, length, lens metadata and the clap time of each file, then the cross-camera warnings (frame rates or lengths that differ) and the verdict.[^17] A file whose clap it cannot find says what the sharpest sound measured; lower the clap threshold (step 9) and check again, or give the clap times by hand (step 10).
+4. **Performer height** in metres, from the take log; the app accepts 1 to 2.5.[^6] It is only used while calibrating: with Recalibrate off and a `calibration.json` already in the output folder, the height is ignored, and the app says so under the box.[^18]
+5. **Detector**: MediaPipe unless you are comparing models ([comparing-pose-models.md](comparing-pose-models.md)).
+6. **Smoother**: Savitzky-Golay unless you are comparing filters. Butterworth is the other; after a run, **Rerun with the other smoother** in the result panel does the comparison for you (step 4).
+7. **Field of view**: only used for cameras without iPhone lens metadata; 65 is the pipeline's default, the Fold is about 75.[^7]
+8. **Clap loudness threshold**: 1 is the pipeline's normal setting. 0.5 accepts a clap half as strong against the room, for a faint clap or a noisy venue; it is the `--clap-threshold` option.[^19]
+9. **Clap times**: blank, and the pipeline finds the clap in each file's audio. When the search locks onto the wrong sound, type one time per video in seconds, camera 0 first, read off a video player; the app refuses a list of the wrong length. It is the `--sync` option.[^19]
+10. **Videos detected at once**: 0 lets the pipeline pick (one process per video, up to 4 and the number of processor cores); 1 detects the videos one after another, for a laptop that struggles. It is the `--jobs` option.[^20]
+11. **Output folder**: defaults to `backend/output/<folder name>-<date and time>`, one folder per take.[^8] Change it to reprocess into a folder you already have.
+12. **Recalibrate** is on by default so a stale `calibration.json` in the output folder is never reused by accident; **Resume** reuses the stage files already in that folder, which turns a rerun into seconds.[^9]
 
 ## 3. Run
 
-The bar follows detection frame by frame, then jumps through sync, calibration, triangulation and writing.[^10] Detection is three quarters of the bar because it is nearly all of the wall time.[^11] The text beside the stage pill says which file and frame it is on; the log under the bar is everything the pipeline printed, the same lines a terminal run shows.
+The bar follows detection frame by frame, then jumps through sync, calibration, triangulation and writing.[^10] Detection is three quarters of the bar because it is nearly all of the wall time.[^11] Under the bar, one line per video says where it is: waiting, detecting (with the frame), done (with the seconds it took), reused (saved joints from an earlier run) or failed, with the reason. The videos are detected several at a time, so the lines move independently; a video that fails does not stop the others, and the run ends after detection with a message naming every failed file.[^21] The log is everything the pipeline printed, the same lines a terminal run shows.
 
 **Cancel** stops the Python process; a cancelled run leaves whatever stage files it had finished, which Resume can pick up.[^12]
 
@@ -41,16 +46,21 @@ The bar follows detection frame by frame, then jumps through sync, calibration, 
 
 The skeleton plays as soon as the run finishes. Drag to rotate, wheel to zoom, the slider scrubs, Play/Pause toggles. The figure is the BVH the pipeline wrote, in metres on a one-metre grid.[^13]
 
-Under the viewer, four numbers from `out3d.metrics.json`, coloured by the processing guide's thresholds:[^14]
+Under the viewer, the numbers from `out3d.metrics.json`, stage by stage, so a poor take can be traced to its cause.[^22] **At a glance** has the ones the processing guide asks for, coloured by its thresholds:[^14]
 
 | Number | Green | Red |
 |---|---|---|
 | Calibration error, worst camera | under 3 px | over 10 px |
+| Triangulation error, mean | under 3 px | over 10 px |
 | Bone length spread | under 10 mm | over 20 mm |
 | Joints missing | under 5 % | over 15 % |
 | Upright frames for height | 30 or more | under 10 |
 
-Write them in the session log with a word on how the take looked. **Open the output folder** shows every file the run produced; **Run another take** goes back to step 2 with the same folder listed.
+Then, per stage: how well each camera saw the performer (frames with nobody detected, mean confidence, seconds taken); the clap times and where they came from; each camera's calibration error and whether an old calibration was reused (in which case the height was not applied); the triangulation error with the worst joints and the joints most often missing; what smoothing did (jitter before and after, gaps filled, gaps left); and the least rigid bones. Reading the error backwards like this answers "which camera, which joint, which stage" from one run.
+
+**Rerun with the other smoother** runs the take again with Resume on and the smoother switched: the joints, clap times, calibration and 3D points are reused, only the smoothing and the skeleton are redone, so it takes seconds. The **Runs of this take** table then shows the two runs side by side (jitter before and after smoothing, bone spread, calibration error, missing joints, time); lower jitter with the same bone spread is the better filter for that take ("Choosing the smoother" in `backend/mocap_pipeline/README.md`). The table lasts while the app is open and starts afresh for a new output folder.
+
+Write the glance numbers in the session log with a word on how the take looked. **Open the output folder** shows every file the run produced; **Run another take** goes back to step 2 with the same folder listed.
 
 ## When it fails
 
@@ -58,12 +68,12 @@ The result panel shows the pipeline's own message and opens the log. The message
 
 ## Working on the app
 
-`npm run preview` in `desktop/` serves the page at http://localhost:5174 in a browser with a mocked pipeline that replays a real run's printed lines, for changing the page without Electron.[^16] `npm test` runs the progress parser against those lines. `npm run typecheck` checks both the page and the Electron side.
+`npm run preview` in `desktop/` serves the page at http://localhost:5174 in a browser with a mocked pipeline that replays a real run's printed lines, for changing the page without Electron.[^16] `npm test` runs the progress parser, the check-output parser and the metrics panel against those lines and a sample `metrics.json`. `npm run typecheck` checks both the page and the Electron side.
 
 ---
 ## Sources
 
-[^1]: `desktop/src/main/pipeline.ts`, `pipelineArgs`: the command is `python -u -m mocap_pipeline.run_pipeline <videos> --height-m … --out <folder>/out3d.json --calibration <folder>/calibration.json --detector … --fov …`, run from `backend/`, the same as [processing-a-take.md](processing-a-take.md) step 3.
+[^1]: `desktop/src/main/pipeline.ts`, `pipelineArgs`: the command is `python -u -m mocap_pipeline.run_pipeline <videos> --height-m … --out <folder>/out3d.json --calibration <folder>/calibration.json --detector … --smoother … --fov … --jobs …`, plus `--clap-threshold`, `--sync`, `--recalibrate` and `--resume` when set, run from `backend/`, the same as [processing-a-take.md](processing-a-take.md) step 3.
 [^2]: The `electron` package's postinstall downloads the runtime for the platform (https://www.electronjs.org/docs/latest/tutorial/installation).
 [^3]: `desktop/src/main/pipeline.ts`, `resolvePython`: tries `backend/.venv/Scripts/python.exe` then `backend/.venv/bin/python`, then falls back to the PATH.
 [^4]: `desktop/src/main/main.ts`, the `list-videos` handler sorts with `localeCompare(…, { numeric: true })`. The naming rule is filming.md section 8.
@@ -79,3 +89,9 @@ The result panel shows the pipeline's own message and opens the log. The message
 [^14]: The thresholds are processing-a-take.md step 4, with their own sources there: the synthetic benchmark for the pixel error, Karashchuk et al. 2021 (DOI 10.1016/j.celrep.2021.109730) for limb-length variability, `tests/test_metrics.py` for the missing fraction, `MIN_UPRIGHT_FRAMES` for the upright count. The red limits are the pipeline's own give-up points (`CALIB_MAX_ERROR_PX = 10`, `MIN_UPRIGHT_FRAMES = 10`) or team judgement (20 mm, 15 %).
 [^15]: The app shows the last line the pipeline wrote to stderr, which is the `SystemExit` message `run_pipeline.py` raises with the text in that table (`desktop/src/shared/progress.ts`, `result()`).
 [^16]: `desktop/vite.config.ts` and `desktop/src/renderer/mock.ts`; the sample skeleton is `frontend/public/samples/sample_take.bvh`.
+[^17]: `desktop/src/main/pipeline.ts`, `runCheck`, runs `python -u -m mocap_pipeline.check_videos <videos> [--clap-threshold …]`; `desktop/src/shared/check.ts` reads what it prints. The check itself is `backend/mocap_pipeline/check_videos.py`, filming.md section 9.
+[^18]: The pipeline only reads `--height-m` inside calibration (`scale_floor.py`, called from `run_pipeline.py` when a calibration is computed); an existing `--calibration` file is loaded as is. The app shows the note whenever Recalibrate is unticked (`desktop/src/renderer/main.ts`, `updateHeightNote`), and the result panel's calibration section says "reused" when it happened (`metrics.json`, `calibrate.reused_file`).
+[^19]: `--clap-threshold` multiplies `CLAP_MIN_PROMINENCE` and `CLAP_MIN_RISE` in `config.py` (D-045, D-046 on `docs/decisions/DECISIONS.md`); `--sync` takes one clap time per video and skips the audio search (`stage2_reconstruct/sync.py`, `synchronise`).
+[^20]: `--jobs` and `detect_jobs` in `run_pipeline.py`; `DETECT_JOBS = 0` and `DETECT_MAX_AUTO_JOBS = 4` in `config.py` (each process loads its own copy of the pose model).
+[^21]: `run_pipeline.py`, `_detect_videos`: every video is attempted, each failure is printed as `Detection failed for <file>: <reason>`, and the run stops with a summary naming the failed files; the joints of the others are saved for `--resume`. The per-video lines in the app come from `desktop/src/shared/progress.ts`.
+[^22]: `desktop/src/shared/metrics.ts`, `metricSections`, reads the keys `metrics.py` and the stages record: `stage1.<camera>`, `sync`, `calibrate`, `scale`, `triangulate`, `pose_raw`, `pose_final`, `smooth`, `rig.bone_lengths`, `timing`. The thresholds for the triangulation error are the same as for the calibration error (both are mean reprojection errors in pixels); the jitter colour is team judgement (over 40 % less is green, under 10 % red).
