@@ -53,7 +53,7 @@ Open `output/take01/out3d.metrics.json`. Four numbers say whether the take is go
 | `pose_final.missing_fraction` | under 0.05 |[^8] high on one joint (`missing_fraction_per_joint`): hidden from all but one camera |
 | `scale.upright_frames` | 30 or more |[^9] near the minimum of 10: the height pose was short, the scale may be off |
 
-Also useful: `sync.cross_check` (a shift over 50 ms with `applied: false` means the clap was doubtful[^10]; check it by eye), `triangulate.views_dropped` (how often a camera disagreed), `timing` (seconds per stage). Every key is explained in the pipeline README, section Metrics.
+Also useful: `sync.cross_check` (a shift over 50 ms with `applied: false` means the clap was doubtful[^10]; check it by eye), `triangulate.views_dropped` (how often a camera disagreed), `rig.unsolved_frames` (frames where a joint of the skeleton froze because its 3D joints made no sense; more than a few means wild joints, look at those moments in the viewer), `timing` (seconds per stage). Every key is explained in the pipeline README, section Metrics.
 
 ## 5. Watch it
 

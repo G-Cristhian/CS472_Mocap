@@ -88,6 +88,7 @@ Every run writes `out3d.metrics.json` (next to `--out`, also when the run fails 
 | `smooth.gaps` | gaps filled and gaps left missing |
 | `pose_raw`, `pose_final` | missing fraction overall and per joint, mean cameras per joint, before and after smoothing |
 | `rig.bone_lengths` | per bone: median length, standard deviation over the take and as a fraction; the cleanest precision number without ground truth |
+| `rig.unsolved_frames`, `rig.unsolved_frames_per_joint` | frames where a joint's rotation could not be worked out from the 3D joints (a bone of zero length, or its directions all on one line, as when one joint is triangulated metres off); the joint keeps its previous rotation there, the rest pose at the very start |
 | `timing` | seconds per stage and total |
 
 Reading it: calibration error under about 3 px and bone-length standard deviation under about 1 cm mean the setup worked. A camera with a much higher reprojection error than the others moved or has the wrong field of view. A high missing fraction on one joint means that joint was hidden from all but one camera. The API serves the file at `GET /takes/<id>/metrics.json`.

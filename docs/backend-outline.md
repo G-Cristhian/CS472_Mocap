@@ -744,6 +744,13 @@ the pose.
   primary axis and which is its secondary. For example the hips' x axis is
   the line from the right hip to the left hip and their y axis is the line up
   the spine.
+- **`FALLBACK_SECONDARY`**: the secondary direction the Spine and the Neck use
+  when their own lines up with the primary: the shoulder line for the Spine,
+  the hip line for the Neck. The usual fallback, body up, is no use for them:
+  for the Neck it is the very same line as its primary, so its matrix lost two
+  columns and a real take crashed.
+- **`PARALLEL_SIN`**: 0.2. Two directions closer than about 11.5 degrees count
+  as parallel.
 - **`_normalize(v)`**. Vectors scaled to length 1, safely.
 - **`_frame_from_axes(primary_axis, primary, secondary_axis, secondary, fallback)`**.
   Build a rotation matrix per frame whose chosen axis points exactly along the
@@ -751,7 +758,11 @@ the pose.
   secondary direction as it can while staying perpendicular. The third axis
   follows from the right-hand rule. Where the two directions are nearly
   parallel, for instance an arm raised straight up, the fallback direction is
-  used as the secondary instead.
+  used as the secondary instead. Also says per frame whether it worked: not
+  where the fallback is parallel too, or a direction has no length.
+- **`_hold(matrices, solved)`**. Every frame that was not solved gets the last
+  solved frame's rotation before it, or the identity (the rest pose) if there
+  is none yet.
 - **`bone_rotation(rest_direction, current_direction)`**. The smallest rotation
   taking one unit vector onto another, by Rodrigues' formula: the axis is
   their cross product, the angle comes from their dot product. Handles the
@@ -760,14 +771,18 @@ the pose.
   1. Measure the body's up (thorax to neck), left (right shoulder to left
      shoulder) and forward (their cross product) directions per frame.
   2. For every joint with a rule, build its world orientation from the rule's
-     two directions, using the body forward or up direction as the fallback.
-     Ankles and wrists, whose only child is an end site, copy their parent's.
+     two directions, using the body forward or up direction as the fallback
+     (`FALLBACK_SECONDARY` for the Spine and the Neck). Ankles and wrists,
+     whose only child is an end site, copy their parent's.
   3. Each joint's local rotation is its parent's world orientation transposed
      times its own world orientation. The root's local rotation is its world
      orientation.
-  Returns the root position per frame (the hip position) and the local
-  rotation matrices, shape (frames, 16, 3, 3), for the rotating joints in
-  skeleton order. The T-pose has every joint's orientation equal to the
+  4. Frames where a joint could not be solved keep its previous local
+     rotation (`_hold`); its children are measured against the result.
+  Returns the root position per frame (the hip position), the local rotation
+  matrices, shape (frames, 16, 3, 3), for the rotating joints in skeleton
+  order, and which frames each joint was held, shape (frames, 16).
+  run_pipeline records the count as `rig.unsolved_frames`. The T-pose has every joint's orientation equal to the
   identity, which is why a measured orientation can be used directly.
 - **`to_euler_degrees(local_rotations, order)`**. Convert the rotation
   matrices to three Euler angles each, in the channel order the file declares
@@ -870,7 +885,8 @@ The one file that knows the order of the steps. Everything else calls `run()`.
   After each of the first four steps it checks whether to stop early.
 - **`export_bvh(pose, bvh_path)`**. Step 3 in four calls: skeleton positions,
   bone lengths and rest offsets, rotations, Euler angles, write. Records the
-  bone length summary.
+  bone length summary and how many frames had a joint held because its
+  rotation could not be solved (`rig.unsolved_frames`, also per joint).
 - **`per_camera(parser, name, values, n)`**. Command-line helper: a flag that
   takes one value for all cameras or one per camera.
 - **`main()`**. Defines every command-line flag with its help text, checks the
