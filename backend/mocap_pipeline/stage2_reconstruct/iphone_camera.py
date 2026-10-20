@@ -12,16 +12,18 @@ import sys
 import numpy as np
 
 # grabbed from iPhone video's metadata
-# Apple's AVMetadataIdentifier docs (iOS 26+) call the two camera keys "track-level metadata for
-# video track that is associated with the camera", so iOS 26 and later write them in the video
-# trak's meta atom, not the movie's (checked on iPhone 16 Pro Max to 18 Pro files, iOS 26.6.2 and 27.0)
+# Apple's AVMetadataIdentifier docs (identifiers listed from iOS 26.0) call the two camera keys
+# "track-level metadata for video track that is associated with the camera". Files from iOS 26.6.2
+# and 27.0 (iPhone 16 Pro Max to 18 Pro) have them in the video trak's meta atom, not the movie's.
+# Files from earlier iOS versions were not checked, so the movie's meta atom is still read too
 FOCAL_35MM_KEY = "com.apple.quicktime.camera.focal_length.35mm_equivalent"
 LENS_KEY = "com.apple.quicktime.camera.lens_model"
 MAKE_KEY = "com.apple.quicktime.make"
 MODEL_KEY = "com.apple.quicktime.model"
 SOFTWARE_KEY = "com.apple.quicktime.software"
 # movie-level Cinematic mode keys: the intent is Apple's quickTimeMetadataCinematicVideoIntent
-# (1 = treat as Cinematic), the other is undocumented but written by Cinematic mode recordings
+# (1 = treat as Cinematic). The other is undocumented; seen on one file, an iPhone 18 Pro (iOS 27.0)
+# recording with Cinematic mode tracks, whose intent was 0
 CINEMATIC_KEY = "com.apple.quicktime.cinematic-video"
 CINEMATIC_INTENT_KEY = "com.apple.quicktime.cinematic-video-intent"
 

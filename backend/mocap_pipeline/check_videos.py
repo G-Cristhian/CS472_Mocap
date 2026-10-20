@@ -31,7 +31,9 @@ MIN_RECOMMENDED_FPS = 50.0
 MAX_DURATION_SPREAD_S = 5.0
 # 35 mm equivalent focal lengths of the 1x lens. Apple's tech specs (support.apple.com/121032, /125089,
 # /125090) list the main camera at 24 mm (16 Pro Max, 17 Pro) or 26 mm (17), the 0.5x ultra wide at 13 mm
-# and 2x and telephoto at 48 mm and up; their video files read 25 and 14
+# and 2x and telephoto at 48 mm and up. Video files checked: a 16 Pro Max whose lens_model names its
+# 6.765mm f/1.78 main lens read 25; a 17, 17 Pro Max and 18 Pro naming a 2.22mm f/2.2 lens (the
+# ultra wide's aperture in the specs) read 14. The 18 Pro's specs were not checked
 MAIN_LENS_35MM = (20.0, 35.0)
 
 
@@ -82,8 +84,10 @@ def lens_report(path: str) -> list[str]:
     else:
         lines.append(f"  lens    no lens metadata (not an iPhone file): needs --fov, default {config.DEFAULT_HFOV_DEG:.0f}")
     if apple.get("cinematic"):
-        lines.append("  WARNING recorded in Cinematic mode: its picture can be narrower than the lens metadata says; "
-                     "record in Video mode")
+        # untested beyond one file: an iPhone 18 Pro Cinematic recording was reported to calibrate from
+        # the performer at 733 to 855 px (not rerun here), against 713 px from its lens metadata
+        lines.append("  WARNING recorded in Cinematic mode: untested with the pipeline, and its framing may not "
+                     "match the lens metadata; record in Video mode")
     return lines
 
 
