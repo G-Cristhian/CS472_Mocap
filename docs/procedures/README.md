@@ -10,6 +10,7 @@ Step-by-step guides for things the team does more than once. Each one says who i
 | [comparing-pose-models.md](comparing-pose-models.md) | deciding between stage 1 detectors on real takes, and recording the decision |
 | [desktop-tester.md](desktop-tester.md) | running a take through the pipeline from the desktop app, with a progress bar and an instant preview |
 | [reviewing-design-decisions.md](reviewing-design-decisions.md) | reviewing what the design-decision detector found, from a laptop or a phone |
+| [keeping-docs-current.md](keeping-docs-current.md) | what the docs keeper fixes after each push to `main`, and how to review its pull requests |
 | [enable-claude-on-github.md](enable-claude-on-github.md) | repository owner: switching on the detector's automatic runs |
 
 Writing a new one: say who it is for, what must be true before step 1, then numbered steps with the exact commands. Put reasons in the pipeline README or the decisions sheet, not here.
