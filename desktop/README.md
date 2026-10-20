@@ -27,7 +27,8 @@ A failed run shows the pipeline's own message (the same ones listed in filming.m
 ## Working on it
 
 - `npm run preview` serves the page in a browser at http://localhost:5174 with a mocked pipeline (`src/renderer/mock.ts`) that replays a real run's lines, for UI work without Electron. The sample BVH comes from `frontend/public/samples`.
-- `npm test` compiles the main process and runs the tests in `test/`: the progress parser, the check-output parser and the metrics panel.
+- `npm test` compiles the main process and runs the tests in `test/`: the progress parser, the check-output parser, the metrics panel, the command line it builds, the folder listing and the read-back whitelist. No Python needed.
 - `npm run typecheck` checks both the page and the main process.
+- The backend's suite checks this app against the real pipeline: `cd backend && python -m pytest tests/test_desktop_tester.py` replays what a run prints through the progress tracker and lets the app's own runner spawn the pipeline on synthetic videos (`test/harness.cjs` drives the compiled code). It needs Node and `npm install` here, and skips otherwise; `pytest -m "not desktop"` leaves it out. See [docs/procedures/testing-the-backend.md](../docs/procedures/testing-the-backend.md).
 
-Layout: `src/main` is the Electron side (window, dialogs, spawning Python), `src/renderer` is the page (plain TypeScript, three.js for the preview), `src/shared` is what both use: the progress parser that turns the pipeline's printed lines into the bar and the per-video states, the parser for what `check_videos` prints, and the metrics summary behind the result panel.
+Layout: `src/main` is the Electron side (window, dialogs, spawning Python; `files.ts` is the Electron-free part so the tests can load it), `src/renderer` is the page (plain TypeScript, three.js for the preview), `src/shared` is what both use: the progress parser that turns the pipeline's printed lines into the bar and the per-video states, the parser for what `check_videos` prints, and the metrics summary behind the result panel.

@@ -9,6 +9,7 @@ Step-by-step guides for things the team does more than once. Each one says who i
 | [processing-a-take.md](processing-a-take.md) | after a session: from files to a skeleton and the four numbers to write down per take |
 | [comparing-pose-models.md](comparing-pose-models.md) | deciding between stage 1 detectors on real takes, and recording the decision |
 | [desktop-tester.md](desktop-tester.md) | running a take through the pipeline from the desktop app, with a progress bar and an instant preview |
+| [testing-the-backend.md](testing-the-backend.md) | before opening a pull request, or after pulling: the automated suite, then a run on real footage through the desktop tester |
 | [reviewing-design-decisions.md](reviewing-design-decisions.md) | reviewing what the design-decision detector found, from a laptop or a phone |
 | [keeping-docs-current.md](keeping-docs-current.md) | what the docs keeper fixes after each push to `main`, and how to review its pull requests |
 | [enable-claude-on-github.md](enable-claude-on-github.md) | repository owner: switching on the detector's automatic runs |

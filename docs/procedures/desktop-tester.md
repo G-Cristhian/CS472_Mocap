@@ -40,7 +40,7 @@ That builds the app and opens the window. It finds Python on its own: the backen
 
 The bar follows detection frame by frame, then jumps through sync, calibration, triangulation and writing.[^10] Detection is three quarters of the bar because it is nearly all of the wall time.[^11] Under the bar, one line per video says where it is: waiting, detecting (with the frame), done (with the seconds it took), reused (saved joints from an earlier run) or failed, with the reason. The videos are detected several at a time, so the lines move independently; a video that fails does not stop the others, and the run ends after detection with a message naming every failed file.[^21] The log is everything the pipeline printed, the same lines a terminal run shows.
 
-**Cancel** stops the Python process; a cancelled run leaves whatever stage files it had finished, which Resume can pick up.[^12]
+**Cancel** stops the pipeline and the detection workers it started; a cancelled run leaves whatever stage files it had finished, which Resume can pick up.[^12]
 
 ## 4. Read the result
 
@@ -68,7 +68,7 @@ The result panel shows the pipeline's own message and opens the log. The message
 
 ## Working on the app
 
-`npm run preview` in `desktop/` serves the page at http://localhost:5174 in a browser with a mocked pipeline that replays a real run's printed lines, for changing the page without Electron.[^16] `npm test` runs the progress parser, the check-output parser and the metrics panel against those lines and a sample `metrics.json`. `npm run typecheck` checks both the page and the Electron side.
+`npm run preview` in `desktop/` serves the page at http://localhost:5174 in a browser with a mocked pipeline that replays a real run's printed lines, for changing the page without Electron.[^16] `npm test` runs the progress parser, the check-output parser and the metrics panel against those lines and a sample `metrics.json`, plus the command line the app builds and its folder listing. `npm run typecheck` checks both the page and the Electron side. The backend's own suite also drives the app's compiled runner and progress parser against the real pipeline (`backend/tests/test_desktop_tester.py`): [testing-the-backend.md](testing-the-backend.md).
 
 ---
 ## Sources
@@ -76,15 +76,15 @@ The result panel shows the pipeline's own message and opens the log. The message
 [^1]: `desktop/src/main/pipeline.ts`, `pipelineArgs`: the command is `python -u -m mocap_pipeline.run_pipeline <videos> --height-m … --out <folder>/out3d.json --calibration <folder>/calibration.json --detector … --smoother … --fov … --jobs …`, plus `--clap-threshold`, `--sync`, `--recalibrate` and `--resume` when set, run from `backend/`, the same as [processing-a-take.md](processing-a-take.md) step 3.
 [^2]: The `electron` package's postinstall downloads the runtime for the platform (https://www.electronjs.org/docs/latest/tutorial/installation).
 [^3]: `desktop/src/main/pipeline.ts`, `resolvePython`: tries `backend/.venv/Scripts/python.exe` then `backend/.venv/bin/python`, then falls back to the PATH.
-[^4]: `desktop/src/main/main.ts`, the `list-videos` handler sorts with `localeCompare(…, { numeric: true })`. The naming rule is filming.md section 8.
+[^4]: `desktop/src/main/files.ts`, `listVideos` (behind the `list-videos` handler in `main.ts`) sorts with `localeCompare(…, { numeric: true })`. The naming rule is filming.md section 8.
 [^5]: `MIN_CAMERAS = 2` in `backend/mocap_pipeline/config.py`; two views are the minimum for triangulation (D-002 on `docs/decisions/DECISIONS.md`). The app refuses to run with fewer (`desktop/src/renderer/main.ts`, `readOptions`).
 [^6]: The same limits as the API's upload check, `MIN_HEIGHT_M, MAX_HEIGHT_M = 1.0, 2.5` in `backend/api.py`.
 [^7]: `DEFAULT_HFOV_DEG = 65` in `config.py`; iPhone focal lengths come from the file's metadata (`stage2_reconstruct/iphone_camera.py`). The Fold estimate is filming.md section 3.
-[^8]: `desktop/src/main/main.ts`, the `default-out-dir` handler. One folder per take is processing-a-take.md step 1, so takes never share a calibration.
+[^8]: `desktop/src/main/files.ts`, `defaultOutDir` (behind the `default-out-dir` handler in `main.ts`). One folder per take is processing-a-take.md step 1, so takes never share a calibration.
 [^9]: The pipeline reuses an existing `--calibration` file unless `--recalibrate` is given, and `--resume` reuses saved stage files whose inputs have not changed (`backend/mocap_pipeline/README.md`, "Rerunning and debugging"; D-023 for the detector check).
 [^10]: `backend/mocap_pipeline/stage1_keypoints/detect.py` prints `progress: detect <video> <i>/<n>` every 30 frames when the `MOCAP_PROGRESS` environment variable is set; the app sets it (`pipeline.ts`). The later stages are recognised from the lines `run_pipeline.py` already prints (`desktop/src/shared/progress.ts`).
 [^11]: `WEIGHTS` in `desktop/src/shared/progress.ts`: detection 0.75, sync 0.05, calibration 0.08, triangulation 0.05, writing 0.07. Team judgement from the README's "full run, minutes; `--resume` run, seconds"; no timing measurement yet. The `timing` block in `metrics.json` will give the real split once a few takes have run.
-[^12]: `desktop/src/main/pipeline.ts`, `cancel()` sends the process a kill signal. Stage files are written as each stage finishes (`run_pipeline.py`), so a cancelled run keeps the stages before the one it was in.
+[^12]: `desktop/src/main/pipeline.ts`, `cancel()` kills the pipeline's whole process tree (`killTree`: `taskkill /T` on Windows, the process group elsewhere), so the detection workers of `--jobs` stop too; a worker left alive would hold the output pipes open and the window would never get its result. Stage files are written as each stage finishes (`run_pipeline.py`), so a cancelled run keeps the stages before the one it was in.
 [^13]: The BVH is written in centimetres, Y up (`stage3_rig/bvh_writer.py`, D-018); the viewer scales any skeleton whose bone offsets exceed five units by 0.01 (`desktop/src/renderer/viewer.ts`).
 [^14]: The thresholds are processing-a-take.md step 4, with their own sources there: the synthetic benchmark for the pixel error, Karashchuk et al. 2021 (DOI 10.1016/j.celrep.2021.109730) for limb-length variability, `tests/test_metrics.py` for the missing fraction, `MIN_UPRIGHT_FRAMES` for the upright count. The red limits are the pipeline's own give-up points (`CALIB_MAX_ERROR_PX = 10`, `MIN_UPRIGHT_FRAMES = 10`) or team judgement (20 mm, 15 %).
 [^15]: The app shows the last line the pipeline wrote to stderr, which is the `SystemExit` message `run_pipeline.py` raises with the text in that table (`desktop/src/shared/progress.ts`, `result()`).
