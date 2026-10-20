@@ -9,7 +9,8 @@
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json",
     "test": "tsc -p tsconfig.main.json && node --test test/*.test.cjs",
-    "preview": "vite"
+    "preview": "vite",
+    "live": "electron ../backend/live_stream_test/gui"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

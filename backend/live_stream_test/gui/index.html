@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mocap Live Studio</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Bar -->
+    <header class="top-nav">
+      <div class="nav-left">
+        <div class="brand">
+          <div class="brand-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="5" r="3"></circle>
+              <line x1="12" y1="8" x2="12" y2="15"></line>
+              <line x1="12" y1="11" x2="7" y2="9"></line>
+              <line x1="12" y1="11" x2="17" y2="9"></line>
+              <line x1="12" y1="15" x2="8" y2="21"></line>
+              <line x1="12" y1="15" x2="16" y2="21"></line>
+            </svg>
+          </div>
+          <span class="brand-title">Mocap Live Studio</span>
+          <span class="badge badge-accent">MediaPipe</span>
+        </div>
+      </div>
+
+      <div class="nav-center">
+        <div class="status-indicator">
+          <span class="status-dot dot-offline" id="status-dot"></span>
+          <span id="status-text" class="status-label">Connecting...</span>
+        </div>
+        <div class="telemetry-bar">
+          <span class="telemetry-item">
+            <span class="telemetry-label">Active Cams</span>
+            <span class="telemetry-value" id="active-cams-count">0</span>
+          </span>
+          <span class="telemetry-item">
+            <span class="telemetry-label">3D Engine</span>
+            <span class="telemetry-value highlight" id="pose-source-label">Idle</span>
+          </span>
+          <span class="telemetry-item">
+            <span class="telemetry-label">Stream FPS</span>
+            <span class="telemetry-value" id="global-fps">0</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="nav-right">
+        <button id="btn-add-camera" class="btn btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          Add Camera
+        </button>
+        <button id="btn-settings" class="btn btn-secondary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          Settings
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace Split View -->
+    <main class="workspace">
+      <!-- Left: Multi-Camera Grid -->
+      <section class="camera-panel">
+        <div class="panel-header">
+          <div class="panel-title-group">
+            <h2>Live Camera Feeds</h2>
+            <span class="muted-note">Real-time 2D MediaPipe pose landmarks</span>
+          </div>
+          <div class="panel-actions">
+            <button id="btn-toggle-all-overlays" class="btn btn-sm btn-ghost">Toggle 2D Overlays</button>
+            <button id="btn-rescan-cameras" class="btn btn-sm btn-ghost">Scan Hardware</button>
+          </div>
+        </div>
+
+        <!-- Cameras Grid -->
+        <div id="camera-grid" class="camera-grid">
+          <!-- Empty state when no cameras active -->
+          <div id="empty-state" class="empty-state">
+            <div class="empty-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
+              </svg>
+            </div>
+            <h3>No Active Cameras</h3>
+            <p>Connect a local USB webcam or enter a network stream URL to begin live motion tracking.</p>
+            <div class="empty-actions">
+              <button id="btn-empty-add" class="btn btn-primary">
+                Add Camera
+              </button>
+            </div>
+            <div id="detected-quick-list" class="quick-devices">
+              <!-- Quick add buttons will populate here -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right: Interactive 3D Skeleton Viewport -->
+      <section class="viewport-panel">
+        <div class="panel-header">
+          <div class="panel-title-group">
+            <h2>Live 3D Viewport</h2>
+            <span id="viewport-source-badge" class="badge badge-subtle">Awaiting Pose</span>
+          </div>
+          <div class="viewport-controls">
+            <button id="btn-view-front" class="btn-icon" title="Front View">F</button>
+            <button id="btn-view-side" class="btn-icon" title="Side View">S</button>
+            <button id="btn-view-top" class="btn-icon" title="Top View">T</button>
+            <button id="btn-view-reset" class="btn-icon" title="Reset View">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                <path d="M3 3v5h5"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="viewport-container" id="three-container">
+          <!-- Three.js WebGL canvas attaches here -->
+          <div class="viewport-overlay-info">
+            <span id="joint-count-label" class="mini-pill">0 Joints Tracked</span>
+            <span id="filter-status-label" class="mini-pill pill-active">1€ Filter: ON</span>
+          </div>
+        </div>
+
+        <div class="viewport-footer">
+          <div class="view-toggles">
+            <label class="toggle-control">
+              <input type="checkbox" id="chk-grid" checked />
+              <span>Ground Grid</span>
+            </label>
+            <label class="toggle-control">
+              <input type="checkbox" id="chk-axes" checked />
+              <span>Axes</span>
+            </label>
+            <label class="toggle-control">
+              <input type="checkbox" id="chk-filter" checked />
+              <span>Jitter Smoothing</span>
+            </label>
+          </div>
+          <div class="drag-hint">
+            <span>Drag to rotate • Right-click to pan • Wheel to zoom</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Modal: Add Camera -->
+    <div id="modal-add-camera" class="modal-backdrop" hidden>
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Add Camera Source</h3>
+          <button class="modal-close" id="modal-close-add">&times;</button>
+        </div>
+        <div class="modal-tabs">
+          <button class="modal-tab active" data-tab="local">Local Webcams</button>
+          <button class="modal-tab" data-tab="network">Network / IP Stream</button>
+        </div>
+
+        <div class="modal-body">
+          <!-- Tab 1: Local Webcams -->
+          <div id="tab-local" class="tab-content active">
+            <p class="muted-note">Select a connected USB or built-in webcam:</p>
+            <div id="local-device-list" class="device-list">
+              <div class="loading-spinner">Scanning available cameras...</div>
+            </div>
+            <div class="form-group" style="margin-top: 14px;">
+              <label for="custom-cam-index">Or manual camera index:</label>
+              <input type="number" id="custom-cam-index" min="0" max="10" placeholder="e.g. 0, 1, 2" />
+            </div>
+          </div>
+
+          <!-- Tab 2: Network / Video File Stream -->
+          <div id="tab-network" class="tab-content">
+            <div class="form-group">
+              <label for="network-url">Stream URL or Local Video File:</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="network-url" placeholder="rtsp://... or http://... or /path/to/video.mp4" style="flex: 1;" />
+                <button id="btn-browse-video" class="btn btn-secondary" type="button">Browse...</button>
+              </div>
+              <span class="field-hint">Compatible with RTSP/HTTP streams (IP Webcam, DroidCam, OBS) or local video files (.mp4, .mov, .mkv).</span>
+            </div>
+            <div class="form-group">
+              <label for="network-name">Camera Name:</label>
+              <input type="text" id="network-name" placeholder="e.g. Phone Cam 1 or Test Video" />
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="btn-cancel-add" class="btn btn-ghost">Cancel</button>
+          <button id="btn-confirm-add" class="btn btn-primary">Connect Camera</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Settings & Calibration -->
+    <div id="modal-settings" class="modal-backdrop" hidden>
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Settings & Calibration</h3>
+          <button class="modal-close" id="modal-close-settings">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-section">
+            <h4>Multi-Camera 3D Calibration</h4>
+            <p class="muted-note">Load a <code>calibration.json</code> generated by the mocap pipeline to enable real-time multi-view 3D triangulation.</p>
+            <div class="file-picker-row">
+              <input type="text" id="cal-path-input" placeholder="path/to/calibration.json" readonly />
+              <button id="btn-browse-cal" class="btn btn-secondary">Browse...</button>
+              <button id="btn-load-cal" class="btn btn-primary">Load</button>
+            </div>
+            <div id="cal-status-msg" class="cal-status"></div>
+          </div>
+
+          <div class="form-section">
+            <h4>MediaPipe Model Variant</h4>
+            <div class="radio-cards">
+              <label class="radio-card">
+                <input type="radio" name="model-variant" value="lite" />
+                <div class="radio-card-content">
+                  <strong>Lite (~9MB)</strong>
+                  <span>Maximum FPS, lowest CPU usage. Best for multiple cameras.</span>
+                </div>
+              </label>
+              <label class="radio-card">
+                <input type="radio" name="model-variant" value="full" checked />
+                <div class="radio-card-content">
+                  <strong>Full (~15MB)</strong>
+                  <span>Balanced speed and landmark accuracy. Recommended.</span>
+                </div>
+              </label>
+              <label class="radio-card">
+                <input type="radio" name="model-variant" value="heavy" />
+                <div class="radio-card-content">
+                  <strong>Heavy (~31MB)</strong>
+                  <span>Highest accuracy, more CPU intensive.</span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h4>One Euro Jitter Filter Settings</h4>
+            <div class="slider-row">
+              <label for="filter-cutoff">Min Cutoff (lower = smoother when still): <span id="cutoff-val">1.2</span></label>
+              <input type="range" id="filter-cutoff" min="0.1" max="5.0" step="0.1" value="1.2" />
+            </div>
+            <div class="slider-row">
+              <label for="filter-beta">Beta (higher = faster response when moving): <span id="beta-val">0.01</span></label>
+              <input type="range" id="filter-beta" min="0.001" max="0.1" step="0.005" value="0.01" />
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-close-settings" class="btn btn-primary">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
+  </div>
+
+  <script src="./bundle.js"></script>
+</body>
+</html>

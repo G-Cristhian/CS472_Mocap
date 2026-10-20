@@ -1,0 +1,19 @@
+{
+  "name": "mocap-live-studio",
+  "version": "1.0.0",
+  "description": "Multi-camera live streaming motion capture studio with MediaPipe and 3D preview",
+  "main": "main.js",
+  "scripts": {
+    "build": "esbuild renderer.js --bundle --outfile=bundle.js --format=iife",
+    "start": "electron .",
+    "live": "electron ."
+  },
+  "keywords": [
+    "mocap",
+    "mediapipe",
+    "live-stream",
+    "electron"
+  ],
+  "author": "",
+  "license": "ISC"
+}
