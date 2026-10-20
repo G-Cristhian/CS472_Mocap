@@ -151,7 +151,7 @@ def read_metadata(path):
     return metadata
 
 # 35 mm equivalent focal length in mm, or None
-#   iPhones write it as text: "25" in the files we have, "50.00mm" in Apple's docs
+#   iPhones write it as text: "25" or "14" in the files checked, "50.00mm" in Apple's docs
 def focal_35mm(metadata):
     value = metadata.get(FOCAL_35MM_KEY)
 

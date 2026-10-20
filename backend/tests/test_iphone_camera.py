@@ -54,7 +54,7 @@ def test_only_the_video_track_is_read(tmp_path):
 @pytest.mark.parametrize("value, expected", [("25", 25.0), ("50.00mm", 50.0), (" 13.5 mm", 13.5), (26, 26.0),
                                              ("", None), ("unknown", None), (0, None), (b"\x19", None)])
 def test_focal_length_text_forms(value, expected):
-    # Apple's docs give "50.00mm" as the example; the phones we have write "25"
+    # Apple's docs give "50.00mm" as the example; the files checked have "25" or "14"
     assert ic.focal_35mm({ic.FOCAL_35MM_KEY: value}) == expected
 
 
@@ -99,7 +99,7 @@ def test_lenses_other_than_1x_are_warned(tmp_path, focal, warning):
 ])
 def test_cinematic_mode_is_warned(tmp_path, cinematic):
     lines = check_videos.lens_report(iphone_file(tmp_path, movie={**MOVIE, **cinematic}))
-    assert any(line.startswith("  WARNING recorded in Cinematic mode") for line in lines)
+    assert any(line.startswith("  WARNING Cinematic mode keys") for line in lines)
 
 
 def test_not_cinematic_without_the_keys(tmp_path):

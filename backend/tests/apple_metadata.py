@@ -6,7 +6,9 @@ movie's 'meta' atom, lens model and 35 mm focal length in the video track's.
 """
 import struct
 
-DATA_TYPE = {str: 1, int: 21, bytes: 0}   # UTF-8, signed big-endian int, raw (QuickTime well-known types)
+# QuickTime well-known types: 1 UTF-8, 21 big-endian signed integer, 0 "reserved" (no type indicated,
+# as on the iPhone's cinematic-video value)
+DATA_TYPE = {str: 1, int: 21, bytes: 0}
 
 
 def box(kind: bytes, payload: bytes = b"") -> bytes:

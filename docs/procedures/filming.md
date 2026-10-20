@@ -45,7 +45,7 @@ Settings app, then Camera:
 | Record Slo-mo | 1080p HD at 120 fps | only used in the 120 fps take set |
 | Formats, Camera Capture | Most Compatible | H.264 files open on any laptop. High Efficiency (HEVC) also works but needs the right codecs on Windows |
 
-In the Camera app on the day: **Video mode** (not Cinematic, which the pipeline has not been tested with and whose framing may not match the lens metadata[^28]) and the **1x lens only**, never 0.5x or the telephoto. Action mode off (the running-figure icon). Press and hold on the performer's position until "AE/AF LOCK" appears, after framing and before the clap, so focus and exposure cannot drift. Airplane mode or Do Not Disturb so a call does not interrupt recording.
+In the Camera app on the day: **Video mode** (not Cinematic[^28]) and the **1x lens only**, never 0.5x or the telephoto. Action mode off (the running-figure icon). Press and hold on the performer's position until "AE/AF LOCK" appears, after framing and before the clap, so focus and exposure cannot drift. Airplane mode or Do Not Disturb so a call does not interrupt recording.
 
 Original iPhone files carry the lens focal length in their metadata and the pipeline reads it[^9] (`stage2_reconstruct/iphone_camera.py`). This is why iPhones need no field of view number and why section 8 insists on original files.
 
@@ -177,7 +177,7 @@ For each video it prints the resolution, frame rate, length, whether it has audi
 - no audio or no clap found: the phone was muted or the clap was too quiet;
 - frame rate not what was set, or different between phones in a take[^25]: a setting was missed;
 - "no iPhone lens metadata" on a .MOV: the file was re-exported, copy it again;
-- "0.5x ultra wide lens" or "telephoto lens" (read from the file's lens metadata), or "Cinematic mode": the phone was not in Video mode at 1x;
+- "0.5x ultra wide lens", "telephoto lens" or "Cinematic mode": the file's metadata says the phone was not in Video mode at 1x;
 - clap later than 10 seconds: it will not be found; retake or note the times by hand.
 
 The full pipeline takes minutes per take and does not need to run at the venue.
@@ -273,4 +273,4 @@ Where each choice above comes from: a constant in the pipeline, a row on the des
 [^25]: `check_videos.py` warns under `MIN_RECOMMENDED_FPS = 50`; the pipeline itself accepts any rate and resamples (`stage2_reconstruct/sync.py`).
 [^26]: Accepted: `CALIB_MAX_ERROR_PX = 10.0` in `backend/mocap_pipeline/config.py`. Good: the synthetic benchmark with realistic noise (1.5 px, 2% dropout, 0.5% outliers) gives about 1 to 3 px, so under 5 on real footage means the cameras and the lens model are close to right.
 [^27]: `TARGET_FPS = 30.0` in `backend/mocap_pipeline/config.py`; D-009 on `docs/decisions/DECISIONS.md`, issue #15.
-[^28]: One observation, not a measurement of Cinematic mode: in the October 18 Chair Spin take, the iPhone 18 Pro's Cinematic recording (iOS 27.0) calibrated from the performer at 733 to 855 px (figure from the team's calibration runs, not rerun), while its lens metadata gives 713 px: a focal length 3 to 20% longer, so a narrower picture, than the metadata says. Apple's documentation does not say whether Cinematic mode crops. `check_videos` warns when a file carries `com.apple.quicktime.cinematic-video` or Apple's `cinematic-video-intent` flag set to 1.
+[^28]: Why not Cinematic is not established. The one Cinematic file we have, the iPhone 18 Pro's in the October 18 Chair Spin take (iOS 27.0), had the largest calibration error of the four cameras in 15 of 16 runs on the saved keypoints: 141 to 2832 px, with its field of view set from 40 to 106 degrees or taken from its lens metadata, while the other three cameras stayed under 250 px in all but one run. It is also the only iPhone 18 Pro, so Cinematic mode is not shown to be the cause, and Apple's documentation does not say whether Cinematic mode changes the field of view. `check_videos` warns when a file carries `com.apple.quicktime.cinematic-video` or Apple's `cinematic-video-intent` flag set to 1.

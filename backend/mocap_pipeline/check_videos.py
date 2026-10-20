@@ -30,10 +30,10 @@ MIN_RECOMMENDED_FPS = 50.0
 # videos in one take should be about the same length
 MAX_DURATION_SPREAD_S = 5.0
 # 35 mm equivalent focal lengths of the 1x lens. Apple's tech specs (support.apple.com/121032, /125089,
-# /125090) list the main camera at 24 mm (16 Pro Max, 17 Pro) or 26 mm (17), the 0.5x ultra wide at 13 mm
-# and 2x and telephoto at 48 mm and up. Video files checked: a 16 Pro Max whose lens_model names its
-# 6.765mm f/1.78 main lens read 25; a 17, 17 Pro Max and 18 Pro naming a 2.22mm f/2.2 lens (the
-# ultra wide's aperture in the specs) read 14. The 18 Pro's specs were not checked
+# /125090, /125091) list the main camera at 24 mm (16 Pro Max, 17 Pro, 17 Pro Max) or 26 mm (17), the
+# 0.5x ultra wide at 13 mm f/2.2, and 2x and telephoto at 48 mm and up. Video files checked: a 16 Pro Max
+# whose lens_model names a 6.765mm f/1.78 lens read 25; a 17, 17 Pro Max and 18 Pro naming a 2.22mm
+# f/2.2 lens read 14. The 18 Pro's specs were not checked. The bounds are our choice between those
 MAIN_LENS_35MM = (20.0, 35.0)
 
 
@@ -72,9 +72,9 @@ def lens_report(path: str) -> list[str]:
     if focal:
         lines.append(f"  lens    {apple['model']}, {apple['lens']}, {focal:g} mm (35 mm equiv.) from metadata")
         if focal < MAIN_LENS_35MM[0]:
-            lines.append("  WARNING that is the 0.5x ultra wide lens; the protocol asks for 1x")
+            lines.append("  WARNING the lens metadata says the 0.5x ultra wide lens; the protocol asks for 1x")
         elif focal > MAIN_LENS_35MM[1]:
-            lines.append("  WARNING that is a telephoto lens or zoomed in; the protocol asks for 1x")
+            lines.append("  WARNING the lens metadata says a telephoto lens or zoom; the protocol asks for 1x")
     elif apple.get("apple"):
         lines.append(f"  WARNING {apple['model']} (iOS {apple['software']}) file without a focal length in its metadata: "
                      f"the pipeline will use --fov, default {config.DEFAULT_HFOV_DEG:.0f}; pass the measured value")
@@ -84,10 +84,8 @@ def lens_report(path: str) -> list[str]:
     else:
         lines.append(f"  lens    no lens metadata (not an iPhone file): needs --fov, default {config.DEFAULT_HFOV_DEG:.0f}")
     if apple.get("cinematic"):
-        # untested beyond one file: an iPhone 18 Pro Cinematic recording was reported to calibrate from
-        # the performer at 733 to 855 px (not rerun here), against 713 px from its lens metadata
-        lines.append("  WARNING recorded in Cinematic mode: untested with the pipeline, and its framing may not "
-                     "match the lens metadata; record in Video mode")
+        # whether Cinematic mode changes the picture is not known (filming.md footnote 28)
+        lines.append("  WARNING Cinematic mode keys in the metadata; the protocol asks for Video mode")
     return lines
 
 
