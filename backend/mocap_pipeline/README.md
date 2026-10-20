@@ -11,6 +11,16 @@ $ cd backend
 $ python -m pip install -r mocap_pipeline/requirements.txt
 $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV cam2.mp4 --height-m 1.75
 ```
+
+On Windows, in PowerShell, from `backend` and without activating the venv:
+
+```
+cd $HOME\CS472_Mocap\backend
+.venv\Scripts\python.exe -m pip install -r mocap_pipeline\requirements.txt
+.venv\Scripts\python.exe -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV cam2.mp4 --height-m 1.75
+```
+
+The other examples in this README are written for a Mac. On Windows, put `.venv\Scripts\python.exe` in place of `python`, keep each command on one line, and list a take's videos with `Get-ChildItem` instead of `*`. [docs/procedures/windows-setup.md](../../docs/procedures/windows-setup.md) shows each of these.
 On Linux without a desktop, MediaPipe also needs the GL libraries: `sudo apt install libegl1 libgles2 libgl1`.
 
 The MediaPipe model defaults to the one in `backend/models/`. `MODEL_FILEPATH` in a `.env` file or `--model` overrides it.

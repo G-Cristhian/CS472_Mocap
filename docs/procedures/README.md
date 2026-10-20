@@ -5,6 +5,7 @@ Step-by-step guides for things the team does more than once. Each one says who i
 | Procedure | When |
 |---|---|
 | [mac-setup.md](mac-setup.md) | before a session: install the pipeline on the laptop and prove it works without footage |
+| [windows-setup.md](windows-setup.md) | the same on Windows, in PowerShell, and how each Mac command on these pages changes there |
 | [filming.md](filming.md) | the recording session: phones, room, performer, the take plan, getting the files off, checking them before leaving |
 | [processing-a-take.md](processing-a-take.md) | after a session: from files to a skeleton and the four numbers to write down per take |
 | [comparing-pose-models.md](comparing-pose-models.md) | deciding between stage 1 detectors on real takes, and recording the decision |

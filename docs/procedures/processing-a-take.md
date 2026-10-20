@@ -28,7 +28,16 @@ python -m mocap_pipeline.run_pipeline ../session/take01/*.MOV ../session/take01/
     --stop-after keypoints
 ```
 
-List the videos in camera order, camera 0 first. The `*.MOV *.mp4` globs sort by name, which is why the file names start with the camera number.[^3] Give the performer's height from the take log. Non-iPhone cameras also need `--fov` (the Fold is about 75).[^4]
+On Windows, in PowerShell ([windows-setup.md](windows-setup.md) explains each difference):
+
+```
+cd $HOME\CS472_Mocap\backend
+$videos = (Get-ChildItem ..\session\take01\* -Include *.MOV, *.mp4 | Sort-Object Name).FullName
+$videos
+.venv\Scripts\python.exe -m mocap_pipeline.run_pipeline $videos --height-m 1.78 --out output\take01\out3d.json --calibration output\take01\calibration.json --stop-after keypoints
+```
+
+List the videos in camera order, camera 0 first. The `*.MOV *.mp4` globs sort by name, which is why the file names start with the camera number.[^3] On Windows, `Sort-Object Name` sorts all the videos together by name, and the `$videos` line prints the list so you can check the order before anything runs. Give the performer's height from the take log. Non-iPhone cameras also need `--fov` (the Fold is about 75).[^4]
 
 This writes one `out3d.keypoints.<camera>.npz` per video. Everything after this is seconds.
 
@@ -38,6 +47,12 @@ This writes one `out3d.keypoints.<camera>.npz` per video. Everything after this 
 python -m mocap_pipeline.run_pipeline ../session/take01/*.MOV ../session/take01/*.mp4 \
     --height-m 1.78 --out output/take01/out3d.json --calibration output/take01/calibration.json \
     --resume
+```
+
+On Windows, in the same window as step 2, so `$videos` is still set:
+
+```
+.venv\Scripts\python.exe -m mocap_pipeline.run_pipeline $videos --height-m 1.78 --out output\take01\out3d.json --calibration output\take01\calibration.json --resume
 ```
 
 `--resume` reuses the keypoints and runs sync, calibration, triangulation, smoothing and the BVH.[^5] If it stops with a message, the table in filming.md section 11 says what it means and what to do; fix and rerun with `--resume` again.
@@ -57,7 +72,7 @@ Also useful: `sync.cross_check` (a shift over 50 ms with `applied: false` means 
 
 ## 5. Watch it
 
-Open `output/take01/out3d.bvh` in the frontend viewer (`cd frontend && npm run dev`, open a project, "Open .bvh / .json") or in Blender. The skeleton should stand on the floor, face the viewer, and move like the take. Look at the fast moments: a wrist on a punch, a foot on a kick. Jitter, a lagging joint, or a joint that disappears are what the numbers above should have warned about.
+Open `output/take01/out3d.bvh` in the frontend viewer (`cd frontend && npm run dev`, or on Windows the commands in [windows-setup.md](windows-setup.md) step 5; open a project, "Open .bvh / .json") or in Blender. The skeleton should stand on the floor, face the viewer, and move like the take. Look at the fast moments: a wrist on a punch, a foot on a kick. Jitter, a lagging joint, or a joint that disappears are what the numbers above should have warned about.
 
 ## 6. Reruns that are worth doing
 

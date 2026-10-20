@@ -1,7 +1,8 @@
 # Hybrid Mocap — frontend
 
-A navigable React prototype of every screen in `refs/Hybrid-Mocap-Screens.pdf`. All data is mocked
-in `src/lib/data.ts`; there are no backend calls yet.
+A navigable React prototype of every screen in `refs/Hybrid-Mocap-Screens.pdf`. Projects, clips,
+cameras and saved devices are mocked in `src/lib/data.ts`; takes, their results and their 2D joints come from the
+backend API (`src/lib/api.ts`), at `VITE_API_URL` or http://localhost:8000.
 
 ## Run it
 
@@ -11,8 +12,16 @@ npm install
 npm run dev      # http://localhost:5173
 ```
 
+On Windows, in PowerShell, start the API first ([windows-setup.md](../docs/procedures/windows-setup.md) step 5), then:
+
+```
+cd $HOME\CS472_Mocap\frontend
+npm.cmd install
+npm.cmd run dev
+```
+
 Other scripts: `npm run build` (production bundle into `dist/`), `npm run preview` (serve the
-build), `npm run typecheck`.
+build), `npm run typecheck`. On Windows, type `npm.cmd` in place of `npm`.
 
 ## Screens
 
@@ -35,7 +44,8 @@ The viewport on `/projects/:projectId` is a three.js scene (`src/features/viewer
   (`out3d.json`, 33 MediaPipe landmarks), over a floor grid. Drag to orbit, scroll to zoom.
 - Opens `public/samples/sample_take.bvh` by default (made by `backend/mocap_pipeline` from simulated
   cameras). **Open .bvh / .json** (bottom right of the viewport) or drag a file onto it to play another take,
-  e.g. `backend/output/out3d.bvh` or `backend/output/out3d.json`. There is no backend API yet.
+  e.g. `backend/output/out3d.bvh` or `backend/output/out3d.json`. A take processed by the API plays
+  from its link, `/projects/:projectId?clip=<take id>`.
 - The transport bar plays, pauses and scrubs the file; joints are coloured by rig part, the legend dims a
   source, and clicking a joint selects its rig part.
 - The old 2D `SkeletonViewport.tsx` is kept (its colours are still used by the legend).
