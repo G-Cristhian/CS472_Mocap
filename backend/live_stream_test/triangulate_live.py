@@ -12,6 +12,7 @@ class LiveTriangulator:
         self.rig = None
         self.camera_group = None
         self.camera_id_map: Dict[str, int] = {}
+        self.calibration_path: Optional[str] = None
         if calibration_path:
             self.load_calibration(calibration_path)
 
@@ -31,6 +32,7 @@ class LiveTriangulator:
             self.rig = load_rig(str(p))
             self.camera_group = rig_to_group(self.rig)
             self.camera_id_map = {cam.camera_id: idx for idx, cam in enumerate(self.rig.cameras)}
+            self.calibration_path = str(p.resolve())
             print(f"[LiveTriangulator] Successfully loaded calibration with {len(self.rig.cameras)} cameras: {list(self.camera_id_map.keys())}")
             return True
         except Exception as e:

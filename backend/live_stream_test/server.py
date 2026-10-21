@@ -15,7 +15,7 @@ from typing import Dict, List, Optional, Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -23,12 +23,14 @@ from .camera_stream import CameraManager
 from .detector import resolve_model_path, POSE_CONNECTIONS, LANDMARK_NAMES
 from .filter import PoseFilter
 from .triangulate_live import LiveTriangulator
+from .live_recorder import LiveRecorder
 
 logger = logging.getLogger("live_stream_server")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 # Global runtime state
-camera_manager = CameraManager()
+live_recorder = LiveRecorder()
+camera_manager = CameraManager(recorder=live_recorder)
 pose_filter = PoseFilter(min_cutoff=1.2, beta=0.01)
 triangulator = LiveTriangulator()
 active_websockets: List[WebSocket] = []
@@ -76,6 +78,36 @@ class FilterSettingsRequest(BaseModel):
     beta: Optional[float] = 0.01
 
 
+class StartRecordingRequest(BaseModel):
+    take_id: Optional[str] = None
+
+
+class StopRecordingRequest(BaseModel):
+    auto_process: bool = True
+    performer_height_m: Optional[float] = 1.75
+    smoother: Optional[str] = "savgol"
+
+
+class ProcessTakeRequest(BaseModel):
+    take_id: Optional[str] = None
+    performer_height_m: Optional[float] = 1.75
+    smoother: Optional[str] = "savgol"
+    calibration_path: Optional[str] = None
+
+
+async def broadcast_message(msg: dict):
+    """Broadcasts arbitrary message to all active WebSocket clients."""
+    dead = []
+    for ws in list(active_websockets):
+        try:
+            await ws.send_json(msg)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        if ws in active_websockets:
+            active_websockets.remove(ws)
+
+
 @app.get("/health")
 def health():
     return {
@@ -83,6 +115,7 @@ def health():
         "model": current_model_variant,
         "active_cameras": len(camera_manager.get_all_snapshots()),
         "calibrated": triangulator.is_calibrated,
+        "recording": live_recorder.get_status(),
     }
 
 
@@ -146,6 +179,97 @@ def mjpeg_stream(cam_id: str):
             time.sleep(1.0 / max(10.0, worker.target_fps))
 
     return StreamingResponse(frame_generator(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+# ==============================================================================
+# Recording & BVH Processing Endpoints
+# ==============================================================================
+
+@app.post("/api/recording/start")
+async def start_recording_endpoint(req: Optional[StartRecordingRequest] = None):
+    take_id = req.take_id if req else None
+    active_cams = camera_manager.get_all_snapshots()
+    if not active_cams:
+        raise HTTPException(status_code=400, detail="No active cameras available to record")
+
+    res = live_recorder.start_recording(take_id=take_id, active_cameras=active_cams)
+    await broadcast_message({"type": "recording_started", **res})
+    return res
+
+
+@app.post("/api/recording/stop")
+async def stop_recording_endpoint(req: Optional[StopRecordingRequest] = None):
+    res = live_recorder.stop_recording()
+    if not res.get("ok"):
+        raise HTTPException(status_code=400, detail=res.get("error", "Failed to stop recording"))
+
+    await broadcast_message({"type": "recording_stopped", **res})
+
+    auto_process = req.auto_process if req is not None else True
+    if auto_process and res.get("take_id"):
+        height = req.performer_height_m if (req and req.performer_height_m) else 1.75
+        smoother = req.smoother if (req and req.smoother) else "savgol"
+        cal_path = triangulator.calibration_path
+
+        await broadcast_message({"type": "processing_started", "take_id": res["take_id"]})
+        proc_res = await asyncio.to_thread(
+            live_recorder.process_take,
+            take_id=res["take_id"],
+            calibration_path=cal_path,
+            performer_height_m=height,
+            smoother=smoother,
+        )
+        res["processing"] = proc_res
+        if proc_res.get("ok"):
+            await broadcast_message({"type": "processing_completed", **proc_res})
+        else:
+            await broadcast_message({"type": "processing_error", **proc_res})
+
+    return res
+
+
+@app.post("/api/recording/process")
+async def process_take_endpoint(req: ProcessTakeRequest):
+    cal_path = req.calibration_path or triangulator.calibration_path
+    await broadcast_message({"type": "processing_started", "take_id": req.take_id})
+    proc_res = await asyncio.to_thread(
+        live_recorder.process_take,
+        take_id=req.take_id,
+        calibration_path=cal_path,
+        performer_height_m=req.performer_height_m or 1.75,
+        smoother=req.smoother or "savgol",
+    )
+    if proc_res.get("ok"):
+        await broadcast_message({"type": "processing_completed", **proc_res})
+    else:
+        await broadcast_message({"type": "processing_error", **proc_res})
+        raise HTTPException(status_code=500, detail=proc_res.get("error", "Processing failed"))
+    return proc_res
+
+
+@app.get("/api/recording/status")
+def recording_status_endpoint():
+    return live_recorder.get_status()
+
+
+@app.get("/api/recordings")
+def list_recordings_endpoint():
+    return {"takes": live_recorder.list_recordings()}
+
+
+@app.get("/api/recording/download/{take_id}/{filename}")
+def download_recording_file(take_id: str, filename: str):
+    file_path = live_recorder.base_dir / take_id / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    media_type = "application/octet-stream"
+    if filename.endswith(".bvh"):
+        media_type = "text/plain"
+    elif filename.endswith(".json"):
+        media_type = "application/json"
+    elif filename.endswith((".mp4", ".m4v")):
+        media_type = "video/mp4"
+    return FileResponse(str(file_path), media_type=media_type, filename=filename)
 
 
 @app.websocket("/ws")
@@ -217,6 +341,57 @@ async def websocket_endpoint(websocket: WebSocket):
             elif action == "ping":
                 await websocket.send_json({"type": "pong", "time": time.time()})
 
+            elif action == "start_recording":
+                take_id = msg.get("take_id")
+                active_cams = camera_manager.get_all_snapshots()
+                if active_cams:
+                    res = live_recorder.start_recording(take_id=take_id, active_cameras=active_cams)
+                    await broadcast_message({"type": "recording_started", **res})
+                else:
+                    await websocket.send_json({"type": "recording_error", "error": "No active cameras to record"})
+
+            elif action == "stop_recording":
+                res = live_recorder.stop_recording()
+                if res.get("ok"):
+                    await broadcast_message({"type": "recording_stopped", **res})
+                    auto_process = msg.get("auto_process", True)
+                    if auto_process and res.get("take_id"):
+                        height = float(msg.get("performer_height_m", 1.75))
+                        smoother = str(msg.get("smoother", "savgol"))
+                        cal_path = triangulator.calibration_path
+                        await broadcast_message({"type": "processing_started", "take_id": res["take_id"]})
+                        proc_res = await asyncio.to_thread(
+                            live_recorder.process_take,
+                            take_id=res["take_id"],
+                            calibration_path=cal_path,
+                            performer_height_m=height,
+                            smoother=smoother,
+                        )
+                        if proc_res.get("ok"):
+                            await broadcast_message({"type": "processing_completed", **proc_res})
+                        else:
+                            await broadcast_message({"type": "processing_error", **proc_res})
+                else:
+                    await websocket.send_json({"type": "recording_error", "error": res.get("error")})
+
+            elif action == "process_take":
+                target_take = msg.get("take_id")
+                height = float(msg.get("performer_height_m", 1.75))
+                smoother = str(msg.get("smoother", "savgol"))
+                cal_path = msg.get("calibration_path") or triangulator.calibration_path
+                await broadcast_message({"type": "processing_started", "take_id": target_take})
+                proc_res = await asyncio.to_thread(
+                    live_recorder.process_take,
+                    take_id=target_take,
+                    calibration_path=cal_path,
+                    performer_height_m=height,
+                    smoother=smoother,
+                )
+                if proc_res.get("ok"):
+                    await broadcast_message({"type": "processing_completed", **proc_res})
+                else:
+                    await broadcast_message({"type": "processing_error", **proc_res})
+
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected")
     except Exception as e:
@@ -263,10 +438,15 @@ async def broadcast_loop():
             if pose_3d and filter_enabled:
                 pose_3d = pose_filter.filter_pose(pose_3d, now)
 
+            # Record live 3D pose trajectory if recording
+            if pose_3d and live_recorder.is_recording:
+                live_recorder.record_live_pose_3d(pose_3d, now, source_type)
+
             # Build broadcast payload
             payload = {
                 "type": "stream_update",
                 "timestamp": now,
+                "recording": live_recorder.get_status(),
                 "cameras": {
                     cid: {
                         "cam_id": s["cam_id"],

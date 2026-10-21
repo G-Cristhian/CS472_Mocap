@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, session } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const http = require('node:http');
@@ -154,6 +154,22 @@ ipcMain.handle('select-video-file', async () => {
 
 ipcMain.handle('get-server-url', () => {
   return `ws://${SERVER_HOST}:${SERVER_PORT}/ws`;
+});
+
+ipcMain.handle('open-item', async (event, fullPath) => {
+  if (fullPath && fs.existsSync(fullPath)) {
+    shell.showItemInFolder(fullPath);
+    return true;
+  }
+  return false;
+});
+
+ipcMain.handle('open-folder', async (event, dirPath) => {
+  if (dirPath && fs.existsSync(dirPath)) {
+    shell.openPath(dirPath);
+    return true;
+  }
+  return false;
 });
 
 app.whenReady().then(async () => {

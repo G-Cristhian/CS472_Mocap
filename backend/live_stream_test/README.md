@@ -11,6 +11,8 @@ Real-time multi-camera motion capture studio with MediaPipe pose estimation, liv
 - **1-Euro Jitter Filter**: Real-time causal filtering (Casiez et al. 2012) eliminating jitter at rest while keeping responsiveness during fast motions.
 - **Multi-Camera Triangulation**: Option to load `calibration.json` from `mocap_pipeline` for real metric multi-view 3D reconstruction, with automatic fallback to MediaPipe 3D world landmarks.
 - **Hardware Auto-Detection**: Instant scan and quick-connect for detected webcams.
+- **Live Footage Recording**: Record synchronized multi-camera MP4 video footage with real-time frame timestamps.
+- **Mocap Pipeline Processing & BVH Export**: Process recorded footage through `mocap_pipeline` stages (sync, 3D reconstruction, Savitzky-Golay / Butterworth jitter smoothing, H36M skeleton solving) and export standard `.bvh` motion files directly.
 
 ## Architecture
 
@@ -18,6 +20,7 @@ Real-time multi-camera motion capture studio with MediaPipe pose estimation, liv
 backend/live_stream_test/
 ├── server.py              # FastAPI server (WebSocket @ /ws + REST API + MJPEG)
 ├── camera_stream.py       # CameraManager & multi-threaded non-blocking capture workers
+├── live_recorder.py       # Live multi-camera recorder & mocap_pipeline BVH processing engine
 ├── detector.py            # MediaPipe PoseLandmarker wrapper (lite, full, heavy models)
 ├── filter.py              # OneEuroFilter for smooth 3D tracking
 ├── triangulate_live.py    # Real-time multi-view triangulation using CameraRig
@@ -92,3 +95,16 @@ npm run live
   2. Click **"Browse..."** to select your `calibration.json` file.
   3. Click **"Load"**.
   4. When 2 or more calibrated cameras view the performer, the 3D viewport automatically switches to **Multi-View Triangulated 3D**.
+
+## Recording Live Footage & Exporting to BVH
+
+1. Connect your desired camera(s) in the Studio.
+2. In the top bar, click **"Record Footage"**.
+   - A pulsing red recording indicator appears in the navigation bar showing elapsed time and frame counters across all active cameras.
+   - Raw video frames are encoded non-blockingly to `.mp4` files under `backend/output/live_recordings/<take_id>/`.
+3. When finished, click **"Stop & Export BVH"**.
+4. The system automatically runs the footage through the mocap pipeline:
+   - For multi-camera setups: Aligns timelines, reconstructs metric 3D joints, applies smoothing, solves joint rotations, and exports `out3d.bvh` and `out3d.json`.
+   - For single-camera setups: Transforms metric MediaPipe 3D world landmarks to floor-aligned coordinates, applies filter smoothing, and exports `out3d.bvh`.
+5. An export modal will pop up with links to **"Show in File Manager"** or **"Open Folder"** to inspect your BVH animation file.
+6. Click **"Takes & BVH"** in the top bar anytime to browse, download, or re-process previously recorded takes.

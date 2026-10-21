@@ -60,6 +60,34 @@ const btnSettings = document.getElementById('btn-settings');
 const btnToggleAllOverlays = document.getElementById('btn-toggle-all-overlays');
 const btnRescanCameras = document.getElementById('btn-rescan-cameras');
 
+// Recording & Takes Controls
+const btnRecord = document.getElementById('btn-record');
+const btnRecordText = document.getElementById('btn-record-text');
+const recordingPill = document.getElementById('recording-pill');
+const recTimer = document.getElementById('rec-timer');
+const recFrames = document.getElementById('rec-frames');
+const btnTakes = document.getElementById('btn-takes');
+
+const modalTakes = document.getElementById('modal-takes');
+const modalCloseTakes = document.getElementById('modal-close-takes');
+const btnCloseTakes = document.getElementById('btn-close-takes');
+const takesListContainer = document.getElementById('takes-list-container');
+const btnOpenRecordingsFolder = document.getElementById('btn-open-recordings-folder');
+
+const modalProcessingResult = document.getElementById('modal-processing-result');
+const modalCloseProc = document.getElementById('modal-close-proc');
+const btnCloseProc = document.getElementById('btn-close-proc');
+const procModalTitle = document.getElementById('proc-modal-title');
+const procModalBody = document.getElementById('proc-modal-body');
+
+const settingHeight = document.getElementById('setting-height');
+const settingSmoother = document.getElementById('setting-smoother');
+const settingAutoProcess = document.getElementById('setting-auto-process');
+
+let isRecording = false;
+let currentTakeId = null;
+let recordingDuration = 0;
+
 // View presets
 const btnViewFront = document.getElementById('btn-view-front');
 const btnViewSide = document.getElementById('btn-view-side');
@@ -500,6 +528,8 @@ function handleServerMessage(msg) {
       if (msg.devices) syncVerifiedDevices(msg.devices, true);
       break;
 
+      break;
+
     case 'stream_update':
       handleStreamUpdate(msg);
       break;
@@ -523,6 +553,34 @@ function handleServerMessage(msg) {
         calStatusMsg.style.color = 'var(--accent-rose)';
       }
       break;
+
+    case 'recording_started':
+      setRecordingState(true, msg.take_id);
+      showToast(`Recording started: ${msg.take_id}`, 'info');
+      break;
+
+    case 'recording_stopped':
+      setRecordingState(false, null);
+      showToast(`Recording saved! Duration: ${msg.duration_s || 0}s`, 'success');
+      break;
+
+    case 'processing_started':
+      showProcessingModal(msg.take_id);
+      break;
+
+    case 'processing_completed':
+      showProcessingSuccessModal(msg);
+      showToast('BVH exported successfully!', 'success');
+      break;
+
+    case 'processing_error':
+      showProcessingErrorModal(msg);
+      showToast(`Processing error: ${msg.error || 'Failed'}`, 'error');
+      break;
+
+    case 'recording_error':
+      showToast(msg.error || 'Recording error', 'error');
+      break;
   }
 }
 
@@ -534,6 +592,23 @@ function handleStreamUpdate(msg) {
     globalFpsLabel.textContent = Math.round((frameCounter * 1000) / (now - lastFpsTime));
     frameCounter = 0;
     lastFpsTime = now;
+  }
+
+  // Update recording pill telemetry
+  if (msg.recording) {
+    const rec = msg.recording;
+    if (rec.is_recording !== isRecording) {
+      setRecordingState(rec.is_recording, rec.take_id);
+    }
+    if (rec.is_recording) {
+      const dur = rec.duration_s || 0;
+      recTimer.textContent = formatDuration(dur);
+      let totalF = 0;
+      if (rec.frame_counts) {
+        totalF = Object.values(rec.frame_counts).reduce((a, b) => a + b, 0);
+      }
+      recFrames.textContent = `${totalF} frames`;
+    }
   }
 
   const cameras = msg.cameras || {};
@@ -952,10 +1027,281 @@ function showToast(message, type = 'info') {
   }, 3500);
 }
 
-if (btnRescanCameras) {
-  btnRescanCameras.addEventListener('click', () => {
-    openAddCameraModal();
-    scanHardwareCameras(true);
+/* ==========================================================================
+   Recording & BVH Export Functions
+   ========================================================================== */
+
+function formatDuration(sec) {
+  const s = Math.floor(sec || 0);
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${String(m).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
+}
+
+function setRecordingState(recording, takeId) {
+  isRecording = recording;
+  currentTakeId = takeId;
+
+  if (btnRecord && btnRecordText) {
+    if (isRecording) {
+      btnRecord.classList.add('recording-active');
+      btnRecordText.textContent = 'Stop & Export BVH';
+    } else {
+      btnRecord.classList.remove('recording-active');
+      btnRecordText.textContent = 'Record Footage';
+    }
+  }
+
+  if (recordingPill) {
+    recordingPill.style.display = isRecording ? 'flex' : 'none';
+  }
+}
+
+function toggleRecording() {
+  if (!isRecording) {
+    if (cameraCards.size === 0) {
+      showToast('Please add at least one camera stream first', 'error');
+      openAddCameraModal();
+      return;
+    }
+    sendWSCommand('start_recording');
+    setRecordingState(true, null);
+  } else {
+    const autoProc = settingAutoProcess ? settingAutoProcess.checked : true;
+    const height = parseFloat(settingHeight?.value || 1.75);
+    const smoother = settingSmoother?.value || 'savgol';
+
+    sendWSCommand('stop_recording', {
+      auto_process: autoProc,
+      performer_height_m: height,
+      smoother: smoother,
+    });
+    setRecordingState(false, null);
+  }
+}
+
+if (btnRecord) {
+  btnRecord.addEventListener('click', toggleRecording);
+}
+
+// Processing Modal Helpers
+function showProcessingModal(takeId) {
+  if (!modalProcessingResult || !procModalBody) return;
+  procModalTitle.textContent = 'Processing Mocap Footage...';
+  procModalBody.innerHTML = `
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 10px; gap: 16px;">
+      <div class="loading-spinner" style="font-size: 16px; color: var(--accent-cyan);">
+        Running Mocap Pipeline on ${takeId || 'take'}...
+      </div>
+      <p style="color: var(--text-secondary); font-size: 13px; text-align: center; max-width: 80%;">
+        Synchronizing video streams, computing 3D skeleton rotations, fitting bone lengths, and generating BVH animation...
+      </p>
+    </div>
+  `;
+  modalProcessingResult.hidden = false;
+}
+
+function showProcessingSuccessModal(msg) {
+  if (!modalProcessingResult || !procModalBody) return;
+  procModalTitle.textContent = 'BVH Export Complete!';
+  const bvhName = msg.bvh_path ? msg.bvh_path.split(/[/\\]/).pop() : 'out3d.bvh';
+  const sizeKb = msg.file_size_bytes ? Math.round(msg.file_size_bytes / 1024) : 0;
+  const takeFolder = msg.bvh_path ? msg.bvh_path.replace(/[/\\][^/\\]+$/, '') : '';
+
+  procModalBody.innerHTML = `
+    <div class="proc-card">
+      <div class="proc-success-banner">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        <span>Mocap Pipeline Export Successful!</span>
+      </div>
+      <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 12px;">
+        Your live footage has been fully reconstructed into a standard H36M hierarchical BVH skeleton motion file.
+      </p>
+      <div class="proc-detail-row">
+        <span style="color: var(--text-muted);">Take ID</span>
+        <strong style="color: var(--accent-cyan); font-family: var(--font-mono);">${msg.take_id || 'take'}</strong>
+      </div>
+      <div class="proc-detail-row">
+        <span style="color: var(--text-muted);">BVH Output</span>
+        <strong style="font-family: var(--font-mono);">${bvhName} (${sizeKb} KB)</strong>
+      </div>
+      <div class="proc-detail-row">
+        <span style="color: var(--text-muted);">Pipeline Mode</span>
+        <span>${msg.method || 'mocap_pipeline'}</span>
+      </div>
+      <div class="proc-detail-row">
+        <span style="color: var(--text-muted);">Location</span>
+        <span style="font-size: 11px; word-break: break-all; color: var(--text-secondary);">${msg.bvh_path || ''}</span>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 16px;">
+        <button id="btn-modal-open-bvh" class="btn btn-primary" style="flex: 1;">
+          Show in File Manager
+        </button>
+        <button id="btn-modal-open-folder" class="btn btn-secondary">
+          Open Folder
+        </button>
+      </div>
+    </div>
+  `;
+  modalProcessingResult.hidden = false;
+
+  const btnOpenBvh = document.getElementById('btn-modal-open-bvh');
+  if (btnOpenBvh) {
+    btnOpenBvh.addEventListener('click', () => {
+      if (window.electronAPI?.openItem && msg.bvh_path) {
+        window.electronAPI.openItem(msg.bvh_path);
+      } else {
+        alert(`BVH File saved to:\n${msg.bvh_path}`);
+      }
+    });
+  }
+
+  const btnOpenFld = document.getElementById('btn-modal-open-folder');
+  if (btnOpenFld) {
+    btnOpenFld.addEventListener('click', () => {
+      if (window.electronAPI?.openFolder && takeFolder) {
+        window.electronAPI.openFolder(takeFolder);
+      } else {
+        alert(`Folder:\n${takeFolder}`);
+      }
+    });
+  }
+}
+
+function showProcessingErrorModal(msg) {
+  if (!modalProcessingResult || !procModalBody) return;
+  procModalTitle.textContent = 'Processing Error';
+  procModalBody.innerHTML = `
+    <div class="proc-card" style="border-left: 4px solid var(--accent-rose);">
+      <h4 style="color: var(--accent-rose); margin-bottom: 8px;">Failed to process mocap footage</h4>
+      <p style="color: var(--text-secondary); font-size: 13px; word-break: break-word;">
+        ${msg.error || 'An error occurred during stage reconstruction.'}
+      </p>
+    </div>
+  `;
+  modalProcessingResult.hidden = false;
+}
+
+if (modalCloseProc) modalCloseProc.addEventListener('click', () => modalProcessingResult.hidden = true);
+if (btnCloseProc) btnCloseProc.addEventListener('click', () => modalProcessingResult.hidden = true);
+
+// Takes & Recordings List
+async function loadTakesList() {
+  if (!takesListContainer) return;
+  takesListContainer.innerHTML = '<div class="loading-spinner">Loading recorded takes...</div>';
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${WS_PORT}/api/recordings`);
+    const data = await res.json();
+    const takes = data.takes || [];
+
+    if (takes.length === 0) {
+      takesListContainer.innerHTML = `
+        <div style="text-align: center; padding: 30px; color: var(--text-muted); font-size: 13px;">
+          No recorded takes found yet. Click <strong>Record Footage</strong> in the top navigation to record your first live take!
+        </div>
+      `;
+      return;
+    }
+
+    takesListContainer.innerHTML = takes.map(t => {
+      const dur = t.info?.duration_s || 0;
+      const camCount = t.info?.cameras ? Object.keys(t.info.cameras).length : (t.videos?.length || 0);
+      const bvhReady = t.has_bvh;
+      const bvhSizeKb = Math.round((t.bvh_size || 0) / 1024);
+      const dateStr = t.created_at ? new Date(t.created_at * 1000).toLocaleString() : '';
+
+      return `
+        <div class="take-card" data-take="${t.take_id}" data-path="${t.path}">
+          <div class="take-info-col">
+            <div class="take-title-row">
+              <span class="take-name">${t.take_id}</span>
+              ${bvhReady
+                ? `<span class="badge" style="background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald);">BVH Ready (${bvhSizeKb} KB)</span>`
+                : `<span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">Raw Footage</span>`
+              }
+            </div>
+            <div class="take-meta-row">
+              <span>Date: ${dateStr}</span>
+              <span>Cameras: ${camCount}</span>
+              <span>Duration: ${dur}s</span>
+              <span>Videos: ${(t.videos || []).join(', ')}</span>
+            </div>
+          </div>
+          <div class="take-actions">
+            ${bvhReady
+              ? `<button class="btn btn-sm btn-primary" onclick="window.openTakeItem('${t.path}/out3d.bvh')">Show BVH</button>`
+              : `<button class="btn btn-sm btn-primary" onclick="window.triggerProcessTake('${t.take_id}')">Process to BVH</button>`
+            }
+            <button class="btn btn-sm btn-secondary" onclick="window.openTakeFolder('${t.path}')">Open Folder</button>
+            ${bvhReady
+              ? `<button class="btn btn-sm btn-ghost" onclick="window.triggerProcessTake('${t.take_id}')" title="Re-process with pipeline">Re-process</button>`
+              : ''
+            }
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  } catch (e) {
+    takesListContainer.innerHTML = `<div style="color: var(--accent-rose); padding: 12px;">Failed to load recordings: ${e.message}</div>`;
+  }
+}
+
+window.openTakeItem = function(itemPath) {
+  if (window.electronAPI?.openItem) {
+    window.electronAPI.openItem(itemPath);
+  } else {
+    alert(`File:\n${itemPath}`);
+  }
+};
+
+window.openTakeFolder = function(folderPath) {
+  if (window.electronAPI?.openFolder) {
+    window.electronAPI.openFolder(folderPath);
+  } else {
+    alert(`Folder:\n${folderPath}`);
+  }
+};
+
+window.triggerProcessTake = function(takeId) {
+  modalTakes.hidden = true;
+  showProcessingModal(takeId);
+  const height = parseFloat(settingHeight?.value || 1.75);
+  const smoother = settingSmoother?.value || 'savgol';
+  sendWSCommand('process_take', {
+    take_id: takeId,
+    performer_height_m: height,
+    smoother: smoother,
+  });
+};
+
+if (btnTakes) {
+  btnTakes.addEventListener('click', () => {
+    modalTakes.hidden = false;
+    loadTakesList();
+  });
+}
+
+if (modalCloseTakes) modalCloseTakes.addEventListener('click', () => modalTakes.hidden = true);
+if (btnCloseTakes) btnCloseTakes.addEventListener('click', () => modalTakes.hidden = true);
+
+if (btnOpenRecordingsFolder) {
+  btnOpenRecordingsFolder.addEventListener('click', async () => {
+    try {
+      const res = await fetch(`http://127.0.0.1:${WS_PORT}/api/recording/status`);
+      const status = await res.json();
+      const folder = status.take_dir ? status.take_dir.replace(/[/\\][^/\\]+$/, '') : '';
+      if (window.electronAPI?.openFolder && folder) {
+        window.electronAPI.openFolder(folder);
+      } else {
+        alert('Recordings are located in backend/output/live_recordings');
+      }
+    } catch (_) {
+      alert('Recordings are located in backend/output/live_recordings');
+    }
   });
 }
 

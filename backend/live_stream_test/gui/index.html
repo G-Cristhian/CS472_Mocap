@@ -46,9 +46,26 @@
             <span class="telemetry-value" id="global-fps">0</span>
           </span>
         </div>
+        <div class="recording-pill" id="recording-pill" style="display: none;">
+          <span class="rec-pulse-dot"></span>
+          <span class="rec-label">REC</span>
+          <span class="rec-timer" id="rec-timer">00:00</span>
+          <span class="rec-frames" id="rec-frames">0 frames</span>
+        </div>
       </div>
 
       <div class="nav-right">
+        <button id="btn-record" class="btn btn-record">
+          <span class="record-dot"></span>
+          <span id="btn-record-text">Record Footage</span>
+        </button>
+        <button id="btn-takes" class="btn btn-secondary" title="View Recorded Footage & BVH Files">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          </svg>
+          Takes & BVH
+        </button>
         <button id="btn-add-camera" class="btn btn-primary">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -251,19 +268,65 @@
           </div>
 
           <div class="form-section">
-            <h4>One Euro Jitter Filter Settings</h4>
-            <div class="slider-row">
-              <label for="filter-cutoff">Min Cutoff (lower = smoother when still): <span id="cutoff-val">1.2</span></label>
-              <input type="range" id="filter-cutoff" min="0.1" max="5.0" step="0.1" value="1.2" />
+            <h4>Mocap Pipeline & BVH Export Settings</h4>
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label for="setting-height">Performer Height (metres):</label>
+              <input type="number" id="setting-height" value="1.75" step="0.05" min="1.0" max="2.5" />
+              <span class="field-hint">Sets real-world metric scaling and floor alignment for BVH export.</span>
             </div>
-            <div class="slider-row">
-              <label for="filter-beta">Beta (higher = faster response when moving): <span id="beta-val">0.01</span></label>
-              <input type="range" id="filter-beta" min="0.001" max="0.1" step="0.005" value="0.01" />
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label for="setting-smoother">Stage 2c Smoother:</label>
+              <select id="setting-smoother" class="select-control">
+                <option value="savgol" selected>Savitzky-Golay (Keeps fast peak dynamics)</option>
+                <option value="butterworth">Butterworth 8Hz (Zero-phase biomechanics standard)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="toggle-control">
+                <input type="checkbox" id="setting-auto-process" checked />
+                <span>Auto-process with mocap_pipeline on recording stop</span>
+              </label>
             </div>
           </div>
         </div>
         <div class="modal-footer">
           <button id="btn-close-settings" class="btn btn-primary">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Takes & BVH Recordings -->
+    <div id="modal-takes" class="modal-backdrop" hidden>
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <h3>Recorded Footage & BVH Takes</h3>
+          <button class="modal-close" id="modal-close-takes">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="muted-note">Footage recorded from live cameras with corresponding mocap pipeline BVH exports:</p>
+          <div id="takes-list-container" class="takes-list">
+            <div class="loading-spinner">Loading recorded takes...</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-open-recordings-folder" class="btn btn-secondary">Open Recordings Folder</button>
+          <button id="btn-close-takes" class="btn btn-primary">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Recording Processing & BVH Export Result -->
+    <div id="modal-processing-result" class="modal-backdrop" hidden>
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="proc-modal-title">Take Processing & Export</h3>
+          <button class="modal-close" id="modal-close-proc">&times;</button>
+        </div>
+        <div class="modal-body" id="proc-modal-body">
+          <!-- Dynamic status, spinner, and result info -->
+        </div>
+        <div class="modal-footer" id="proc-modal-footer">
+          <button id="btn-close-proc" class="btn btn-primary">Done</button>
         </div>
       </div>
     </div>

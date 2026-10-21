@@ -37,6 +37,7 @@ class CameraWorker:
         target_fps: float = 30.0,
         preview_width: int = 640,
         jpeg_quality: int = 65,
+        recorder: Optional[Any] = None,
     ):
         self.cam_id = str(cam_id)
         self.source = parse_source(source)
@@ -45,6 +46,7 @@ class CameraWorker:
         self.target_fps = target_fps
         self.preview_width = preview_width
         self.jpeg_quality = jpeg_quality
+        self.recorder = recorder
 
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -203,6 +205,13 @@ class CameraWorker:
                 pass
             det_latency = (time.time() - det_t0) * 1000.0
 
+            # Feed to live recorder if active
+            if self.recorder and getattr(self.recorder, "is_recording", False):
+                try:
+                    self.recorder.record_camera_frame(self.cam_id, frame, t0, lm_2d, lm_3d)
+                except Exception:
+                    pass
+
             # Resize for lightweight preview transmission over WebSocket
             if w > self.preview_width:
                 scale = self.preview_width / float(w)
@@ -271,11 +280,18 @@ class CameraManager:
     """
     Manages multiple active camera streams.
     """
-    def __init__(self):
+    def __init__(self, recorder: Optional[Any] = None):
+        self.recorder = recorder
         self._cameras: Dict[str, CameraWorker] = {}
         self._lock = threading.Lock()
         self._cached_devices: Optional[List[Dict[str, Any]]] = None
         self._cached_devices_time: float = 0.0
+
+    def set_recorder(self, recorder: Any):
+        with self._lock:
+            self.recorder = recorder
+            for worker in self._cameras.values():
+                worker.recorder = recorder
 
     def list_available_devices(self, max_indices: int = 6) -> List[Dict[str, Any]]:
         """
@@ -400,6 +416,7 @@ class CameraManager:
                 source=parsed_src,
                 name=name,
                 model_variant=model_variant,
+                recorder=self.recorder,
             )
             self._cameras[cam_id] = worker
             worker.start()

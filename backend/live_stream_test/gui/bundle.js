@@ -1,5 +1,5 @@
 (() => {
-  // ../backend/live_stream_test/gui/lib/three.core.js
+  // lib/three.core.js
   var REVISION = "186";
   var MOUSE = { LEFT: 0, MIDDLE: 1, RIGHT: 2, ROTATE: 0, DOLLY: 1, PAN: 2 };
   var TOUCH = { ROTATE: 0, PAN: 1, DOLLY_PAN: 2, DOLLY_ROTATE: 3 };
@@ -16602,6 +16602,7 @@
   function getByteLength(width, height, format, type) {
     const typeByteLength = getTextureTypeByteLength(type);
     switch (format) {
+      // https://registry.khronos.org/OpenGL-Refpages/es3.0/html/glTexImage2D.xhtml
       case AlphaFormat:
         return width * height;
       case RedFormat:
@@ -16618,18 +16619,21 @@
         return width * height * 4 / typeByteLength.components * typeByteLength.byteLength;
       case RGBAIntegerFormat:
         return width * height * 4 / typeByteLength.components * typeByteLength.byteLength;
+      // https://registry.khronos.org/webgl/extensions/WEBGL_compressed_texture_s3tc_srgb/
       case RGB_S3TC_DXT1_Format:
       case RGBA_S3TC_DXT1_Format:
         return Math.floor((width + 3) / 4) * Math.floor((height + 3) / 4) * 8;
       case RGBA_S3TC_DXT3_Format:
       case RGBA_S3TC_DXT5_Format:
         return Math.floor((width + 3) / 4) * Math.floor((height + 3) / 4) * 16;
+      // https://registry.khronos.org/webgl/extensions/WEBGL_compressed_texture_pvrtc/
       case RGB_PVRTC_2BPPV1_Format:
       case RGBA_PVRTC_2BPPV1_Format:
         return Math.max(width, 16) * Math.max(height, 8) / 4;
       case RGB_PVRTC_4BPPV1_Format:
       case RGBA_PVRTC_4BPPV1_Format:
         return Math.max(width, 8) * Math.max(height, 8) / 2;
+      // https://registry.khronos.org/webgl/extensions/WEBGL_compressed_texture_etc/
       case RGB_ETC1_Format:
       case RGB_ETC2_Format:
       case R11_EAC_Format:
@@ -16639,6 +16643,7 @@
       case RG11_EAC_Format:
       case SIGNED_RG11_EAC_Format:
         return Math.floor((width + 3) / 4) * Math.floor((height + 3) / 4) * 16;
+      // https://registry.khronos.org/webgl/extensions/WEBGL_compressed_texture_astc/
       case RGBA_ASTC_4x4_Format:
         return Math.floor((width + 3) / 4) * Math.floor((height + 3) / 4) * 16;
       case RGBA_ASTC_5x4_Format:
@@ -16667,10 +16672,12 @@
         return Math.floor((width + 11) / 12) * Math.floor((height + 9) / 10) * 16;
       case RGBA_ASTC_12x12_Format:
         return Math.floor((width + 11) / 12) * Math.floor((height + 11) / 12) * 16;
+      // https://registry.khronos.org/webgl/extensions/EXT_texture_compression_bptc/
       case RGBA_BPTC_Format:
       case RGB_BPTC_SIGNED_Format:
       case RGB_BPTC_UNSIGNED_Format:
         return Math.ceil(width / 4) * Math.ceil(height / 4) * 16;
+      // https://registry.khronos.org/webgl/extensions/EXT_texture_compression_rgtc/
       case RED_RGTC1_Format:
       case SIGNED_RED_RGTC1_Format:
         return Math.ceil(width / 4) * Math.ceil(height / 4) * 8;
@@ -16717,7 +16724,7 @@
     }
   }
 
-  // ../backend/live_stream_test/gui/lib/three.module.js
+  // lib/three.module.js
   function WebGLAnimation() {
     let context = null;
     let isAnimating = false;
@@ -20142,56 +20149,83 @@
     switch (type) {
       case 5126:
         return setValueV1f;
+      // FLOAT
       case 35664:
         return setValueV2f;
+      // _VEC2
       case 35665:
         return setValueV3f;
+      // _VEC3
       case 35666:
         return setValueV4f;
+      // _VEC4
       case 35674:
         return setValueM2;
+      // _MAT2
       case 35675:
         return setValueM3;
+      // _MAT3
       case 35676:
         return setValueM4;
+      // _MAT4
       case 5124:
       case 35670:
         return setValueV1i;
+      // INT, BOOL
       case 35667:
       case 35671:
         return setValueV2i;
+      // _VEC2
       case 35668:
       case 35672:
         return setValueV3i;
+      // _VEC3
       case 35669:
       case 35673:
         return setValueV4i;
+      // _VEC4
       case 5125:
         return setValueV1ui;
+      // UINT
       case 36294:
         return setValueV2ui;
+      // _VEC2
       case 36295:
         return setValueV3ui;
+      // _VEC3
       case 36296:
         return setValueV4ui;
+      // _VEC4
       case 35678:
+      // SAMPLER_2D
       case 36198:
+      // SAMPLER_EXTERNAL_OES
       case 36298:
+      // INT_SAMPLER_2D
       case 36306:
+      // UNSIGNED_INT_SAMPLER_2D
       case 35682:
         return setValueT1;
       case 35679:
+      // SAMPLER_3D
       case 36299:
+      // INT_SAMPLER_3D
       case 36307:
         return setValueT3D1;
       case 35680:
+      // SAMPLER_CUBE
       case 36300:
+      // INT_SAMPLER_CUBE
       case 36308:
+      // UNSIGNED_INT_SAMPLER_CUBE
       case 36293:
         return setValueT6;
       case 36289:
+      // SAMPLER_2D_ARRAY
       case 36303:
+      // INT_SAMPLER_2D_ARRAY
       case 36311:
+      // UNSIGNED_INT_SAMPLER_2D_ARRAY
       case 36292:
         return setValueT2DArray1;
     }
@@ -20305,56 +20339,83 @@
     switch (type) {
       case 5126:
         return setValueV1fArray;
+      // FLOAT
       case 35664:
         return setValueV2fArray;
+      // _VEC2
       case 35665:
         return setValueV3fArray;
+      // _VEC3
       case 35666:
         return setValueV4fArray;
+      // _VEC4
       case 35674:
         return setValueM2Array;
+      // _MAT2
       case 35675:
         return setValueM3Array;
+      // _MAT3
       case 35676:
         return setValueM4Array;
+      // _MAT4
       case 5124:
       case 35670:
         return setValueV1iArray;
+      // INT, BOOL
       case 35667:
       case 35671:
         return setValueV2iArray;
+      // _VEC2
       case 35668:
       case 35672:
         return setValueV3iArray;
+      // _VEC3
       case 35669:
       case 35673:
         return setValueV4iArray;
+      // _VEC4
       case 5125:
         return setValueV1uiArray;
+      // UINT
       case 36294:
         return setValueV2uiArray;
+      // _VEC2
       case 36295:
         return setValueV3uiArray;
+      // _VEC3
       case 36296:
         return setValueV4uiArray;
+      // _VEC4
       case 35678:
+      // SAMPLER_2D
       case 36198:
+      // SAMPLER_EXTERNAL_OES
       case 36298:
+      // INT_SAMPLER_2D
       case 36306:
+      // UNSIGNED_INT_SAMPLER_2D
       case 35682:
         return setValueT1Array;
       case 35679:
+      // SAMPLER_3D
       case 36299:
+      // INT_SAMPLER_3D
       case 36307:
         return setValueT3DArray;
       case 35680:
+      // SAMPLER_CUBE
       case 36300:
+      // INT_SAMPLER_CUBE
       case 36308:
+      // UNSIGNED_INT_SAMPLER_CUBE
       case 36293:
         return setValueT6Array;
       case 36289:
+      // SAMPLER_2D_ARRAY
       case 36303:
+      // INT_SAMPLER_2D_ARRAY
       case 36311:
+      // UNSIGNED_INT_SAMPLER_2D_ARRAY
       case 36292:
         return setValueT2DArrayArray;
     }
@@ -28161,7 +28222,7 @@ void main() {
     }
   };
 
-  // ../backend/live_stream_test/gui/lib/OrbitControls.js
+  // lib/OrbitControls.js
   var _changeEvent = { type: "change" };
   var _startEvent = { type: "start" };
   var _endEvent = { type: "end" };
@@ -29077,7 +29138,7 @@ void main() {
     }
   }
 
-  // ../backend/live_stream_test/gui/renderer.js
+  // renderer.js
   var WS_PORT = 8e3;
   var WS_URL = `ws://127.0.0.1:${WS_PORT}/ws`;
   var socket = null;
@@ -29147,6 +29208,27 @@ void main() {
   var btnSettings = document.getElementById("btn-settings");
   var btnToggleAllOverlays = document.getElementById("btn-toggle-all-overlays");
   var btnRescanCameras = document.getElementById("btn-rescan-cameras");
+  var btnRecord = document.getElementById("btn-record");
+  var btnRecordText = document.getElementById("btn-record-text");
+  var recordingPill = document.getElementById("recording-pill");
+  var recTimer = document.getElementById("rec-timer");
+  var recFrames = document.getElementById("rec-frames");
+  var btnTakes = document.getElementById("btn-takes");
+  var modalTakes = document.getElementById("modal-takes");
+  var modalCloseTakes = document.getElementById("modal-close-takes");
+  var btnCloseTakes = document.getElementById("btn-close-takes");
+  var takesListContainer = document.getElementById("takes-list-container");
+  var btnOpenRecordingsFolder = document.getElementById("btn-open-recordings-folder");
+  var modalProcessingResult = document.getElementById("modal-processing-result");
+  var modalCloseProc = document.getElementById("modal-close-proc");
+  var btnCloseProc = document.getElementById("btn-close-proc");
+  var procModalTitle = document.getElementById("proc-modal-title");
+  var procModalBody = document.getElementById("proc-modal-body");
+  var settingHeight = document.getElementById("setting-height");
+  var settingSmoother = document.getElementById("setting-smoother");
+  var settingAutoProcess = document.getElementById("setting-auto-process");
+  var isRecording = false;
+  var currentTakeId = null;
   var btnViewFront = document.getElementById("btn-view-front");
   var btnViewSide = document.getElementById("btn-view-side");
   var btnViewTop = document.getElementById("btn-view-top");
@@ -29493,6 +29575,7 @@ void main() {
       case "devices":
         if (msg.devices) syncVerifiedDevices(msg.devices, true);
         break;
+        break;
       case "stream_update":
         handleStreamUpdate(msg);
         break;
@@ -29513,6 +29596,28 @@ void main() {
           calStatusMsg.style.color = "var(--accent-rose)";
         }
         break;
+      case "recording_started":
+        setRecordingState(true, msg.take_id);
+        showToast(`Recording started: ${msg.take_id}`, "info");
+        break;
+      case "recording_stopped":
+        setRecordingState(false, null);
+        showToast(`Recording saved! Duration: ${msg.duration_s || 0}s`, "success");
+        break;
+      case "processing_started":
+        showProcessingModal(msg.take_id);
+        break;
+      case "processing_completed":
+        showProcessingSuccessModal(msg);
+        showToast("BVH exported successfully!", "success");
+        break;
+      case "processing_error":
+        showProcessingErrorModal(msg);
+        showToast(`Processing error: ${msg.error || "Failed"}`, "error");
+        break;
+      case "recording_error":
+        showToast(msg.error || "Recording error", "error");
+        break;
     }
   }
   function handleStreamUpdate(msg) {
@@ -29522,6 +29627,21 @@ void main() {
       globalFpsLabel.textContent = Math.round(frameCounter * 1e3 / (now - lastFpsTime));
       frameCounter = 0;
       lastFpsTime = now;
+    }
+    if (msg.recording) {
+      const rec = msg.recording;
+      if (rec.is_recording !== isRecording) {
+        setRecordingState(rec.is_recording, rec.take_id);
+      }
+      if (rec.is_recording) {
+        const dur = rec.duration_s || 0;
+        recTimer.textContent = formatDuration(dur);
+        let totalF = 0;
+        if (rec.frame_counts) {
+          totalF = Object.values(rec.frame_counts).reduce((a, b) => a + b, 0);
+        }
+        recFrames.textContent = `${totalF} frames`;
+      }
     }
     const cameras = msg.cameras || {};
     const activeIds = new Set(Object.keys(cameras));
@@ -29746,7 +29866,7 @@ void main() {
       if (manualPath) calPathInput.value = manualPath;
     }
   });
-  const btnBrowseVideo = document.getElementById("btn-browse-video");
+  var btnBrowseVideo = document.getElementById("btn-browse-video");
   if (btnBrowseVideo) {
     btnBrowseVideo.addEventListener("click", async () => {
       if (window.electronAPI?.selectVideoFile) {
@@ -29853,10 +29973,245 @@ void main() {
       setTimeout(() => toast.remove(), 300);
     }, 3500);
   }
-  if (btnRescanCameras) {
-    btnRescanCameras.addEventListener("click", () => {
-      openAddCameraModal();
-      scanHardwareCameras(true);
+  function formatDuration(sec) {
+    const s = Math.floor(sec || 0);
+    const m = Math.floor(s / 60);
+    const rem = s % 60;
+    return `${String(m).padStart(2, "0")}:${String(rem).padStart(2, "0")}`;
+  }
+  function setRecordingState(recording, takeId) {
+    isRecording = recording;
+    currentTakeId = takeId;
+    if (btnRecord && btnRecordText) {
+      if (isRecording) {
+        btnRecord.classList.add("recording-active");
+        btnRecordText.textContent = "Stop & Export BVH";
+      } else {
+        btnRecord.classList.remove("recording-active");
+        btnRecordText.textContent = "Record Footage";
+      }
+    }
+    if (recordingPill) {
+      recordingPill.style.display = isRecording ? "flex" : "none";
+    }
+  }
+  function toggleRecording() {
+    if (!isRecording) {
+      if (cameraCards.size === 0) {
+        showToast("Please add at least one camera stream first", "error");
+        openAddCameraModal();
+        return;
+      }
+      sendWSCommand("start_recording");
+      setRecordingState(true, null);
+    } else {
+      const autoProc = settingAutoProcess ? settingAutoProcess.checked : true;
+      const height = parseFloat(settingHeight?.value || 1.75);
+      const smoother = settingSmoother?.value || "savgol";
+      sendWSCommand("stop_recording", {
+        auto_process: autoProc,
+        performer_height_m: height,
+        smoother
+      });
+      setRecordingState(false, null);
+    }
+  }
+  if (btnRecord) {
+    btnRecord.addEventListener("click", toggleRecording);
+  }
+  function showProcessingModal(takeId) {
+    if (!modalProcessingResult || !procModalBody) return;
+    procModalTitle.textContent = "Processing Mocap Footage...";
+    procModalBody.innerHTML = `
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 10px; gap: 16px;">
+      <div class="loading-spinner" style="font-size: 16px; color: var(--accent-cyan);">
+        Running Mocap Pipeline on ${takeId || "take"}...
+      </div>
+      <p style="color: var(--text-secondary); font-size: 13px; text-align: center; max-width: 80%;">
+        Synchronizing video streams, computing 3D skeleton rotations, fitting bone lengths, and generating BVH animation...
+      </p>
+    </div>
+  `;
+    modalProcessingResult.hidden = false;
+  }
+  function showProcessingSuccessModal(msg) {
+    if (!modalProcessingResult || !procModalBody) return;
+    procModalTitle.textContent = "BVH Export Complete!";
+    const bvhName = msg.bvh_path ? msg.bvh_path.split(/[/\\]/).pop() : "out3d.bvh";
+    const sizeKb = msg.file_size_bytes ? Math.round(msg.file_size_bytes / 1024) : 0;
+    const takeFolder = msg.bvh_path ? msg.bvh_path.replace(/[/\\][^/\\]+$/, "") : "";
+    procModalBody.innerHTML = `
+    <div class="proc-card">
+      <div class="proc-success-banner">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        <span>Mocap Pipeline Export Successful!</span>
+      </div>
+      <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 12px;">
+        Your live footage has been fully reconstructed into a standard H36M hierarchical BVH skeleton motion file.
+      </p>
+      <div class="proc-detail-row">
+        <span style="color: var(--text-muted);">Take ID</span>
+        <strong style="color: var(--accent-cyan); font-family: var(--font-mono);">${msg.take_id || "take"}</strong>
+      </div>
+      <div class="proc-detail-row">
+        <span style="color: var(--text-muted);">BVH Output</span>
+        <strong style="font-family: var(--font-mono);">${bvhName} (${sizeKb} KB)</strong>
+      </div>
+      <div class="proc-detail-row">
+        <span style="color: var(--text-muted);">Pipeline Mode</span>
+        <span>${msg.method || "mocap_pipeline"}</span>
+      </div>
+      <div class="proc-detail-row">
+        <span style="color: var(--text-muted);">Location</span>
+        <span style="font-size: 11px; word-break: break-all; color: var(--text-secondary);">${msg.bvh_path || ""}</span>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 16px;">
+        <button id="btn-modal-open-bvh" class="btn btn-primary" style="flex: 1;">
+          Show in File Manager
+        </button>
+        <button id="btn-modal-open-folder" class="btn btn-secondary">
+          Open Folder
+        </button>
+      </div>
+    </div>
+  `;
+    modalProcessingResult.hidden = false;
+    const btnOpenBvh = document.getElementById("btn-modal-open-bvh");
+    if (btnOpenBvh) {
+      btnOpenBvh.addEventListener("click", () => {
+        if (window.electronAPI?.openItem && msg.bvh_path) {
+          window.electronAPI.openItem(msg.bvh_path);
+        } else {
+          alert(`BVH File saved to:
+${msg.bvh_path}`);
+        }
+      });
+    }
+    const btnOpenFld = document.getElementById("btn-modal-open-folder");
+    if (btnOpenFld) {
+      btnOpenFld.addEventListener("click", () => {
+        if (window.electronAPI?.openFolder && takeFolder) {
+          window.electronAPI.openFolder(takeFolder);
+        } else {
+          alert(`Folder:
+${takeFolder}`);
+        }
+      });
+    }
+  }
+  function showProcessingErrorModal(msg) {
+    if (!modalProcessingResult || !procModalBody) return;
+    procModalTitle.textContent = "Processing Error";
+    procModalBody.innerHTML = `
+    <div class="proc-card" style="border-left: 4px solid var(--accent-rose);">
+      <h4 style="color: var(--accent-rose); margin-bottom: 8px;">Failed to process mocap footage</h4>
+      <p style="color: var(--text-secondary); font-size: 13px; word-break: break-word;">
+        ${msg.error || "An error occurred during stage reconstruction."}
+      </p>
+    </div>
+  `;
+    modalProcessingResult.hidden = false;
+  }
+  if (modalCloseProc) modalCloseProc.addEventListener("click", () => modalProcessingResult.hidden = true);
+  if (btnCloseProc) btnCloseProc.addEventListener("click", () => modalProcessingResult.hidden = true);
+  async function loadTakesList() {
+    if (!takesListContainer) return;
+    takesListContainer.innerHTML = '<div class="loading-spinner">Loading recorded takes...</div>';
+    try {
+      const res = await fetch(`http://127.0.0.1:${WS_PORT}/api/recordings`);
+      const data = await res.json();
+      const takes = data.takes || [];
+      if (takes.length === 0) {
+        takesListContainer.innerHTML = `
+        <div style="text-align: center; padding: 30px; color: var(--text-muted); font-size: 13px;">
+          No recorded takes found yet. Click <strong>Record Footage</strong> in the top navigation to record your first live take!
+        </div>
+      `;
+        return;
+      }
+      takesListContainer.innerHTML = takes.map((t) => {
+        const dur = t.info?.duration_s || 0;
+        const camCount = t.info?.cameras ? Object.keys(t.info.cameras).length : t.videos?.length || 0;
+        const bvhReady = t.has_bvh;
+        const bvhSizeKb = Math.round((t.bvh_size || 0) / 1024);
+        const dateStr = t.created_at ? new Date(t.created_at * 1e3).toLocaleString() : "";
+        return `
+        <div class="take-card" data-take="${t.take_id}" data-path="${t.path}">
+          <div class="take-info-col">
+            <div class="take-title-row">
+              <span class="take-name">${t.take_id}</span>
+              ${bvhReady ? `<span class="badge" style="background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald);">BVH Ready (${bvhSizeKb} KB)</span>` : `<span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">Raw Footage</span>`}
+            </div>
+            <div class="take-meta-row">
+              <span>Date: ${dateStr}</span>
+              <span>Cameras: ${camCount}</span>
+              <span>Duration: ${dur}s</span>
+              <span>Videos: ${(t.videos || []).join(", ")}</span>
+            </div>
+          </div>
+          <div class="take-actions">
+            ${bvhReady ? `<button class="btn btn-sm btn-primary" onclick="window.openTakeItem('${t.path}/out3d.bvh')">Show BVH</button>` : `<button class="btn btn-sm btn-primary" onclick="window.triggerProcessTake('${t.take_id}')">Process to BVH</button>`}
+            <button class="btn btn-sm btn-secondary" onclick="window.openTakeFolder('${t.path}')">Open Folder</button>
+            ${bvhReady ? `<button class="btn btn-sm btn-ghost" onclick="window.triggerProcessTake('${t.take_id}')" title="Re-process with pipeline">Re-process</button>` : ""}
+          </div>
+        </div>
+      `;
+      }).join("");
+    } catch (e) {
+      takesListContainer.innerHTML = `<div style="color: var(--accent-rose); padding: 12px;">Failed to load recordings: ${e.message}</div>`;
+    }
+  }
+  window.openTakeItem = function(itemPath) {
+    if (window.electronAPI?.openItem) {
+      window.electronAPI.openItem(itemPath);
+    } else {
+      alert(`File:
+${itemPath}`);
+    }
+  };
+  window.openTakeFolder = function(folderPath) {
+    if (window.electronAPI?.openFolder) {
+      window.electronAPI.openFolder(folderPath);
+    } else {
+      alert(`Folder:
+${folderPath}`);
+    }
+  };
+  window.triggerProcessTake = function(takeId) {
+    modalTakes.hidden = true;
+    showProcessingModal(takeId);
+    const height = parseFloat(settingHeight?.value || 1.75);
+    const smoother = settingSmoother?.value || "savgol";
+    sendWSCommand("process_take", {
+      take_id: takeId,
+      performer_height_m: height,
+      smoother
+    });
+  };
+  if (btnTakes) {
+    btnTakes.addEventListener("click", () => {
+      modalTakes.hidden = false;
+      loadTakesList();
+    });
+  }
+  if (modalCloseTakes) modalCloseTakes.addEventListener("click", () => modalTakes.hidden = true);
+  if (btnCloseTakes) btnCloseTakes.addEventListener("click", () => modalTakes.hidden = true);
+  if (btnOpenRecordingsFolder) {
+    btnOpenRecordingsFolder.addEventListener("click", async () => {
+      try {
+        const res = await fetch(`http://127.0.0.1:${WS_PORT}/api/recording/status`);
+        const status = await res.json();
+        const folder = status.take_dir ? status.take_dir.replace(/[/\\][^/\\]+$/, "") : "";
+        if (window.electronAPI?.openFolder && folder) {
+          window.electronAPI.openFolder(folder);
+        } else {
+          alert("Recordings are located in backend/output/live_recordings");
+        }
+      } catch (_) {
+        alert("Recordings are located in backend/output/live_recordings");
+      }
     });
   }
   connectWebSocket();

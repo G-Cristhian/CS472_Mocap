@@ -4,7 +4,7 @@
   "description": "Multi-camera live streaming motion capture studio with MediaPipe and 3D preview",
   "main": "main.js",
   "scripts": {
-    "build": "esbuild renderer.js --bundle --outfile=bundle.js --format=iife",
+    "build": "npx esbuild renderer.js --bundle --outfile=bundle.js --format=iife",
     "start": "electron .",
     "live": "electron ."
   },
