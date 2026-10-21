@@ -12,10 +12,7 @@ Conventions used everywhere:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import numpy as np
+import numpy as np
 
 
 @dataclass
@@ -26,9 +23,9 @@ class Keypoints2D:
     width: int                # pixels
     height: int               # pixels
     fps: float                # nominal frame rate reported by the video
-    timestamps: "np.ndarray"  # (F,)   seconds from the start of THIS video
-    points: "np.ndarray"      # (F, J, 2) pixel x, y
-    confidence: "np.ndarray"  # (F, J) 0..1, MediaPipe visibility score
+    timestamps: np.ndarray    # (F,)   seconds from the start of THIS video
+    points: np.ndarray        # (F, J, 2) pixel x, y
+    confidence: np.ndarray    # (F, J) 0..1, MediaPipe visibility score
 
 
 @dataclass
@@ -37,16 +34,16 @@ class SyncResult:
     # camera_id -> seconds into that video at which the clap happens.
     clap_time_s: dict[str, float]
     # Shared timeline, t = 0 at the clap, sampled at config.TARGET_FPS.
-    common_timestamps: "np.ndarray"   # (F_common,)
+    common_timestamps: np.ndarray   # (F_common,)
 
 
 @dataclass
 class Camera:
     """One calibrated camera (pinhole model, no lens distortion)."""
     camera_id: str
-    K: "np.ndarray"   # (3, 3) intrinsics: focal lengths and principal point
-    R: "np.ndarray"   # (3, 3) world -> camera rotation
-    t: "np.ndarray"   # (3,)   world -> camera translation
+    K: np.ndarray   # (3, 3) intrinsics: focal lengths and principal point
+    R: np.ndarray   # (3, 3) world -> camera rotation
+    t: np.ndarray   # (3,)   world -> camera translation
 
 
 @dataclass
@@ -64,6 +61,6 @@ class CameraRig:
 class Pose3D:
     """Stage 2c output, stage 3 input."""
     fps: float
-    points: "np.ndarray"        # (F, J, 3)
+    points: np.ndarray          # (F, J, 3)
     # (F, J) number of cameras that contributed to each joint; 0 = gap.
-    num_views: "np.ndarray"
+    num_views: np.ndarray
