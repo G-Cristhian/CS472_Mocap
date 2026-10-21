@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useSettings, type TextSize } from '@/app/SettingsProvider'
-import { Toast } from '@/components/ui/Modal'
 import {
   AccessibilityIcon,
   CalibrateIcon,
@@ -31,7 +30,6 @@ const TEXT_SIZES: { id: TextSize; label: string }[] = [
 export function SettingsPage() {
   const { section } = useParams()
   const { settings, update, save, reset } = useSettings()
-  const [toast, setToast] = useState<string | null>(null)
   const active: SectionId = SECTIONS.some((s) => s.id === section)
     ? (section as SectionId)
     : 'accessibility'
@@ -252,10 +250,10 @@ export function SettingsPage() {
                     <span className={`badge badge--${d.status === 'Connected' ? 'suit' : 'review'}`}>
                       {d.status}
                     </span>
-                    <button className="btn btn--sm btn--ghost" onClick={() => setToast(`${d.name} renamed`)}>
+                    <button className="btn btn--sm btn--ghost">
                       Rename
                     </button>
-                    <button className="btn btn--sm btn--danger" onClick={() => setToast(`${d.name} forgotten`)}>
+                    <button className="btn btn--sm btn--danger">
                       Forget
                     </button>
                   </div>
@@ -308,7 +306,6 @@ export function SettingsPage() {
                   <button
                     className="btn btn--primary"
                     style={{ marginTop: 18 }}
-                    onClick={() => setToast('Recalibration started — hold the T-pose')}
                   >
                     Recalibrate now
                   </button>
@@ -332,7 +329,7 @@ export function SettingsPage() {
                       <code>mcp_live_••••••••••4f2a</code>
                     </div>
                     <span className="spacer" />
-                    <button className="btn btn--sm btn--ghost" onClick={() => setToast('Key copied')}>
+                    <button className="btn btn--sm btn--ghost">
                       Copy
                     </button>
                   </div>
@@ -342,7 +339,7 @@ export function SettingsPage() {
                       <code>mcp_read_••••••••••91c7</code>
                     </div>
                     <span className="spacer" />
-                    <button className="btn btn--sm btn--ghost" onClick={() => setToast('Key rotated')}>
+                    <button className="btn btn--sm btn--ghost">
                       Rotate
                     </button>
                   </div>
@@ -392,7 +389,6 @@ export function SettingsPage() {
               className="btn btn--ghost"
               onClick={() => {
                 reset()
-                setToast('Settings reset to defaults')
               }}
             >
               Reset to defaults
@@ -401,7 +397,6 @@ export function SettingsPage() {
               className="btn btn--primary"
               onClick={() => {
                 save()
-                setToast('Settings saved')
               }}
             >
               Save changes
@@ -410,7 +405,6 @@ export function SettingsPage() {
         </section>
       </div>
 
-      {toast && <Toast message={toast} onClose={() => setToast(null)} />}
     </div>
   )
 }

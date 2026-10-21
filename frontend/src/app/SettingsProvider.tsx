@@ -2,7 +2,6 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 
 export type TextSize = 'small' | 'default' | 'large' | 'xlarge'
 export type Animation = 'full' | 'reduced' | 'none'
-export type HomeVariant = 'a' | 'b' | 'c'
 
 export interface AppSettings {
   animation: Animation
@@ -15,7 +14,6 @@ export interface AppSettings {
   wordSpacing: number
   lineHeight: number
   underlineLinks: boolean
-  homeVariant: HomeVariant
 }
 
 export const defaultSettings: AppSettings = {
@@ -29,7 +27,6 @@ export const defaultSettings: AppSettings = {
   wordSpacing: 0.05,
   lineHeight: 1.6,
   underlineLinks: false,
-  homeVariant: 'a',
 }
 
 const FONT_SCALE: Record<TextSize, number> = {

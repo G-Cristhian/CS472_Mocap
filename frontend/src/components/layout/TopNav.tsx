@@ -1,27 +1,28 @@
 import { useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
-import { GearIcon, HelpIcon, LogoMark, SearchIcon } from '@/components/ui/Icons'
-import { currentUser } from '@/lib/data'
+import { GearIcon, HelpIcon, LogoMark } from '@/components/ui/Icons'
+import { useAuth } from '@/app/AuthProvider'
 import './TopNav.css'
 
 const LINKS = [
-  { to: '/', label: 'Home', end: true },
-  { to: '/record', label: 'Record' },
-  { to: '/footage', label: 'Footage' },
   { to: '/projects', label: 'Projects' },
-  { to: '/library', label: 'Motion Library' },
+  { to: '/motions', label: 'Motions' },
+  { to: '/recordings', label: 'Recordings' },
+  { to: '/streaming', label: 'Streaming' },
 ]
 
 export function TopNav() {
   const navigate = useNavigate()
-  const [query, setQuery] = useState('')
   const [menu, setMenu] = useState<'help' | 'account' | null>(null)
+  const { user, loading, logout } = useAuth()
+  const displayName = user ? [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email : ''
+  const initial = (user?.first_name || user?.email || '?').charAt(0).toUpperCase()
 
   return (
     <header className="topnav">
       <Link to="/" className="topnav__brand">
-        <LogoMark />
-        <span>[APP NAME]</span>
+        <LogoMark size={50} />
+        <span>MotionBoxPro</span>
       </Link>
 
       <nav className="topnav__links" aria-label="Main">
@@ -36,24 +37,6 @@ export function TopNav() {
           </NavLink>
         ))}
       </nav>
-
-      <form
-        className="topnav__search search"
-        role="search"
-        onSubmit={(e) => {
-          e.preventDefault()
-          navigate(`/library?q=${encodeURIComponent(query)}`)
-        }}
-      >
-        <SearchIcon />
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search projects and clips"
-          aria-label="Search projects and clips"
-        />
-      </form>
 
       <div className="topnav__actions">
         <button
@@ -72,13 +55,20 @@ export function TopNav() {
         >
           <GearIcon />
         </NavLink>
-        <button
-          className="avatar"
-          aria-label={`Account — ${currentUser.name}`}
-          onClick={() => setMenu(menu === 'account' ? null : 'account')}
-        >
-          {currentUser.initial}
-        </button>
+        {!loading &&
+          (user ? (
+            <button
+              className="avatar"
+              aria-label={`Account — ${displayName}`}
+              onClick={() => setMenu(menu === 'account' ? null : 'account')}
+            >
+              {initial}
+            </button>
+          ) : (
+            <Link className="btn btn--ghost btn--sm" to="/login">
+              Log in
+            </Link>
+          ))}
       </div>
 
       {menu === 'help' && (
@@ -91,25 +81,28 @@ export function TopNav() {
             <dd>Play or pause the viewport</dd>
             <dt>C</dt>
             <dd>Recalibrate the suit</dd>
-            <dt>/</dt>
-            <dd>Jump to search</dd>
           </dl>
         </div>
       )}
 
-      {menu === 'account' && (
+      {menu === 'account' && user && (
         <div className="topnav__menu" role="dialog" aria-label="Account">
-          <h4>{currentUser.name}</h4>
-          <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: 12 }}>
-            Wearing {currentUser.suit} · calibrated
-          </p>
+          <h4>{displayName}</h4>
+          <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: 12 }}>{user.email}</p>
           <Link className="menu-item" to="/settings" onClick={() => setMenu(null)}>
             Settings
           </Link>
-          <Link className="menu-item" to="/library" onClick={() => setMenu(null)}>
-            My clips
+          <Link className="menu-item" to="/recordings" onClick={() => setMenu(null)}>
+            My recordings
           </Link>
-          <button className="menu-item" onClick={() => setMenu(null)}>
+          <button
+            className="menu-item"
+            onClick={async () => {
+              setMenu(null)
+              await logout()
+              navigate('/')
+            }}
+          >
             Sign out
           </button>
         </div>

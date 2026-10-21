@@ -1,87 +1,46 @@
-import type { Camera, Clip, Project, RigPart } from '@/types'
+import type { Camera, Motion, Project, Recording, RigPart } from '@/types'
 
-export const currentUser = { name: 'Noah', initial: 'N', suit: 'Suit A' }
+// Mock calibration suit for the prototype screens. The person's name comes from their account.
+export const currentUser = { suit: 'Suit A' }
 
 export const projects: Project[] = [
-  {
-    id: 'sprint-cycle',
-    name: 'Sprint Cycle',
-    sport: 'Track & Field',
-    clips: 6,
-    updated: '2 hours ago',
-    updatedBy: 'you',
-    source: 'ai',
-    accent: 'purple',
-    pose: 'stand',
-  },
-  {
-    id: 'quarterback-reads',
-    name: 'Quarterback Reads',
-    sport: 'Football',
-    clips: 12,
-    updated: 'Yesterday',
-    updatedBy: 'Ada R.',
-    source: 'suit',
-    accent: 'blue',
-    pose: 'walk',
-  },
-  {
-    id: 'fencing-lunges',
-    name: 'Fencing Lunges',
-    sport: 'Sport',
-    clips: 4,
-    updated: '3 days ago',
-    updatedBy: 'you',
-    source: 'ai',
-    accent: 'pink',
-    pose: 'lunge',
-  },
-  {
-    id: 'range-of-motion',
-    name: 'Range of Motion',
-    sport: 'Calibration',
-    clips: 2,
-    updated: '5 days ago',
-    updatedBy: 'you',
-    source: 'suit',
-    accent: 'orange',
-    pose: 'stand',
-  },
-  {
-    id: 'table-tennis-serve',
-    name: 'Table Tennis Serve',
-    sport: 'Sport',
-    clips: 9,
-    updated: '1 week ago',
-    updatedBy: 'Ada R.',
-    source: 'ai',
-    accent: 'amber',
-    pose: 'serve',
-  },
-  {
-    id: 'elevation-tracking',
-    name: 'Elevation Tracking',
-    sport: 'R&D',
-    clips: 3,
-    updated: '2 weeks ago',
-    updatedBy: 'you',
-    source: 'suit',
-    accent: 'purple',
-    pose: 'arms-up',
-  },
+  { id: 'mario', name: 'Mario', category: 'Animation and games', updated: '2 hours ago' },
+  { id: 'athlete-training', name: 'Athlete training', category: 'Athletics', updated: 'Yesterday' },
+  { id: 'football-season', name: 'Football season', category: 'American football', updated: '3 days ago' },
+  { id: 'fencing', name: 'Fencing', category: 'Fencing', updated: '5 days ago' },
+  { id: 'rehab-program', name: 'Rehab program', category: 'Rehabilitation', updated: '1 week ago' },
+  { id: 'biomechanics-study', name: 'Biomechanics study', category: 'Biomechanics research', updated: '2 weeks ago' },
 ]
 
-export const clips: Clip[] = [
-  { id: 'take-04', name: 'Take 04', projectId: 'sprint-cycle', projectName: 'Sprint Cycle', duration: '0:24', source: 'ai', accent: 'purple', pose: 'run' },
-  { id: 'take-03', name: 'Take 03', projectId: 'sprint-cycle', projectName: 'Sprint Cycle', duration: '0:31', source: 'suit', accent: 'blue', pose: 'walk' },
-  { id: 'pocket-drop', name: 'Pocket drop', projectId: 'quarterback-reads', projectName: 'Quarterback Reads', duration: '0:12', source: 'suit', accent: 'blue', pose: 'walk' },
-  { id: 'lunge-a', name: 'Lunge A', projectId: 'fencing-lunges', projectName: 'Fencing Lunges', duration: '0:08', source: 'ai', accent: 'pink', pose: 'lunge' },
-  { id: 'lunge-b', name: 'Lunge B', projectId: 'fencing-lunges', projectName: 'Fencing Lunges', duration: '0:09', source: 'review', accent: 'amber', pose: 'lunge' },
-  { id: 'shoulder-sweep', name: 'Shoulder sweep', projectId: 'range-of-motion', projectName: 'Range of Motion', duration: '0:44', source: 'suit', accent: 'orange', pose: 'arms-up' },
-  { id: 'hip-rotation', name: 'Hip rotation', projectId: 'range-of-motion', projectName: 'Range of Motion', duration: '0:38', source: 'suit', accent: 'orange', pose: 'arms-up' },
-  { id: 'serve-flat', name: 'Serve — flat', projectId: 'table-tennis-serve', projectName: 'Table Tennis Serve', duration: '0:06', source: 'ai', accent: 'purple', pose: 'serve' },
-  { id: 'serve-topspin', name: 'Serve — topspin', projectId: 'table-tennis-serve', projectName: 'Table Tennis Serve', duration: '0:07', source: 'ai', accent: 'purple', pose: 'serve' },
-  { id: 'step-up-test', name: 'Step-up test', projectId: 'elevation-tracking', projectName: 'Elevation Tracking', duration: '0:19', source: 'review', accent: 'amber', pose: 'lunge' },
+export const motions: Motion[] = [
+  { id: 'mario-walking', name: 'Mario walking', projects: [{ id: 'mario', name: 'Mario' }], duration: '0:12', source: 'ai', accent: 'purple', pose: 'walk' },
+  { id: 'mario-jumping', name: 'Mario jumping', projects: [{ id: 'mario', name: 'Mario' }], duration: '0:08', source: 'ai', accent: 'amber', pose: 'arms-up' },
+  { id: 'sprint-cycle', name: 'Sprint Cycle', projects: [{ id: 'athlete-training', name: 'Athlete training' }], duration: '0:24', source: 'ai', accent: 'purple', pose: 'run' },
+  { id: 'table-tennis-serve', name: 'Table Tennis Serve', projects: [{ id: 'athlete-training', name: 'Athlete training' }], duration: '0:06', source: 'ai', accent: 'purple', pose: 'serve' },
+  { id: 'quarterback-reads', name: 'Quarterback Reads', projects: [{ id: 'football-season', name: 'Football season' }], duration: '0:12', source: 'suit', accent: 'blue', pose: 'walk' },
+  { id: 'fencing-lunges', name: 'Fencing Lunges', projects: [{ id: 'fencing', name: 'Fencing' }], duration: '0:08', source: 'ai', accent: 'pink', pose: 'lunge' },
+  { id: 'range-of-motion', name: 'Range of Motion', projects: [{ id: 'rehab-program', name: 'Rehab program' }], duration: '0:44', source: 'suit', accent: 'orange', pose: 'arms-up' },
+  { id: 'elevation-tracking', name: 'Elevation Tracking', projects: [{ id: 'biomechanics-study', name: 'Biomechanics study' }], duration: '0:19', source: 'review', accent: 'amber', pose: 'lunge' },
+]
+
+export const recordings: Recording[] = [
+  { id: 'mario-walking-cam1', name: 'Camera 1', motionId: 'mario-walking', duration: '0:12', camera: 'CAM 1', origin: 'upload' },
+  { id: 'mario-walking-cam2', name: 'Camera 2', motionId: 'mario-walking', duration: '0:12', camera: 'CAM 2', origin: 'upload' },
+  { id: 'mario-jumping-cam1', name: 'Camera 1', motionId: 'mario-jumping', duration: '0:08', camera: 'CAM 1', origin: 'upload' },
+  { id: 'mario-jumping-cam2', name: 'Camera 2', motionId: 'mario-jumping', duration: '0:08', camera: 'CAM 2', origin: 'upload' },
+  { id: 'sprint-cycle-cam1', name: 'Camera 1', motionId: 'sprint-cycle', duration: '0:24', camera: 'CAM 1', origin: 'stream' },
+  { id: 'sprint-cycle-cam2', name: 'Camera 2', motionId: 'sprint-cycle', duration: '0:24', camera: 'CAM 2', origin: 'stream' },
+  { id: 'serve-cam1', name: 'Camera 1', motionId: 'table-tennis-serve', duration: '0:06', camera: 'CAM 1', origin: 'upload' },
+  { id: 'serve-cam2', name: 'Camera 2', motionId: 'table-tennis-serve', duration: '0:06', camera: 'CAM 2', origin: 'upload' },
+  { id: 'pocket-drop-cam1', name: 'Camera 1', motionId: 'quarterback-reads', duration: '0:12', camera: 'CAM 1', origin: 'upload' },
+  { id: 'pocket-drop-cam2', name: 'Camera 2', motionId: 'quarterback-reads', duration: '0:12', camera: 'CAM 2', origin: 'upload' },
+  { id: 'lunge-cam1', name: 'Camera 1', motionId: 'fencing-lunges', duration: '0:08', camera: 'CAM 1', origin: 'upload' },
+  { id: 'lunge-cam2', name: 'Camera 2', motionId: 'fencing-lunges', duration: '0:08', camera: 'CAM 2', origin: 'upload' },
+  { id: 'shoulder-cam1', name: 'Camera 1', motionId: 'range-of-motion', duration: '0:44', camera: 'CAM 1', origin: 'upload' },
+  { id: 'shoulder-cam2', name: 'Camera 2', motionId: 'range-of-motion', duration: '0:44', camera: 'CAM 2', origin: 'upload' },
+  { id: 'step-up-cam1', name: 'Camera 1', motionId: 'elevation-tracking', duration: '0:19', camera: 'CAM 1', origin: 'upload' },
+  { id: 'step-up-cam2', name: 'Camera 2', motionId: 'elevation-tracking', duration: '0:19', camera: 'CAM 2', origin: 'upload' },
+  { id: 'upload-01', name: 'Upload 01', motionId: null, duration: '0:31', camera: 'Upload', origin: 'upload' },
 ]
 
 export const cameras: Camera[] = [
@@ -126,6 +85,10 @@ export function projectById(id: string | undefined) {
   return projects.find((p) => p.id === id)
 }
 
-export function clipsForProject(id: string | undefined) {
-  return clips.filter((c) => c.projectId === id)
+export function motionsForProject(projectId: string | undefined) {
+  return motions.filter((m) => m.projects.some((p) => p.id === projectId))
+}
+
+export function recordingsForMotion(motionId: string | undefined) {
+  return recordings.filter((r) => r.motionId === motionId)
 }

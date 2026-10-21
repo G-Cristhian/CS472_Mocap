@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useAuth } from '@/app/AuthProvider'
+import { displayName } from '@/lib/auth'
 import { StickFigure } from '@/components/ui/StickFigure'
-import { Toast } from '@/components/ui/Modal'
 import { AlertIcon, CloseIcon, InfoIcon, LayoutIcon } from '@/components/ui/Icons'
 import { cameras as seedCameras } from '@/lib/data'
 import type { Camera } from '@/types'
-import './record.css'
+import './streaming.css'
 
 type Layout = 'quad' | 'split' | 'single'
 
@@ -17,14 +18,14 @@ function formatElapsed(seconds: number) {
   return `${m}:${s}`
 }
 
-export function RecordPage() {
+export function StreamingPage() {
+  const { user: account } = useAuth()
   const [tab, setTab] = useState<'capture' | 'cameras'>('capture')
   const [cams, setCams] = useState<Camera[]>(seedCameras)
   const [layout, setLayout] = useState<Layout>('quad')
   const [alertOpen, setAlertOpen] = useState(true)
-  const [toast, setToast] = useState<'calibration' | 'saved' | null>('calibration')
 
-  const [performer, setPerformer] = useState('noah')
+  const [performer, setPerformer] = useState('self')
   const [model, setModel] = useState('balanced')
   const [smoothing, setSmoothing] = useState(1)
   const [hands, setHands] = useState(false)
@@ -71,7 +72,7 @@ export function RecordPage() {
                   value={performer}
                   onChange={(e) => setPerformer(e.target.value)}
                 >
-                  <option value="noah">Noah — Suit A</option>
+                  <option value="self">{account ? displayName(account) : 'You'} — Suit A</option>
                   <option value="ada">Ada R. — Suit B</option>
                   <option value="guest">Guest performer — no suit</option>
                 </select>
@@ -148,10 +149,8 @@ export function RecordPage() {
                   if (recording) {
                     setRecording(false)
                     setElapsed(0)
-                    setToast('saved')
                   } else {
                     setRecording(true)
-                    setToast(null)
                   }
                 }}
               >
@@ -269,23 +268,6 @@ export function RecordPage() {
           </div>
         )}
       </section>
-
-      {toast === 'calibration' && (
-        <Toast
-          message={<>Calibration saved to <b>Suit A</b></>}
-          actionLabel="Undo"
-          onAction={() => setToast(null)}
-          onClose={() => setToast(null)}
-        />
-      )}
-      {toast === 'saved' && (
-        <Toast
-          message="Take saved to the Motion Library"
-          actionLabel="View"
-          onAction={() => setToast(null)}
-          onClose={() => setToast(null)}
-        />
-      )}
     </div>
   )
 }

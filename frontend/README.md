@@ -80,8 +80,10 @@ src/
 ```
 
 Colours, radii and the accessibility variables all live in `src/styles/tokens.css` — change the
-brand there, not in the feature files. The app name in the nav is still the deck’s `[APP NAME]`
-placeholder (`src/components/layout/TopNav.tsx`).
+brand there, not in the feature files. The app name is MotionBoxPro. It appears in the nav
+(`src/components/layout/TopNav.tsx`), the auth pages, and the page title in `index.html`. The logo
+mark is `LogoMark` in `src/components/ui/Icons.tsx`. The same design is saved as `public/logo.svg`
+and `public/favicon.svg`.
 
 ## Not built yet
 

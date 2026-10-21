@@ -1,0 +1,65 @@
+/* the version link in the player: a dashed chip that opens the list of versions */
+.version {
+  position: relative;
+}
+.version__link {
+  padding: 8px 14px;
+  border: 1.5px dashed var(--muted-2);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.version__link:hover {
+  color: var(--ink);
+  border-color: var(--muted);
+}
+.version__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 5;
+  display: grid;
+  min-width: 240px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: 0 12px 30px -12px rgba(11, 11, 18, 0.45);
+}
+.version__menu button {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.version__menu button:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.version__menu button[aria-current='true'] {
+  font-weight: 700;
+}
+.version__menu .version__new {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 6px 6px;
+  color: var(--muted);
+}
+.version__note {
+  width: 260px;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.version__menu button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

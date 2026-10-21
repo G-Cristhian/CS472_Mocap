@@ -1,39 +1,40 @@
-.tint--purple { background: var(--purple-50); }
-.tint--blue { background: var(--blue-50); }
-.tint--pink { background: var(--pink-50); }
-.tint--orange { background: var(--orange-50); }
-.tint--amber { background: var(--amber-50); }
 
-.solid--purple { background: var(--purple); }
-.solid--blue { background: var(--blue); }
-.solid--pink { background: var(--pink); }
-.solid--orange { background: var(--orange); }
-.solid--amber { background: var(--amber); }
 
-.fg--purple { color: var(--purple); }
-.fg--blue { color: var(--blue); }
-.fg--pink { color: var(--pink); }
-.fg--orange { color: var(--orange); }
-.fg--amber { color: var(--amber); }
 
 /* ---- project card ---- */
+/* A folder: a tab on top and sheets stacked behind the card */
 .pcard {
+  position: relative;
   display: block;
+  margin-top: 10px;
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   padding: 14px;
   background: var(--surface);
   color: inherit;
-  transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+  box-shadow: 6px 6px 0 -1px var(--line), 12px 12px 0 -2px var(--line-soft);
+  transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+.pcard::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 14px;
+  width: 96px;
+  height: 14px;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: var(--accent, var(--line));
 }
 .pcard:hover {
   text-decoration: none;
-  box-shadow: var(--shadow-md);
   transform: translateY(-2px);
-  border-color: var(--line-soft);
+  box-shadow: 8px 8px 0 -1px var(--line), 14px 14px 0 -2px var(--line-soft);
 }
 .pcard__thumb {
   border-radius: var(--r-md);
+  background: var(--surface-2);
   height: 190px;
   display: grid;
   place-items: center;
@@ -54,81 +55,198 @@
   margin-top: 4px;
 }
 
-/* ---- project row (list view) ---- */
-.prow {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 14px 20px;
-  border-radius: var(--r-lg);
-  color: inherit;
-}
-.prow:hover {
-  text-decoration: none;
-  filter: brightness(0.985);
-}
-.prow__thumb {
-  width: 72px;
-  height: 72px;
-  border-radius: var(--r-md);
-  display: grid;
-  place-items: center;
-  flex: none;
-}
-.prow__title {
-  font-size: calc(19px * var(--font-scale));
-}
-.prow__meta {
-  color: var(--muted);
-  font-size: calc(13.5px * var(--font-scale));
-}
 
-/* ---- clip card ---- */
-.ccard {
+
+/* ---- motion card: a dark skeleton stage ---- */
+.mcard {
   display: block;
   color: inherit;
-  cursor: pointer;
   text-align: left;
-  border: 0;
-  padding: 0;
-  background: transparent;
 }
-.ccard:hover {
+.mcard:hover {
   text-decoration: none;
 }
-.ccard__thumb {
+.mcard__stage {
   position: relative;
-  border-radius: var(--r-lg);
-  height: 168px;
+  height: 180px;
   display: grid;
   place-items: center;
-  transition: transform 0.18s ease;
+  border-radius: var(--r-lg);
+  background: radial-gradient(circle at 50% 35%, #232334, var(--viewport));
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
-.ccard:hover .ccard__thumb {
+.mcard:hover .mcard__stage {
   transform: translateY(-3px);
+  box-shadow: 0 10px 24px -14px rgba(11, 11, 18, 0.6);
 }
-.ccard__badge {
+.mcard__chip {
   position: absolute;
   top: 12px;
   left: 12px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--font-scale));
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
-.ccard__time {
+.mcard__badge {
+  position: absolute;
+  top: 12px;
+  right: 52px; /* left of the menu button */
+}
+.mcard__time {
   position: absolute;
   right: 12px;
   bottom: 12px;
-  background: rgba(11, 11, 18, 0.8);
   color: #fff;
-  border-radius: 6px;
-  padding: 2px 7px;
-  font-size: calc(12px * var(--font-scale));
   font-family: var(--font-mono);
+  font-size: calc(12px * var(--font-scale));
+  opacity: 0.8;
 }
-.ccard__name {
+.mcard__name {
   margin-top: 12px;
   font-weight: 700;
   font-size: calc(16px * var(--font-scale));
 }
-.ccard__project {
+.mcard__project {
   color: var(--muted);
   font-size: calc(13.5px * var(--font-scale));
 }
+
+/* the three-dot menu on a motion card, over the stage's top-right corner */
+.mcard-wrap {
+  position: relative;
+}
+.mcard-menu {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+}
+.mcard-menu__btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  cursor: pointer;
+}
+.mcard-menu__btn:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+.mcard-menu__list {
+  position: absolute;
+  top: 42px;
+  right: 0;
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: 0 12px 30px -12px rgba(11, 11, 18, 0.45);
+}
+.mcard-menu__list button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mcard-menu__list button:hover {
+  background: var(--surface-2);
+}
+
+/* ---- recording card: a video frame with a play button ---- */
+.rcard {
+  display: block;
+  color: inherit;
+  text-align: left;
+}
+.rcard:hover {
+  text-decoration: none;
+}
+.rcard__frame {
+  position: relative;
+  height: 168px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-md);
+  background: linear-gradient(135deg, #1d1d28, #0b0b12);
+  overflow: hidden;
+  transition: transform 0.18s ease;
+}
+.rcard:hover .rcard__frame {
+  transform: translateY(-3px);
+}
+.rcard__play {
+  position: relative;
+  z-index: 1;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff;
+}
+.rcard__play::after {
+  content: '';
+  margin-left: 3px;
+  border-left: 12px solid var(--ink);
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+}
+.rcard__image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.rcard__cam {
+  position: absolute;
+  z-index: 1;
+  top: 22px;
+  left: 14px;
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--font-scale));
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+/* the duration on a preview: white on a dark chip, so it reads on any picture */
+.rcard__time {
+  position: absolute;
+  z-index: 1;
+  right: 10px;
+  bottom: 10px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 600;
+}
+.rcard__name {
+  margin-top: 12px;
+  font-weight: 700;
+  font-size: calc(16px * var(--font-scale));
+}
+.rcard__project {
+  color: var(--muted);
+  font-size: calc(13.5px * var(--font-scale));
+}
+
+
