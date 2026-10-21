@@ -89,7 +89,7 @@ Every run writes `out3d.metrics.json` (next to `--out`, also when the run fails 
 | Key | What it says |
 |---|---|
 | `stage1.<camera>` | frames, fraction with no person, mean confidence overall and per joint |
-| `sync` | clap time per camera, where the times came from, cross-check shift per camera in ms and whether it was applied |
+| `sync` | clap time per camera, where the times came from, the clap threshold, cross-check shift per camera in ms and whether it was applied |
 | `calibrate` | starting pair, distinct correspondences per pair (how much the performer moved), reprojection error per camera, camera types, board fallback |
 | `scale`, `floor` | upright frames, metres per unit, floor fit residual and spread, tilt from the body's up direction, whether the fitted plane was trusted |
 | `triangulate` | mean reprojection error overall and per joint, views dropped as outliers, joints failed, joints with fewer than 2 views |

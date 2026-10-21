@@ -54,12 +54,13 @@
 :: Stage 2a: put every camera on one clock using the clap.
 * def _read_audio(video_path: str, max_seconds: float) -> np.ndarray:
 * def _loudness(audio: np.ndarray) -> np.ndarray:
-* def _clap_from_loudness(rms: np.ndarray, name: str) -> float:
-* def find_clap_time(video_path: str) -> float:
+* def _peak_and_rise_time(rms, before, i, far, win_s):
+* def _clap_from_loudness(rms: np.ndarray, name: str, threshold: float = 1.0) -> float:
+* def find_clap_time(video_path: str, threshold: float = 1.0) -> float:
 * def _refine_against_reference(rms_ref, clap_ref, rms, clap, name):
-* ```def detect_claps(video_paths: list[str]) -> list[float]:```
+* ```def detect_claps(video_paths: list[str], threshold: float = 1.0) -> list[float]:```
 * def _resample(kp: Keypoints2D, times: np.ndarray, common: np.ndarray):
-* ```def synchronise(video_paths: list[str], keypoints: list[Keypoints2D], clap_times: list[float] | None = None) -> tuple[SyncResult, list[Keypoints2D]]:```
+* ```def synchronise(video_paths: list[str], keypoints: list[Keypoints2D], clap_times: list[float] | None = None, clap_threshold: float = 1.0) -> tuple[SyncResult, list[Keypoints2D]]:```
 
 **=> [triangulate.py](/backend/mocap_pipeline/stage2_reconstruct/triangulate.py)** 
 :: Stage 2c: combine every camera's 2D joints into one 3D point per joint.
