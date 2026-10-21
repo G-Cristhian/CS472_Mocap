@@ -14,6 +14,9 @@
   padding: 28px;
   box-shadow: var(--shadow-lg);
 }
+.modal--wide {
+  width: min(760px, 100%);
+}
 .modal h2 {
   font-size: calc(24px * var(--font-scale));
 }

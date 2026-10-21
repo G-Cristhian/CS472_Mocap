@@ -10,12 +10,17 @@ export interface Project {
   updated: string
 }
 
-/** One processed skeleton, built from 2 to 4 recordings. */
+/** A project a motion is in. */
+export interface MotionProject {
+  id: string
+  name: string
+}
+
+/** One processed skeleton, built from 2 to 4 recordings. It can be in several projects, or none. */
 export interface Motion {
   id: string
   name: string
-  projectId: string
-  projectName: string
+  projects: MotionProject[]
   duration: string
   source: Source
   accent: Accent

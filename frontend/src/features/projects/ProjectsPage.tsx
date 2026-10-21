@@ -3,6 +3,7 @@ import { useStudio } from '@/app/StudioProvider'
 import { NewProjectDialog } from '@/components/ui/NewProjectDialog'
 import { ProjectCard } from '@/components/ui/ProjectCard'
 import { PlusIcon } from '@/components/ui/Icons'
+import { motionsInProject } from '@/lib/motions'
 
 export function ProjectsPage() {
   const { projects, motions } = useStudio()
@@ -26,7 +27,7 @@ export function ProjectsPage() {
       ) : (
         <div className="grid-cards">
           {projects.map((p) => (
-            <ProjectCard key={p.id} project={p} motions={motions.filter((m) => m.projectId === p.id)} />
+            <ProjectCard key={p.id} project={p} motions={motionsInProject(motions, p.id)} />
           ))}
         </div>
       )}

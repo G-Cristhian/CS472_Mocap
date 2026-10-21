@@ -30,7 +30,10 @@ class Project(models.Model):
 
 
 class ProjectMotion(models.Model):
-    """Which project a motion sits in, and where it is in that project. Each motion is in one project."""
+    """
+    Puts a motion in a project, and says where it sits there. A motion can be in several
+    projects, or in none; a project holds any number of motions.
+    """
 
     project = models.ForeignKey(
         Project,
@@ -49,7 +52,7 @@ class ProjectMotion(models.Model):
     class Meta:
         ordering = ["order", "added_at"]
         constraints = [
-            models.UniqueConstraint(fields=["motion"], name="one_project_per_motion"),
+            models.UniqueConstraint(fields=["project", "motion"], name="unique_motion_per_project"),
         ]
 
     def __str__(self):

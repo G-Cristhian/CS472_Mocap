@@ -1,6 +1,9 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
-import { motions as seedMotions, projects as seedProjects, recordings as seedRecordings } from '@/lib/data'
-import type { Accent, Motion, Project, Recording } from '@/types'
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useAuth } from '@/app/AuthProvider'
+import { recordings as seedRecordings } from '@/lib/data'
+import { createMotion as apiCreateMotion, listMotions } from '@/lib/motions'
+import { createProject as apiCreateProject, listProjects } from '@/lib/projects'
+import type { Motion, Project, Recording } from '@/types'
 
 interface NewProjectInput {
   name: string
@@ -9,64 +12,65 @@ interface NewProjectInput {
 
 interface NewMotionInput {
   name: string
-  projectId: string
+  /** The project to put the motion in, or null for none */
+  projectId: string | null
 }
 
 interface Ctx {
   projects: Project[]
   motions: Motion[]
   recordings: Recording[]
-  createProject: (input: NewProjectInput) => Project
-  createMotion: (input: NewMotionInput) => Motion
+  createProject: (input: NewProjectInput) => Promise<Project>
+  createMotion: (input: NewMotionInput) => Promise<Motion>
+  /** Reloads the motion list, e.g. after a motion is added to a project */
+  refreshMotions: () => Promise<void>
 }
 
 const StudioContext = createContext<Ctx | null>(null)
 
-const ACCENTS: Accent[] = ['purple', 'blue', 'pink', 'orange', 'amber']
-
-function slugify(name: string) {
-  return (
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '') || `item-${Date.now()}`
-  )
-}
-
 export function StudioProvider({ children }: { children: ReactNode }) {
-  const [projects, setProjects] = useState<Project[]>(seedProjects)
-  const [motions, setMotions] = useState<Motion[]>(seedMotions)
+  const { user } = useAuth()
+  const [projects, setProjects] = useState<Project[]>([])
+  const [motions, setMotions] = useState<Motion[]>([])
   const [recordings] = useState<Recording[]>(seedRecordings)
+
+  // Projects and motions belong to the logged-in user: load them after login, clear them on logout
+  useEffect(() => {
+    if (!user) {
+      setProjects([])
+      setMotions([])
+      return
+    }
+
+    Promise.all([listProjects(), listMotions()])
+      .then(([projectList, motionList]) => {
+        setProjects(projectList)
+        setMotions(motionList)
+      })
+      .catch((e) => console.error("Couldn't load projects and motions:", e))
+  }, [user])
 
   const value = useMemo<Ctx>(
     () => ({
       projects,
       motions,
       recordings,
-      createProject: ({ name, category }) => {
-        const project: Project = {
-          id: slugify(name),
-          name,
-          category: category || 'Other',
-          updated: 'Just now',
-        }
+      createProject: async (input) => {
+        const project = await apiCreateProject(input)
         setProjects((list) => [project, ...list])
         return project
       },
-      createMotion: ({ name, projectId }) => {
-        const project = projects.find((p) => p.id === projectId)
-        const motion: Motion = {
-          id: slugify(name),
-          name,
-          projectId,
-          projectName: project?.name ?? '',
-          duration: '0:00',
-          source: 'ai',
-          accent: ACCENTS[motions.length % ACCENTS.length],
-          pose: 'stand',
-        }
+      createMotion: async (input) => {
+        const motion = await apiCreateMotion(input)
         setMotions((list) => [motion, ...list])
         return motion
+      },
+      refreshMotions: async () => {
+        try {
+          setMotions(await listMotions())
+        } catch (e) {
+          console.error("Couldn't reload motions:", e)
+        }
       },
     }),
     [projects, motions, recordings],

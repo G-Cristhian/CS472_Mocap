@@ -4,6 +4,7 @@ import { useStudio } from '@/app/StudioProvider'
 import { MotionCard } from '@/components/ui/MotionCard'
 import { NewMotionDialog } from '@/components/ui/NewMotionDialog'
 import { PlusIcon } from '@/components/ui/Icons'
+import { motionsInProject } from '@/lib/motions'
 import './projects.css'
 
 export function ProjectDetailPage() {
@@ -12,7 +13,7 @@ export function ProjectDetailPage() {
   const [dialog, setDialog] = useState(false)
 
   const project = projects.find((p) => p.id === projectId)
-  const projectMotions = motions.filter((m) => m.projectId === projectId)
+  const projectMotions = motionsInProject(motions, projectId ?? '')
 
   if (!project) {
     return (

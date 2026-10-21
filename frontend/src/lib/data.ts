@@ -13,14 +13,14 @@ export const projects: Project[] = [
 ]
 
 export const motions: Motion[] = [
-  { id: 'mario-walking', name: 'Mario walking', projectId: 'mario', projectName: 'Mario', duration: '0:12', source: 'ai', accent: 'purple', pose: 'walk' },
-  { id: 'mario-jumping', name: 'Mario jumping', projectId: 'mario', projectName: 'Mario', duration: '0:08', source: 'ai', accent: 'amber', pose: 'arms-up' },
-  { id: 'sprint-cycle', name: 'Sprint Cycle', projectId: 'athlete-training', projectName: 'Athlete training', duration: '0:24', source: 'ai', accent: 'purple', pose: 'run' },
-  { id: 'table-tennis-serve', name: 'Table Tennis Serve', projectId: 'athlete-training', projectName: 'Athlete training', duration: '0:06', source: 'ai', accent: 'purple', pose: 'serve' },
-  { id: 'quarterback-reads', name: 'Quarterback Reads', projectId: 'football-season', projectName: 'Football season', duration: '0:12', source: 'suit', accent: 'blue', pose: 'walk' },
-  { id: 'fencing-lunges', name: 'Fencing Lunges', projectId: 'fencing', projectName: 'Fencing', duration: '0:08', source: 'ai', accent: 'pink', pose: 'lunge' },
-  { id: 'range-of-motion', name: 'Range of Motion', projectId: 'rehab-program', projectName: 'Rehab program', duration: '0:44', source: 'suit', accent: 'orange', pose: 'arms-up' },
-  { id: 'elevation-tracking', name: 'Elevation Tracking', projectId: 'biomechanics-study', projectName: 'Biomechanics study', duration: '0:19', source: 'review', accent: 'amber', pose: 'lunge' },
+  { id: 'mario-walking', name: 'Mario walking', projects: [{ id: 'mario', name: 'Mario' }], duration: '0:12', source: 'ai', accent: 'purple', pose: 'walk' },
+  { id: 'mario-jumping', name: 'Mario jumping', projects: [{ id: 'mario', name: 'Mario' }], duration: '0:08', source: 'ai', accent: 'amber', pose: 'arms-up' },
+  { id: 'sprint-cycle', name: 'Sprint Cycle', projects: [{ id: 'athlete-training', name: 'Athlete training' }], duration: '0:24', source: 'ai', accent: 'purple', pose: 'run' },
+  { id: 'table-tennis-serve', name: 'Table Tennis Serve', projects: [{ id: 'athlete-training', name: 'Athlete training' }], duration: '0:06', source: 'ai', accent: 'purple', pose: 'serve' },
+  { id: 'quarterback-reads', name: 'Quarterback Reads', projects: [{ id: 'football-season', name: 'Football season' }], duration: '0:12', source: 'suit', accent: 'blue', pose: 'walk' },
+  { id: 'fencing-lunges', name: 'Fencing Lunges', projects: [{ id: 'fencing', name: 'Fencing' }], duration: '0:08', source: 'ai', accent: 'pink', pose: 'lunge' },
+  { id: 'range-of-motion', name: 'Range of Motion', projects: [{ id: 'rehab-program', name: 'Rehab program' }], duration: '0:44', source: 'suit', accent: 'orange', pose: 'arms-up' },
+  { id: 'elevation-tracking', name: 'Elevation Tracking', projects: [{ id: 'biomechanics-study', name: 'Biomechanics study' }], duration: '0:19', source: 'review', accent: 'amber', pose: 'lunge' },
 ]
 
 export const recordings: Recording[] = [
@@ -86,7 +86,7 @@ export function projectById(id: string | undefined) {
 }
 
 export function motionsForProject(projectId: string | undefined) {
-  return motions.filter((m) => m.projectId === projectId)
+  return motions.filter((m) => m.projects.some((p) => p.id === projectId))
 }
 
 export function recordingsForMotion(motionId: string | undefined) {

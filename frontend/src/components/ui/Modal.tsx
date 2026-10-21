@@ -5,11 +5,14 @@ export function Modal({
   title,
   subtitle,
   onClose,
+  wide = false,
   children,
 }: {
   title: string
   subtitle?: string
   onClose: () => void
+  /** A wider box, for content like a grid of previews */
+  wide?: boolean
   children: ReactNode
 }) {
   useEffect(() => {
@@ -21,7 +24,7 @@ export function Modal({
   return (
     <div className="modal__backdrop" onClick={onClose}>
       <div
-        className="modal"
+        className={wide ? 'modal modal--wide' : 'modal'}
         role="dialog"
         aria-modal="true"
         aria-label={title}

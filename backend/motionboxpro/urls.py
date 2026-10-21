@@ -20,5 +20,7 @@ from django.urls import include, path
 urlpatterns = [
     path('cs472mbp/', admin.site.urls),
     path('api/v1/auth/', include('motionboxpro.apps.accounts.urls')),
+    path('api/v1/', include('motionboxpro.apps.projects.urls')),
+    path('api/v1/', include('motionboxpro.apps.motions.urls')),
     path('api/v1/', include('motionboxpro.apps.recordings.urls')),
 ]

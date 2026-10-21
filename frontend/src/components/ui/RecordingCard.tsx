@@ -26,7 +26,6 @@ export function RecordingCard({ recording, motionName }: { recording: Recording;
             onError={() => setNoPreview(true)}
           />
         )}
-        <span className="rcard__cam">{recording.camera}</span>
         <span className="rcard__time">{recording.duration}</span>
       </div>
       <p className="rcard__name">{recording.name}</p>

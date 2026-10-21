@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStudio } from '@/app/StudioProvider'
 import { Modal } from './Modal'
@@ -35,6 +35,23 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate()
   const [name, setName] = useState('')
   const [category, setCategory] = useState('Athletics')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!name.trim()) return
+    setSaving(true)
+    setError(null)
+    try {
+      const project = await createProject({ name: name.trim(), category })
+      onClose()
+      navigate(`/projects/${project.id}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the project.')
+      setSaving(false)
+    }
+  }
 
   return (
     <Modal
@@ -42,21 +59,14 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
       subtitle="A project groups the recordings of one athlete, exercise or training block."
       onClose={onClose}
     >
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          if (!name.trim()) return
-          const project = createProject({ name: name.trim(), category })
-          onClose()
-          navigate(`/projects/${project.id}`)
-        }}
-      >
+      <form onSubmit={onSubmit}>
         <label className="field">
           <span className="field__label">Project name</span>
           <input
             className="input"
             value={name}
             autoFocus
+            maxLength={100}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Sprint Cycle"
           />
@@ -75,12 +85,18 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
           </select>
         </label>
 
+        {error && (
+          <p role="alert" style={{ color: 'var(--pink)', fontSize: 14, marginTop: 14 }}>
+            {error}
+          </p>
+        )}
+
         <div className="modal__actions">
           <button type="button" className="btn btn--ghost" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className="btn btn--primary" disabled={!name.trim()}>
-            Create project
+          <button type="submit" className="btn btn--primary" disabled={!name.trim() || saving}>
+            {saving ? 'Creating…' : 'Create project'}
           </button>
         </div>
       </form>

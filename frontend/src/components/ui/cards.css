@@ -95,7 +95,7 @@
 .mcard__badge {
   position: absolute;
   top: 12px;
-  right: 12px;
+  right: 52px; /* left of the menu button */
 }
 .mcard__time {
   position: absolute;
@@ -114,6 +114,57 @@
 .mcard__project {
   color: var(--muted);
   font-size: calc(13.5px * var(--font-scale));
+}
+
+/* the three-dot menu on a motion card, over the stage's top-right corner */
+.mcard-wrap {
+  position: relative;
+}
+.mcard-menu {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+}
+.mcard-menu__btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  cursor: pointer;
+}
+.mcard-menu__btn:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+.mcard-menu__list {
+  position: absolute;
+  top: 42px;
+  right: 0;
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: 0 12px 30px -12px rgba(11, 11, 18, 0.45);
+}
+.mcard-menu__list button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mcard-menu__list button:hover {
+  background: var(--surface-2);
 }
 
 /* ---- recording card: a video frame with a play button ---- */
@@ -174,15 +225,19 @@
   text-transform: uppercase;
   opacity: 0.75;
 }
+/* the duration on a preview: white on a dark chip, so it reads on any picture */
 .rcard__time {
   position: absolute;
   z-index: 1;
-  right: 14px;
-  bottom: 22px;
+  right: 10px;
+  bottom: 10px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.7);
   color: #fff;
   font-family: var(--font-mono);
   font-size: calc(12px * var(--font-scale));
-  opacity: 0.8;
+  font-weight: 600;
 }
 .rcard__name {
   margin-top: 12px;

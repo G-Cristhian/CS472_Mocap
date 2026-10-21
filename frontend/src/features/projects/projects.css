@@ -31,10 +31,15 @@
 }
 .ws__left {
   border-right: 1px solid var(--line);
-  padding: 22px 18px;
   display: flex;
   flex-direction: column;
   gap: 26px;
+}
+.ws__left > section {
+  padding: 10px;
+}
+.ws__left .ws__performers {
+  background: #eee;
 }
 .ws__center {
   padding: 22px;
@@ -52,7 +57,7 @@
 .takelist {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 10px;
   margin-top: 10px;
 }
 .takelist button {
@@ -74,38 +79,28 @@
   background: var(--purple-50);
   font-weight: 700;
 }
+/* one recording in a takelist: its camera's device line over its name. Not clickable. */
+.takelist__row + .takelist__row {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.takelist__specs {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: calc(12.5px * var(--font-scale));
+  line-height: 1.9;
+}
+.takelist__name {
+  margin: 0;
+  font-weight: 600;
+}
 .takelist .dur {
   margin-left: auto;
   font-family: var(--font-mono);
   font-size: calc(12.5px * var(--font-scale));
   color: var(--muted);
 }
-.performer {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: var(--purple-50);
-  border-radius: var(--r-md);
-  padding: 12px 14px;
-  margin-top: 10px;
-}
-.performer__avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  display: grid;
-  place-items: center;
-  flex: none;
-}
-.devices {
-  margin-top: 10px;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: calc(12.5px * var(--font-scale));
-  line-height: 1.9;
-}
-
 .viewport {
   position: relative;
   background: var(--viewport);

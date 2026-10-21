@@ -128,14 +128,12 @@ class MotionVersion(models.Model):
     stage = models.CharField(max_length=20, choices=Stage.choices, null=True, blank=True)
     error = models.TextField(blank=True)
 
-    # Pipeline intermediates and logs, written by the run
-    calibration_json = models.FileField(upload_to=file_path, blank=True)
-    log_file = models.FileField(upload_to=file_path, blank=True)
-
-    # Full outputs of this version
-    out3d_json = models.FileField(upload_to=file_path, blank=True)
-    out3d_bvh = models.FileField(upload_to=file_path, blank=True)
-    metrics_json = models.FileField(upload_to=file_path, blank=True)
+    # Outputs of the run, kept in the database (the pipeline writes them to a temporary folder, which is then deleted)
+    calibration = models.JSONField(null=True, blank=True)
+    log = models.TextField(blank=True)
+    out3d = models.JSONField(null=True, blank=True)  # the 3D joints, frame by frame
+    bvh = models.TextField(blank=True)  # the skeleton animation, what the viewer plays
+    metrics = models.JSONField(null=True, blank=True)
 
     # Summary of this version's out3d.json
     fps = models.FloatField(null=True, blank=True)

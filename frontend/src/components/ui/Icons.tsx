@@ -151,6 +151,14 @@ export const ExportIcon = ({ size = 18 }: IconProps) => (
 
 // MotionBoxPro mark: a play symbol whose corners are tracked joints, so playback is the motion.
 // Hex colours only, so public/logo.svg and public/favicon.svg match it exactly.
+export const MoreIcon = ({ size = 18 }: IconProps) => (
+  <svg {...base(size)} strokeWidth={0} fill="currentColor">
+    <circle cx="5" cy="12" r="2" />
+    <circle cx="12" cy="12" r="2" />
+    <circle cx="19" cy="12" r="2" />
+  </svg>
+)
+
 export const LogoMark = ({ size = 26 }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true">
     <defs>

@@ -139,6 +139,14 @@ textarea {
 .btn:active {
   transform: translateY(0);
 }
+/* a disabled button looks disabled: faded, no lift, no hover colour */
+.btn:disabled,
+.btn:disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
 .btn--primary {
   background: var(--purple);
   color: #fff;
