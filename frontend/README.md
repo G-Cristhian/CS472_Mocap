@@ -73,7 +73,8 @@ The viewport on `/projects/:projectId` is a three.js scene (`src/features/viewer
 src/
   app/          router, app shell, settings + studio state providers
   components/   TopNav, shared UI (buttons live in CSS, cards, badges, icons, modal/toast)
-  features/     one folder per screen: home, record, projects, library, settings
+  features/     one folder per screen: landing, auth, home, record, footage, projects, motions,
+                recordings, library, streaming, viewer, settings
   lib/data.ts   mock projects, clips, cameras, rig parts, devices
   styles/       tokens.css (colours, radii, accessibility variables) + global.css
   types/        shared types
