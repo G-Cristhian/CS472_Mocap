@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useSettings, type TextSize } from '@/app/SettingsProvider'
 import {
