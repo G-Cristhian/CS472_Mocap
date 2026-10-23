@@ -21,6 +21,12 @@ DETECT_MAX_AUTO_JOBS = 4
 # every extra camera adds detection time linearly and refinement time faster.
 MIN_CAMERAS = 2
 
+# RTMPose (stage1_keypoints/backends.py, --detector rtmpose). Mode picks rtmlib's
+# model pair: "lightweight" (YOLOX-tiny 416 + RTMPose-s 256x192), "balanced"
+# (YOLOX-m 640 + RTMPose-m 256x192) or "performance" (YOLOX-x 640 + RTMPose-x
+# 384x288). Balanced is rtmlib's default (design decision D-022).
+RTMPOSE_MODE = "balanced"
+
 # ---- Stage 2a: sync --------------------------------------------------------
 # Only search this many seconds from the start of each video for the clap.
 CLAP_SEARCH_WINDOW_S = 10.0

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from .. import config
 from ..joints import JOINT_INDEX, NUM_JOINTS
 
 DEFAULT_BACKEND = "mediapipe"
@@ -159,6 +160,10 @@ def pick_person(bboxes: np.ndarray) -> int | None:
     return int(np.argmax(areas))
 
 
+# rtmlib's model pairs for BodyWithFeet, fastest first (config.RTMPOSE_MODE)
+RTMPOSE_MODES = ("lightweight", "balanced", "performance")
+
+
 class RTMPoseBackend(PoseBackend):
     """
     RTMPose with the Halpe-26 (body with feet) model, through rtmlib
@@ -174,7 +179,10 @@ class RTMPoseBackend(PoseBackend):
     """
     name = "rtmpose"
 
-    def __init__(self, model_path: str | None = None, mode: str = "balanced", device: str = "cpu"):
+    def __init__(self, model_path: str | None = None, mode: str = config.RTMPOSE_MODE, device: str = "cpu"):
+        if mode not in RTMPOSE_MODES:
+            raise ValueError(f"RTMPose mode must be one of {RTMPOSE_MODES}, got {mode!r}")
+
         from rtmlib import BodyWithFeet
 
         self._model = BodyWithFeet(mode=mode, backend="onnxruntime", device=device)
@@ -203,10 +211,14 @@ BACKENDS: dict[str, type[PoseBackend]] = {
 }
 
 
-def create_backend(name: str = DEFAULT_BACKEND, model_path: str | None = None) -> PoseBackend:
-    """Build the backend registered under name. model_path is ignored by models that bring their own."""
+def create_backend(name: str = DEFAULT_BACKEND, model_path: str | None = None, **options) -> PoseBackend:
+    """
+    Build the backend registered under name. model_path is ignored by models
+    that bring their own. options go to the backend's constructor (RTMPose:
+    mode, device, detect_every); see detector_options() in run_pipeline.py.
+    """
     try:
         backend_class = BACKENDS[name]
     except KeyError:
         raise ValueError(f"Unknown pose detector {name!r}, choose from: {', '.join(BACKENDS)}") from None
-    return backend_class(model_path=model_path)
+    return backend_class(model_path=model_path, **options)

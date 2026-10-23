@@ -18,6 +18,7 @@ class Calls:
     def __init__(self):
         self.detect = []
         self.detectors = []
+        self.options = []
         self.sync_clap_times = []
         self.sync_thresholds = []
         self.triangulate = 0
@@ -27,9 +28,10 @@ class Calls:
 def fakes(monkeypatch, fake_videos):
     calls = Calls()
 
-    def fake_detect(video_path, model_path, detector="mediapipe"):
+    def fake_detect(video_path, model_path, detector="mediapipe", options=None):
         calls.detect.append(os.path.basename(video_path))
         calls.detectors.append(detector)
+        calls.options.append(options)
         return make_keypoints(camera_id=Path(video_path).stem, video_path=video_path)
 
     def fake_synchronise(video_paths, keypoints, clap_times=None, clap_threshold=1.0):
@@ -211,3 +213,32 @@ def test_duplicate_video_stems_get_unique_ids(tmp_path):
     b = tmp_path / "b" / "IMG_0001.MOV"
     assert run_pipeline.camera_ids_for([str(a), str(b)]) == ["cam0_IMG_0001", "cam1_IMG_0001"]
     assert run_pipeline.camera_ids_for(["x/cam0.mp4", "y/cam1.mp4"]) == ["cam0", "cam1"]
+
+
+def test_rtmpose_mode_reaches_stage_1(fakes, fake_videos, tmp_path):
+    run(fake_videos, tmp_path, detector="rtmpose", rtmpose_mode="lightweight")
+    assert fakes.options == [{"mode": "lightweight"}] * 2
+    run(fake_videos, tmp_path)                            # MediaPipe gets no options
+    assert fakes.options[-2:] == [None, None]
+
+
+def test_changing_rtmpose_mode_detects_again(fakes, fake_videos, tmp_path):
+    run(fake_videos, tmp_path, detector="rtmpose")
+    run(fake_videos, tmp_path, resume=True, detector="rtmpose", rtmpose_mode="lightweight")
+    assert len(fakes.detect) == 4
+    run(fake_videos, tmp_path, resume=True, detector="rtmpose", rtmpose_mode="lightweight")
+    assert len(fakes.detect) == 4                         # same settings: reused
+
+
+def test_rtmpose_joints_saved_before_the_mode_option_count_as_balanced(fakes, fake_videos, tmp_path):
+    run(fake_videos, tmp_path, detector="rtmpose")       # default mode adds nothing to the fingerprint
+    for kp_path in io.stage_paths(str(tmp_path / "output" / "out3d.json"), ["cam0", "cam1"])["keypoints"].values():
+        _, fingerprint = io.load_keypoints(str(kp_path), with_fingerprint=True)
+        assert "detector_settings" not in fingerprint
+    run(fake_videos, tmp_path, resume=True, detector="rtmpose", rtmpose_mode="balanced")
+    assert len(fakes.detect) == 2
+
+
+def test_unknown_rtmpose_mode_is_rejected(fakes, fake_videos, tmp_path):
+    with pytest.raises(ValueError, match="rtmpose_mode must be one of"):
+        run(fake_videos, tmp_path, detector="rtmpose", rtmpose_mode="turbo")

@@ -31,7 +31,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from . import config, io, metrics
 from .stage1_keypoints import detect
-from .stage1_keypoints.backends import BACKENDS, DEFAULT_BACKEND
+from .stage1_keypoints.backends import BACKENDS, DEFAULT_BACKEND, RTMPOSE_MODES
 from .stage2_reconstruct import calibrate, scale_floor, smooth, sync, triangulate
 from .stage3_rig import bvh_writer, rotations, skeleton
 from .joints import RIG_JOINTS, RIG_PARENTS
@@ -180,6 +180,32 @@ def _stop(stage: str, stop_after: str | None) -> bool:
     return False
 
 
+def detector_options(detector: str, rtmpose_mode: str = config.RTMPOSE_MODE) -> dict:
+    """The settings handed to the stage 1 backend (backends.create_backend). Empty for MediaPipe."""
+    if detector != "rtmpose":
+        return {}
+    return {"mode": rtmpose_mode}
+
+
+# detector options at these values leave the joints as they were before the options existed
+_DEFAULT_DETECTOR_SETTINGS = {"mode": config.RTMPOSE_MODE}
+
+
+def detector_settings(options: dict) -> dict:
+    """
+    The options that decide what the saved joints look like, for --resume:
+    only those that differ from the defaults, so joints saved before an
+    option existed still count as made with its default.
+    """
+    return {k: v for k, v in options.items()
+            if k in _DEFAULT_DETECTOR_SETTINGS and v != _DEFAULT_DETECTOR_SETTINGS[k]}
+
+
+def _options_kwarg(options: dict | None) -> dict:
+    # passed only when set, so detect_video stand-ins in the tests need no options parameter
+    return {"options": options} if options else {}
+
+
 def detect_jobs(n_videos: int, jobs: int = config.DETECT_JOBS) -> int:
     """
     How many videos to detect at once: `jobs` if given, else one per video up
@@ -220,7 +246,7 @@ class _QueueWriter:
             self.partial = ""
 
 
-def _detect_worker(video, model_path, detector, kp_path, fingerprint, camera_id, queue):
+def _detect_worker(video, model_path, detector, kp_path, fingerprint, camera_id, queue, options=None):
     """
     Detect one video in its own process and save its joints file. What it
     prints travels back through `queue`. Returns (camera_id, seconds taken);
@@ -230,7 +256,7 @@ def _detect_worker(video, model_path, detector, kp_path, fingerprint, camera_id,
     sys.stdout = writer
     try:
         t0 = time.perf_counter()
-        kp = detect.detect_video(video, model_path, detector=detector)
+        kp = detect.detect_video(video, model_path, detector=detector, **_options_kwarg(options))
         kp.camera_id = camera_id
         io.save_keypoints(kp, str(kp_path), fingerprint)
         return camera_id, time.perf_counter() - t0
@@ -239,13 +265,14 @@ def _detect_worker(video, model_path, detector, kp_path, fingerprint, camera_id,
         sys.stdout = sys.__stdout__
 
 
-def _detect_videos(todo, model_path, detector, jobs, worker=_detect_worker):
+def _detect_videos(todo, model_path, detector, jobs, worker=_detect_worker, options=None):
     """
     Stage 1 for every (video, camera_id, kp_path, fingerprint) in `todo`,
     `jobs` videos at a time in separate processes, or one after another in
     this process when jobs is 1. Every video is attempted even if another
-    fails. Returns ({camera_id: seconds}, {camera_id: error text}); the joints
-    of the successful videos are in their files.
+    fails. options are the detector's settings (detector_options). Returns
+    ({camera_id: seconds}, {camera_id: error text}); the joints of the
+    successful videos are in their files.
     """
     seconds, failures = {}, {}
 
@@ -261,7 +288,7 @@ def _detect_videos(todo, model_path, detector, jobs, worker=_detect_worker):
         for video, cid, kp_path, fingerprint in todo:
             try:
                 t0 = time.perf_counter()
-                kp = detect.detect_video(video, model_path, detector=detector)
+                kp = detect.detect_video(video, model_path, detector=detector, **_options_kwarg(options))
                 kp.camera_id = cid
                 io.save_keypoints(kp, str(kp_path), fingerprint)
                 finished(video, cid, time.perf_counter() - t0)
@@ -289,7 +316,8 @@ def _detect_videos(todo, model_path, detector, jobs, worker=_detect_worker):
         ) as pool:
             futures = {
                 pool.submit(
-                    worker, video, model_path, detector, str(kp_path), fingerprint, cid, queue
+                    worker, video, model_path, detector, str(kp_path), fingerprint, cid, queue,
+                    **_options_kwarg(options)
                 ): (video, cid)
                 for video, cid, kp_path, fingerprint in todo
             }
@@ -327,6 +355,7 @@ def run(
     smoother: str = config.SMOOTHER,
     clap_threshold: float = 1.0,
     jobs: int = config.DETECT_JOBS,
+    rtmpose_mode: str = config.RTMPOSE_MODE,
 ) -> None:
     """
     Runs every stage in order. With resume=True a stage whose file (io.stage_paths)
@@ -336,7 +365,8 @@ def run(
     accepts a clap half as strong, for a noisy room); the clap search is
     skipped when clap_times are given. detector is the stage 1 pose model (a
     name in backends.BACKENDS); saved joints are only reused if the same
-    detector made them. smoother is the
+    detector made them. rtmpose_mode is rtmlib's model size for RTMPose
+    (backends.RTMPOSE_MODES; ignored for MediaPipe). smoother is the
     stage 2c filter (a name in smooth.SMOOTHERS); it always runs, so two runs
     with --resume compare smoothers on the same triangulation. jobs is how
     many videos stage 1 detects at once, each in its own process (0 picks a
@@ -356,6 +386,9 @@ def run(
         raise ValueError(f"stop_after must be one of {STAGES}, got {stop_after!r}")
     if detector not in BACKENDS:
         raise ValueError(f"detector must be one of {tuple(BACKENDS)}, got {detector!r}")
+    if rtmpose_mode not in RTMPOSE_MODES:
+        raise ValueError(f"rtmpose_mode must be one of {RTMPOSE_MODES}, got {rtmpose_mode!r}")
+    options = detector_options(detector, rtmpose_mode)
     if smoother not in smooth.SMOOTHERS:
         raise ValueError(
             f"smoother must be one of {smooth.SMOOTHERS}, got {smoother!r}"
@@ -368,6 +401,7 @@ def run(
         out_path,
         videos=[str(v) for v in video_paths],
         detector=detector,
+        detector_options=options or None,
         smoother=smoother,
         performer_height_m=performer_height_m,
         resume=resume,
@@ -395,6 +429,7 @@ def run(
                 smoother,
                 clap_threshold,
                 jobs,
+                options,
             )
     except BaseException as e:
         path = metrics.finish("failed", f"{type(e).__name__}: {e}")
@@ -424,6 +459,7 @@ def _run_stages(
     smoother,
     clap_threshold,
     jobs,
+    options=None,
 ) -> str | None:
     """The stages in order; returns the stage name if stop_after ended the run early."""
     n = len(video_paths)
@@ -443,6 +479,8 @@ def _run_stages(
     # own process; every one is attempted, and the failures are reported together.
     keypoints: list = [None] * n
     todo = []
+    options = options or {}
+    settings = detector_settings(options)
     for i, (video, cid) in enumerate(zip(video_paths, ids)):
         kp_path = paths["keypoints"][cid]
         if resume and kp_path.exists():
@@ -457,23 +495,30 @@ def _run_stages(
                 print(
                     f"{kp_path.name} was made with {saved_detector}, detecting again with {detector}"
                 )
+            elif fingerprint.get("detector_settings", {}) != settings:
+                print(
+                    f"{kp_path.name} was made with other {detector} settings "
+                    f"({fingerprint.get('detector_settings') or 'defaults'}), detecting again"
+                )
             else:
                 print(f"Using saved joints for {video} ({kp_path.name})")
                 saved.camera_id = cid
                 keypoints[i] = saved
                 continue
         todo.append(
-            (video, cid, kp_path, {**io.video_fingerprint(video), "detector": detector})
+            (video, cid, kp_path, {**io.video_fingerprint(video), "detector": detector,
+                                   **({"detector_settings": settings} if settings else {})})
         )
 
     if todo:
         at_once = detect_jobs(len(todo), jobs)
         for video, cid, _, _ in todo:
-            print(f"Detecting joints in {video} ({detector})")
+            print(f"Detecting joints in {video} ({detector}"
+                  + "".join(f", {k} {v}" for k, v in options.items()) + ")")
         if at_once > 1:
             print(f"Detecting {len(todo)} videos at once, {at_once} processes")
         with metrics.time("detect_total"):
-            seconds, failures = _detect_videos(todo, model_path, detector, at_once)
+            seconds, failures = _detect_videos(todo, model_path, detector, at_once, options=options)
         for cid, took in seconds.items():
             metrics.record(f"timing.detect.{cid}_s", round(took, 3))
         if failures:
@@ -689,6 +734,13 @@ def main() -> None:
         "first detector's calibration is reused.",
     )
     parser.add_argument(
+        "--rtmpose-mode",
+        choices=list(RTMPOSE_MODES),
+        default=config.RTMPOSE_MODE,
+        help=f"RTMPose model size (default: {config.RTMPOSE_MODE}). lightweight is fastest, "
+        "performance most accurate; only used with --detector rtmpose.",
+    )
+    parser.add_argument(
         "--model",
         default=None,
         help="MediaPipe pose_landmarker .task file (default: MODEL_FILEPATH in .env, or the "
@@ -813,6 +865,7 @@ def main() -> None:
         smoother=args.smoother,
         clap_threshold=args.clap_threshold,
         jobs=args.jobs,
+        rtmpose_mode=args.rtmpose_mode,
     )
 
 

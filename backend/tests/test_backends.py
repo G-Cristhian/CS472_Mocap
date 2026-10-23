@@ -110,3 +110,20 @@ def test_both_detectors_are_registered():
     assert {"mediapipe", "rtmpose"} <= set(backends.BACKENDS)
     with pytest.raises(ValueError, match="Unknown pose detector"):
         backends.create_backend("openpose")
+
+
+def test_unknown_rtmpose_mode_is_rejected_before_loading_rtmlib():
+    with pytest.raises(ValueError, match="RTMPose mode must be one of"):
+        RTMPoseBackend(mode="turbo")
+
+
+def test_create_backend_passes_options(monkeypatch):
+    seen = {}
+
+    class Recorder(backends.PoseBackend):
+        def __init__(self, model_path=None, **options):
+            seen.update(options, model_path=model_path)
+
+    monkeypatch.setitem(backends.BACKENDS, "recorder", Recorder)
+    backends.create_backend("recorder", "m.task", mode="lightweight")
+    assert seen == {"mode": "lightweight", "model_path": "m.task"}
