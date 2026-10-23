@@ -62,7 +62,10 @@ SYNC_MAX_INTERP_GAP_FRAMES = 2.5
 CHIRP_F0_HZ = 1500.0
 CHIRP_F1_HZ = 6000.0
 CHIRP_DURATION_S = 0.5
-CHIRP_FADE_S = 0.01
+# The fades are long on purpose: a chirp that reaches full loudness more slowly
+# than CLAP_MAX_RISE_S is never taken for a clap, so a take can carry both
+# (clap and chirp in one take, to compare the two).
+CHIRP_FADE_S = 0.05
 # The chirp is accepted where the audio matches it at least this well
 # (normalised correlation, 0..1; room noise alone scores about 0.02). Scaled
 # by --clap-threshold like the clap thresholds.

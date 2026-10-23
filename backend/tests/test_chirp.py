@@ -90,9 +90,9 @@ def test_wav_holds_the_chirp_half_a_second_in(tmp_path):
 def videos(tmp_path_factory):
     d = tmp_path_factory.mktemp("chirp")
     # a clap in every video too, in a different place: the signal decides which is used. The
-    # chirp is quiet (about 7x the room noise rms) so the clap search does not take it for a clap.
-    write_video(d / "cam0.mp4", fps=60, seconds=4.0, clap_at=0.5, chirp_at=1.20, chirp_gain=0.03, seed=0)
-    write_video(d / "cam1.mp4", fps=30, seconds=4.0, clap_at=0.3, chirp_at=0.85, chirp_gain=0.03, seed=1)
+    # chirp is loud (100x the room noise); its slow fade-in keeps the clap search off it.
+    write_video(d / "cam0.mp4", fps=60, seconds=4.0, clap_at=0.5, chirp_at=1.20, seed=0)
+    write_video(d / "cam1.mp4", fps=30, seconds=4.0, clap_at=0.3, chirp_at=0.85, seed=1)
     write_video(d / "nochirp.mp4", fps=30, seconds=4.0, clap_at=1.0, seed=2)
     return {p.stem: str(p) for p in d.iterdir()}
 
