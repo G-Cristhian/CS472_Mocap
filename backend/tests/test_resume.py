@@ -217,7 +217,7 @@ def test_duplicate_video_stems_get_unique_ids(tmp_path):
 
 def test_rtmpose_mode_reaches_stage_1(fakes, fake_videos, tmp_path):
     run(fake_videos, tmp_path, detector="rtmpose", rtmpose_mode="lightweight")
-    assert fakes.options == [{"mode": "lightweight"}] * 2
+    assert fakes.options == [{"mode": "lightweight", "device": "cpu"}] * 2
     run(fake_videos, tmp_path)                            # MediaPipe gets no options
     assert fakes.options[-2:] == [None, None]
 
@@ -242,3 +242,19 @@ def test_rtmpose_joints_saved_before_the_mode_option_count_as_balanced(fakes, fa
 def test_unknown_rtmpose_mode_is_rejected(fakes, fake_videos, tmp_path):
     with pytest.raises(ValueError, match="rtmpose_mode must be one of"):
         run(fake_videos, tmp_path, detector="rtmpose", rtmpose_mode="turbo")
+
+
+def test_device_is_not_a_different_setting_for_resume(fakes, fake_videos, tmp_path, monkeypatch):
+    run(fake_videos, tmp_path, detector="rtmpose")
+    monkeypatch.setattr(run_pipeline, "check_rtmpose_device", lambda device: None)   # pretend a GPU
+    run(fake_videos, tmp_path, resume=True, detector="rtmpose", rtmpose_device="cuda")
+    assert len(fakes.detect) == 2                         # same joints, only faster to make
+
+
+def test_missing_gpu_stops_before_any_detection(fakes, fake_videos, tmp_path, monkeypatch):
+    def no_gpu(device):
+        raise RuntimeError("RTMPose on the GPU needs onnxruntime-gpu")
+    monkeypatch.setattr(run_pipeline, "check_rtmpose_device", no_gpu)
+    with pytest.raises(RuntimeError, match="onnxruntime-gpu"):
+        run(fake_videos, tmp_path, detector="rtmpose", rtmpose_device="cuda")
+    assert fakes.detect == []

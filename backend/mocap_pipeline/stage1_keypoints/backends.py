@@ -162,6 +162,30 @@ def pick_person(bboxes: np.ndarray) -> int | None:
 
 # rtmlib's model pairs for BodyWithFeet, fastest first (config.RTMPOSE_MODE)
 RTMPOSE_MODES = ("lightweight", "balanced", "performance")
+# where RTMPose runs: the processor, or an NVIDIA GPU through onnxruntime-gpu
+RTMPOSE_DEVICES = ("cpu", "cuda")
+_ORT_PROVIDER = {"cpu": "CPUExecutionProvider", "cuda": "CUDAExecutionProvider"}
+
+
+def check_rtmpose_device(device: str) -> None:
+    """
+    Raise RuntimeError, with what to do, if RTMPose cannot run on `device`.
+    For "cuda" that means onnxruntime-gpu is installed (not plain
+    onnxruntime; the two cannot share a venv) and offers the CUDA provider.
+    Called before any video is read, so a GPU run fails in seconds.
+    """
+    if device not in RTMPOSE_DEVICES:
+        raise ValueError(f"RTMPose device must be one of {RTMPOSE_DEVICES}, got {device!r}")
+    if device == "cpu":
+        return
+    import onnxruntime
+
+    available = onnxruntime.get_available_providers()
+    if _ORT_PROVIDER[device] not in available:
+        raise RuntimeError(
+            f"RTMPose on the GPU needs onnxruntime-gpu and an NVIDIA GPU; this ONNX Runtime offers "
+            f"{', '.join(available)}. Swap the package with: pip uninstall onnxruntime, then "
+            f"pip install onnxruntime-gpu. Or run with --rtmpose-device cpu.")
 
 
 class RTMPoseBackend(PoseBackend):
@@ -175,17 +199,33 @@ class RTMPoseBackend(PoseBackend):
     both models on first use (into ~/.cache), so model_path is not used.
 
     mode: rtmlib's "lightweight", "balanced" or "performance" (slower, more
-    accurate). device: "cpu" or "cuda" (needs onnxruntime-gpu).
+    accurate). device: "cpu" or "cuda" (needs onnxruntime-gpu). ONNX Runtime
+    quietly falls back to the CPU when it cannot start the GPU (missing CUDA
+    libraries, for one), so after loading, both models are checked to really
+    be on the device asked for.
     """
     name = "rtmpose"
 
     def __init__(self, model_path: str | None = None, mode: str = config.RTMPOSE_MODE, device: str = "cpu"):
         if mode not in RTMPOSE_MODES:
             raise ValueError(f"RTMPose mode must be one of {RTMPOSE_MODES}, got {mode!r}")
+        check_rtmpose_device(device)
 
         from rtmlib import BodyWithFeet
 
         self._model = BodyWithFeet(mode=mode, backend="onnxruntime", device=device)
+        self._check_running_on(device)
+
+    def _check_running_on(self, device: str) -> None:
+        """RuntimeError if either model ended up somewhere other than `device` (ONNX Runtime's silent fallback)."""
+        wanted = _ORT_PROVIDER[device]
+        for name, part in (("person detector", self._model.det_model), ("pose model", self._model.pose_model)):
+            providers = part.session.get_providers()
+            if not providers or providers[0] != wanted:
+                raise RuntimeError(
+                    f"RTMPose's {name} is running on {providers[0] if providers else 'nothing'}, not "
+                    f"{wanted}: ONNX Runtime could not start the GPU (check that the NVIDIA driver, CUDA "
+                    f"and cuDNN versions match onnxruntime-gpu's), or run with --rtmpose-device cpu.")
 
     def detect(self, rgb, frame_ms):
         import cv2

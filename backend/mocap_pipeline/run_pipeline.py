@@ -31,7 +31,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from . import config, io, metrics
 from .stage1_keypoints import detect
-from .stage1_keypoints.backends import BACKENDS, DEFAULT_BACKEND, RTMPOSE_MODES
+from .stage1_keypoints.backends import (BACKENDS, DEFAULT_BACKEND, RTMPOSE_DEVICES, RTMPOSE_MODES,
+                                        check_rtmpose_device)
 from .stage2_reconstruct import calibrate, scale_floor, smooth, sync, triangulate
 from .stage3_rig import bvh_writer, rotations, skeleton
 from .joints import RIG_JOINTS, RIG_PARENTS
@@ -180,11 +181,12 @@ def _stop(stage: str, stop_after: str | None) -> bool:
     return False
 
 
-def detector_options(detector: str, rtmpose_mode: str = config.RTMPOSE_MODE) -> dict:
+def detector_options(detector: str, rtmpose_mode: str = config.RTMPOSE_MODE,
+                     rtmpose_device: str = "cpu") -> dict:
     """The settings handed to the stage 1 backend (backends.create_backend). Empty for MediaPipe."""
     if detector != "rtmpose":
         return {}
-    return {"mode": rtmpose_mode}
+    return {"mode": rtmpose_mode, "device": rtmpose_device}
 
 
 # detector options at these values leave the joints as they were before the options existed
@@ -356,6 +358,7 @@ def run(
     clap_threshold: float = 1.0,
     jobs: int = config.DETECT_JOBS,
     rtmpose_mode: str = config.RTMPOSE_MODE,
+    rtmpose_device: str = "cpu",
 ) -> None:
     """
     Runs every stage in order. With resume=True a stage whose file (io.stage_paths)
@@ -366,7 +369,9 @@ def run(
     skipped when clap_times are given. detector is the stage 1 pose model (a
     name in backends.BACKENDS); saved joints are only reused if the same
     detector made them. rtmpose_mode is rtmlib's model size for RTMPose
-    (backends.RTMPOSE_MODES; ignored for MediaPipe). smoother is the
+    (backends.RTMPOSE_MODES; ignored for MediaPipe), rtmpose_device where it
+    runs ("cpu" or "cuda"; checked before any video is read, and the device
+    does not count as a different setting for --resume). smoother is the
     stage 2c filter (a name in smooth.SMOOTHERS); it always runs, so two runs
     with --resume compare smoothers on the same triangulation. jobs is how
     many videos stage 1 detects at once, each in its own process (0 picks a
@@ -388,7 +393,11 @@ def run(
         raise ValueError(f"detector must be one of {tuple(BACKENDS)}, got {detector!r}")
     if rtmpose_mode not in RTMPOSE_MODES:
         raise ValueError(f"rtmpose_mode must be one of {RTMPOSE_MODES}, got {rtmpose_mode!r}")
-    options = detector_options(detector, rtmpose_mode)
+    if rtmpose_device not in RTMPOSE_DEVICES:
+        raise ValueError(f"rtmpose_device must be one of {RTMPOSE_DEVICES}, got {rtmpose_device!r}")
+    if detector == "rtmpose":
+        check_rtmpose_device(rtmpose_device)
+    options = detector_options(detector, rtmpose_mode, rtmpose_device)
     if smoother not in smooth.SMOOTHERS:
         raise ValueError(
             f"smoother must be one of {smooth.SMOOTHERS}, got {smoother!r}"
@@ -741,6 +750,13 @@ def main() -> None:
         "performance most accurate; only used with --detector rtmpose.",
     )
     parser.add_argument(
+        "--rtmpose-device",
+        choices=list(RTMPOSE_DEVICES),
+        default="cpu",
+        help="Where RTMPose runs (default: cpu). cuda needs an NVIDIA GPU and onnxruntime-gpu "
+        "installed in place of onnxruntime; the run stops at once if the GPU cannot be used.",
+    )
+    parser.add_argument(
         "--model",
         default=None,
         help="MediaPipe pose_landmarker .task file (default: MODEL_FILEPATH in .env, or the "
@@ -866,6 +882,7 @@ def main() -> None:
         clap_threshold=args.clap_threshold,
         jobs=args.jobs,
         rtmpose_mode=args.rtmpose_mode,
+        rtmpose_device=args.rtmpose_device,
     )
 
 

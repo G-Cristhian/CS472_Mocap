@@ -127,3 +127,32 @@ def test_create_backend_passes_options(monkeypatch):
     monkeypatch.setitem(backends.BACKENDS, "recorder", Recorder)
     backends.create_backend("recorder", "m.task", mode="lightweight")
     assert seen == {"mode": "lightweight", "model_path": "m.task"}
+
+
+def test_gpu_check_explains_a_cpu_only_onnxruntime(monkeypatch):
+    onnxruntime = pytest.importorskip("onnxruntime")
+    monkeypatch.setattr(onnxruntime, "get_available_providers", lambda: ["CPUExecutionProvider"])
+    with pytest.raises(RuntimeError, match="pip install onnxruntime-gpu"):
+        backends.check_rtmpose_device("cuda")
+    backends.check_rtmpose_device("cpu")                # always fine
+    with pytest.raises(ValueError, match="device must be one of"):
+        backends.check_rtmpose_device("tpu")
+
+
+class FakeSession:
+    def __init__(self, providers):
+        self.providers = providers
+
+    def get_providers(self):
+        return self.providers
+
+
+def test_silent_cpu_fallback_is_caught():
+    fake = FakeRtmlib([])
+    fake.det_model = type("Det", (), {"session": FakeSession(["CUDAExecutionProvider", "CPUExecutionProvider"])})()
+    fake.pose_model = type("Pose", (), {"session": FakeSession(["CPUExecutionProvider"])})()
+    backend = make_backend(fake)
+    with pytest.raises(RuntimeError, match="pose model is running on CPUExecutionProvider"):
+        backend._check_running_on("cuda")
+    fake.pose_model.session.providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    backend._check_running_on("cuda")                    # both on the GPU: fine
