@@ -126,3 +126,10 @@ def test_synchronise_with_the_chirp(videos):
     assert result.common_timestamps[0] == 0.0
     assert result.common_timestamps[-1] <= min(4.0 - 1.20, 4.0 - 0.85)
 
+
+def test_check_videos_with_the_chirp(videos, capsys):
+    assert check_videos.check([videos["cam0"], videos["cam1"]], signal="chirp") == 0
+    out = capsys.readouterr().out
+    assert "chirp   1.20" in out and "All files usable" in out
+    assert check_videos.check([videos["cam0"], videos["nochirp"]], signal="chirp") == 1
+    assert "FAIL    no chirp" in capsys.readouterr().out
