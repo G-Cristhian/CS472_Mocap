@@ -397,7 +397,7 @@ def run(
                 jobs,
             )
     except BaseException as e:
-        path = metrics.finish("failed", f"{type(e).__name__}: {e}")
+        metrics.finish("failed", f"{type(e).__name__}: {e}")
         raise
     path = metrics.finish("done" if stopped is None else f"stopped after {stopped}")
     if path is not None and stopped is None:
