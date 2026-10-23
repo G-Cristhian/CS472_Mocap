@@ -182,15 +182,16 @@ def _stop(stage: str, stop_after: str | None) -> bool:
 
 
 def detector_options(detector: str, rtmpose_mode: str = config.RTMPOSE_MODE,
-                     rtmpose_device: str = "cpu") -> dict:
+                     rtmpose_device: str = "cpu",
+                     rtmpose_detect_every: int = config.RTMPOSE_DETECT_EVERY) -> dict:
     """The settings handed to the stage 1 backend (backends.create_backend). Empty for MediaPipe."""
     if detector != "rtmpose":
         return {}
-    return {"mode": rtmpose_mode, "device": rtmpose_device}
+    return {"mode": rtmpose_mode, "device": rtmpose_device, "detect_every": rtmpose_detect_every}
 
 
 # detector options at these values leave the joints as they were before the options existed
-_DEFAULT_DETECTOR_SETTINGS = {"mode": config.RTMPOSE_MODE}
+_DEFAULT_DETECTOR_SETTINGS = {"mode": config.RTMPOSE_MODE, "detect_every": config.RTMPOSE_DETECT_EVERY}
 
 
 def detector_settings(options: dict) -> dict:
@@ -359,6 +360,7 @@ def run(
     jobs: int = config.DETECT_JOBS,
     rtmpose_mode: str = config.RTMPOSE_MODE,
     rtmpose_device: str = "cpu",
+    rtmpose_detect_every: int = config.RTMPOSE_DETECT_EVERY,
 ) -> None:
     """
     Runs every stage in order. With resume=True a stage whose file (io.stage_paths)
@@ -371,7 +373,9 @@ def run(
     detector made them. rtmpose_mode is rtmlib's model size for RTMPose
     (backends.RTMPOSE_MODES; ignored for MediaPipe), rtmpose_device where it
     runs ("cpu" or "cuda"; checked before any video is read, and the device
-    does not count as a different setting for --resume). smoother is the
+    does not count as a different setting for --resume), rtmpose_detect_every
+    how often its person detector runs (1 = every frame; see
+    backends.RTMPoseBackend). smoother is the
     stage 2c filter (a name in smooth.SMOOTHERS); it always runs, so two runs
     with --resume compare smoothers on the same triangulation. jobs is how
     many videos stage 1 detects at once, each in its own process (0 picks a
@@ -395,9 +399,11 @@ def run(
         raise ValueError(f"rtmpose_mode must be one of {RTMPOSE_MODES}, got {rtmpose_mode!r}")
     if rtmpose_device not in RTMPOSE_DEVICES:
         raise ValueError(f"rtmpose_device must be one of {RTMPOSE_DEVICES}, got {rtmpose_device!r}")
+    if not isinstance(rtmpose_detect_every, int) or rtmpose_detect_every < 1:
+        raise ValueError(f"rtmpose_detect_every must be 1 or more, got {rtmpose_detect_every!r}")
     if detector == "rtmpose":
         check_rtmpose_device(rtmpose_device)
-    options = detector_options(detector, rtmpose_mode, rtmpose_device)
+    options = detector_options(detector, rtmpose_mode, rtmpose_device, rtmpose_detect_every)
     if smoother not in smooth.SMOOTHERS:
         raise ValueError(
             f"smoother must be one of {smooth.SMOOTHERS}, got {smoother!r}"
@@ -757,6 +763,14 @@ def main() -> None:
         "installed in place of onnxruntime; the run stops at once if the GPU cannot be used.",
     )
     parser.add_argument(
+        "--rtmpose-detect-every",
+        type=int,
+        default=config.RTMPOSE_DETECT_EVERY,
+        help="Run RTMPose's person detector every N frames (default: 1, every frame). In between, "
+        "the performer is looked for around the previous frame's joints: faster, but check fast "
+        "movement and people walking through the shot.",
+    )
+    parser.add_argument(
         "--model",
         default=None,
         help="MediaPipe pose_landmarker .task file (default: MODEL_FILEPATH in .env, or the "
@@ -883,6 +897,7 @@ def main() -> None:
         jobs=args.jobs,
         rtmpose_mode=args.rtmpose_mode,
         rtmpose_device=args.rtmpose_device,
+        rtmpose_detect_every=args.rtmpose_detect_every,
     )
 
 

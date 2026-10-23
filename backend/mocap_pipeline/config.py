@@ -26,6 +26,16 @@ MIN_CAMERAS = 2
 # (YOLOX-m 640 + RTMPose-m 256x192) or "performance" (YOLOX-x 640 + RTMPose-x
 # 384x288). Balanced is rtmlib's default (design decision D-022).
 RTMPOSE_MODE = "balanced"
+# Run RTMPose's person detector only every this many frames (1 = every frame,
+# as before). In between, the performer's box comes from the joints found in
+# the previous frame: those scoring at least RTMPOSE_TRACK_MIN_SCORE (rtmlib's
+# raw score), at least RTMPOSE_TRACK_MIN_JOINTS of them, their bounding box
+# grown RTMPOSE_TRACK_BOX_SCALE times about its centre (rtmlib's PoseTracker
+# uses 1.25). Too few good joints and the detector runs on the next frame.
+RTMPOSE_DETECT_EVERY = 1
+RTMPOSE_TRACK_MIN_SCORE = 0.3
+RTMPOSE_TRACK_MIN_JOINTS = 6
+RTMPOSE_TRACK_BOX_SCALE = 1.25
 
 # ---- Stage 2a: sync --------------------------------------------------------
 # Only search this many seconds from the start of each video for the clap.

@@ -217,7 +217,7 @@ def test_duplicate_video_stems_get_unique_ids(tmp_path):
 
 def test_rtmpose_mode_reaches_stage_1(fakes, fake_videos, tmp_path):
     run(fake_videos, tmp_path, detector="rtmpose", rtmpose_mode="lightweight")
-    assert fakes.options == [{"mode": "lightweight", "device": "cpu"}] * 2
+    assert fakes.options == [{"mode": "lightweight", "device": "cpu", "detect_every": 1}] * 2
     run(fake_videos, tmp_path)                            # MediaPipe gets no options
     assert fakes.options[-2:] == [None, None]
 
@@ -258,3 +258,15 @@ def test_missing_gpu_stops_before_any_detection(fakes, fake_videos, tmp_path, mo
     with pytest.raises(RuntimeError, match="onnxruntime-gpu"):
         run(fake_videos, tmp_path, detector="rtmpose", rtmpose_device="cuda")
     assert fakes.detect == []
+
+
+def test_changing_detect_every_detects_again(fakes, fake_videos, tmp_path):
+    run(fake_videos, tmp_path, detector="rtmpose")
+    run(fake_videos, tmp_path, resume=True, detector="rtmpose", rtmpose_detect_every=5)
+    assert len(fakes.detect) == 4
+    assert fakes.options[-1]["detect_every"] == 5
+
+
+def test_detect_every_must_be_positive(fakes, fake_videos, tmp_path):
+    with pytest.raises(ValueError, match="rtmpose_detect_every must be 1 or more"):
+        run(fake_videos, tmp_path, detector="rtmpose", rtmpose_detect_every=0)

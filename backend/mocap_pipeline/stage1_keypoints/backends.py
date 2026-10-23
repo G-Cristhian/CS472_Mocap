@@ -149,6 +149,28 @@ def halpe26_to_mediapipe(keypoints: np.ndarray, scores: np.ndarray) -> tuple[np.
     return points, confidence
 
 
+def box_from_joints(keypoints: np.ndarray, scores: np.ndarray, width: int, height: int) -> np.ndarray | None:
+    """
+    The box to look for the performer in on the next frame, from this frame's
+    Halpe-26 joints: the joints scoring at least config.RTMPOSE_TRACK_MIN_SCORE,
+    their bounding box grown config.RTMPOSE_TRACK_BOX_SCALE times about its
+    centre, kept inside the image. None if fewer than
+    config.RTMPOSE_TRACK_MIN_JOINTS joints qualify (performer lost or
+    occluded), which sends the next frame back to the person detector.
+    """
+    good = (scores >= config.RTMPOSE_TRACK_MIN_SCORE) & np.isfinite(keypoints).all(axis=1)
+    if good.sum() < config.RTMPOSE_TRACK_MIN_JOINTS:
+        return None
+    pts = keypoints[good]
+    lo, hi = pts.min(axis=0), pts.max(axis=0)
+    centre, half = (lo + hi) / 2, (hi - lo) / 2 * config.RTMPOSE_TRACK_BOX_SCALE
+    x1, y1 = np.maximum(centre - half, 0)
+    x2, y2 = np.minimum(centre + half, [width - 1, height - 1])
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return np.array([x1, y1, x2, y2])
+
+
 def pick_person(bboxes: np.ndarray) -> int | None:
     """
     Index of the performer among the detected people: the largest box.
@@ -193,9 +215,13 @@ class RTMPoseBackend(PoseBackend):
     RTMPose with the Halpe-26 (body with feet) model, through rtmlib
     (github.com/Tau-J/rtmlib, Apache-2.0) on ONNX Runtime.
 
-    Unlike MediaPipe it does not track: every frame a person detector (YOLOX)
-    finds the people, the largest one is taken as the performer
-    (pick_person) and RTMPose finds that person's 26 joints. rtmlib downloads
+    A person detector (YOLOX) finds the people, the largest one is taken as
+    the performer (pick_person) and RTMPose finds that person's 26 joints.
+    With detect_every=1 (the default) the detector runs on every frame; with
+    detect_every=N it runs on every Nth frame, and the frames between reuse a
+    box around the previous frame's joints (box_from_joints), which skips most
+    of the detector's cost. A frame whose joints are too uncertain to box
+    sends the next frame back to the detector. rtmlib downloads
     both models on first use (into ~/.cache), so model_path is not used.
 
     mode: rtmlib's "lightweight", "balanced" or "performance" (slower, more
@@ -205,8 +231,16 @@ class RTMPoseBackend(PoseBackend):
     be on the device asked for.
     """
     name = "rtmpose"
+    # class-level defaults so a backend built without __init__ (the tests) behaves as before
+    _detect_every = 1
+    _frame = 0
+    _box = None
 
-    def __init__(self, model_path: str | None = None, mode: str = config.RTMPOSE_MODE, device: str = "cpu"):
+    def __init__(self, model_path: str | None = None, mode: str = config.RTMPOSE_MODE, device: str = "cpu",
+                 detect_every: int = config.RTMPOSE_DETECT_EVERY):
+        if not isinstance(detect_every, (int, np.integer)) or detect_every < 1:
+            raise ValueError(f"detect_every must be a whole number of frames, 1 or more, got {detect_every!r}")
+        self._detect_every = int(detect_every)
         if mode not in RTMPOSE_MODES:
             raise ValueError(f"RTMPose mode must be one of {RTMPOSE_MODES}, got {mode!r}")
         check_rtmpose_device(device)
@@ -233,14 +267,23 @@ class RTMPoseBackend(PoseBackend):
         # rtmlib is written for OpenCV's BGR frames (its examples feed cap.read() directly)
         bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
-        bboxes = np.asarray(self._model.det_model(bgr)).reshape(-1, 4)
-        person = pick_person(bboxes)
-        if person is None:
-            # without a box rtmlib would run the pose model on the whole image
-            # and always "find" someone, so no detection means no person
-            return empty_frame()
+        # between detector frames, look where the performer was a frame ago
+        box = self._box if self._frame % self._detect_every != 0 else None
+        self._frame += 1
 
-        keypoints, scores = self._model.pose_model(bgr, bboxes=[bboxes[person]])
+        if box is None:
+            bboxes = np.asarray(self._model.det_model(bgr)).reshape(-1, 4)
+            person = pick_person(bboxes)
+            if person is None:
+                # without a box rtmlib would run the pose model on the whole image
+                # and always "find" someone, so no detection means no person
+                self._box = None
+                return empty_frame()
+            box = bboxes[person]
+
+        keypoints, scores = self._model.pose_model(bgr, bboxes=[box])
+        if self._detect_every > 1:
+            self._box = box_from_joints(keypoints[0], scores[0], bgr.shape[1], bgr.shape[0])
         return halpe26_to_mediapipe(keypoints[0], scores[0])
 
 
