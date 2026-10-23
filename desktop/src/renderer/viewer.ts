@@ -16,7 +16,6 @@ export class BvhViewer {
   private readonly controls: OrbitControls
   private readonly clock = new THREE.Clock()
   private mixer: THREE.AnimationMixer | null = null
-  private action: THREE.AnimationAction | null = null
   rig: THREE.Group | null = null
   private helper: THREE.SkeletonHelper | null = null
   private playing = false
@@ -76,8 +75,7 @@ export class BvhViewer {
 
     // tracks are named "<Bone>.position" / "<Bone>.quaternion"; the mixer resolves them from the root bone
     this.mixer = new THREE.AnimationMixer(root)
-    this.action = this.mixer.clipAction(clip)
-    this.action.play()
+    this.mixer.clipAction(clip).play()
     ;(this as { duration: number }).duration = clip.duration
     this.setTime(0)
   }
