@@ -565,3 +565,12 @@ textarea {
     font-size: calc(30px * var(--font-scale));
   }
 }
+
+.page-search-bar {
+  margin-top: 28px;
+}
+.page-search {
+  display: block;
+  width: 320px;
+  max-width: 100%;
+}
