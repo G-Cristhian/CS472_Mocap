@@ -36,7 +36,7 @@ export function MotionsPage() {
           <SearchIcon />
           <input
             type = "search"
-            placeholder = "Type here to find your motion!"
+            placeholder = "Search by name."
             aria-label = "Search box for motions"
             value = {searchBox}
             onChange = {(input) => setSearchBox(input.target.value)}
