@@ -192,6 +192,25 @@ RTMPOSE_DEVICES = ("cpu", "cuda")
 _ORT_PROVIDER = {"cpu": "CPUExecutionProvider", "cuda": "CUDAExecutionProvider"}
 
 
+def _preload_cuda_libraries() -> None:
+    """
+    Make the CUDA and cuDNN libraries findable before ONNX Runtime starts the
+    GPU. onnxruntime-gpu installed with its [cuda,cudnn] extras ships them as
+    pip packages (nvidia-*), which Windows does not search on its own;
+    onnxruntime.preload_dlls() loads them from there, or from a matching
+    PyTorch or the system's CUDA install. Older ONNX Runtimes lack it, and a
+    failure here is left for the provider check to report.
+    """
+    import onnxruntime
+
+    preload = getattr(onnxruntime, "preload_dlls", None)
+    if preload is not None:
+        try:
+            preload()
+        except Exception:
+            pass
+
+
 def check_rtmpose_device(device: str) -> None:
     """
     Raise RuntimeError, with what to do, if RTMPose cannot run on `device`.
@@ -205,12 +224,13 @@ def check_rtmpose_device(device: str) -> None:
         return
     import onnxruntime
 
+    _preload_cuda_libraries()
     available = onnxruntime.get_available_providers()
     if _ORT_PROVIDER[device] not in available:
         raise RuntimeError(
             f"RTMPose on the GPU needs onnxruntime-gpu and an NVIDIA GPU; this ONNX Runtime offers "
             f"{', '.join(available)}. Swap the package with: pip uninstall onnxruntime, then "
-            f"pip install onnxruntime-gpu. Or run with --rtmpose-device cpu.")
+            f"pip install \"onnxruntime-gpu[cuda,cudnn]\" (same version). Or run with --rtmpose-device cpu.")
 
 
 class RTMPoseBackend(PoseBackend):
@@ -263,8 +283,9 @@ class RTMPoseBackend(PoseBackend):
             if not providers or providers[0] != wanted:
                 raise RuntimeError(
                     f"RTMPose's {name} is running on {providers[0] if providers else 'nothing'}, not "
-                    f"{wanted}: ONNX Runtime could not start the GPU (check that the NVIDIA driver, CUDA "
-                    f"and cuDNN versions match onnxruntime-gpu's), or run with --rtmpose-device cpu.")
+                    f"{wanted}: ONNX Runtime could not start the GPU. Install onnxruntime-gpu with its CUDA "
+                    f"libraries (pip install \"onnxruntime-gpu[cuda,cudnn]\") and check that the NVIDIA "
+                    f"driver supports that CUDA version (nvidia-smi), or run with --rtmpose-device cpu.")
 
     def detect(self, rgb, frame_ms):
         import cv2

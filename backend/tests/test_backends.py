@@ -134,7 +134,7 @@ def test_create_backend_passes_options(monkeypatch):
 def test_gpu_check_explains_a_cpu_only_onnxruntime(monkeypatch):
     onnxruntime = pytest.importorskip("onnxruntime")
     monkeypatch.setattr(onnxruntime, "get_available_providers", lambda: ["CPUExecutionProvider"])
-    with pytest.raises(RuntimeError, match="pip install onnxruntime-gpu"):
+    with pytest.raises(RuntimeError, match="pip install \"onnxruntime-gpu"):
         backends.check_rtmpose_device("cuda")
     backends.check_rtmpose_device("cpu")                # always fine
     with pytest.raises(ValueError, match="device must be one of"):
@@ -208,3 +208,23 @@ def test_box_from_joints_stays_in_the_image():
 def test_detect_every_is_validated():
     with pytest.raises(ValueError, match="detect_every must be a whole number"):
         RTMPoseBackend(detect_every=0)
+
+
+def test_gpu_check_preloads_the_cuda_libraries_first(monkeypatch):
+    onnxruntime = pytest.importorskip("onnxruntime")
+    order = []
+    monkeypatch.setattr(onnxruntime, "preload_dlls", lambda: order.append("preload"), raising=False)
+    monkeypatch.setattr(onnxruntime, "get_available_providers",
+                        lambda: order.append("providers") or ["CUDAExecutionProvider", "CPUExecutionProvider"])
+    backends.check_rtmpose_device("cuda")
+    assert order == ["preload", "providers"]
+
+
+def test_a_failing_preload_is_left_to_the_provider_check(monkeypatch):
+    onnxruntime = pytest.importorskip("onnxruntime")
+    def broken():
+        raise OSError("cudnn64_9.dll not found")
+    monkeypatch.setattr(onnxruntime, "preload_dlls", broken, raising=False)
+    monkeypatch.setattr(onnxruntime, "get_available_providers", lambda: ["CPUExecutionProvider"])
+    with pytest.raises(RuntimeError, match="needs onnxruntime-gpu"):
+        backends.check_rtmpose_device("cuda")
