@@ -32,7 +32,7 @@ from pathlib import Path
 from . import config, io, metrics
 from .stage1_keypoints import detect
 from .stage1_keypoints.backends import (BACKENDS, DEFAULT_BACKEND, RTMPOSE_DEVICES, RTMPOSE_MODES,
-                                        check_rtmpose_device)
+                                        check_rtmpose_device, joints_provided)
 from .stage2_reconstruct import calibrate, scale_floor, smooth, sync, triangulate
 from .stage3_rig import bvh_writer, rotations, skeleton
 from .joints import RIG_JOINTS, RIG_PARENTS
@@ -672,7 +672,7 @@ def _run_stages(
         with metrics.time("triangulate"):
             pose = triangulate.triangulate_sequence(keypoints, rig)
         io.save_pose3d(pose, str(pose_path))
-    metrics.record("pose_raw", metrics.pose_summary(pose))
+    metrics.record("pose_raw", metrics.pose_summary(pose, joints_provided(detector)))
 
     if _stop("triangulate", stop_after):
         return "triangulate"
@@ -680,7 +680,7 @@ def _run_stages(
     if smoothing:
         with metrics.time("smooth"):
             pose = smooth.smooth(smooth.fill_gaps(pose), smoother)
-    metrics.record("pose_final", metrics.pose_summary(pose))
+    metrics.record("pose_final", metrics.pose_summary(pose, joints_provided(detector)))
 
     io.save_pose3d_json(pose, out_path, sync_result.common_timestamps)
     print(f"Saved {len(pose.points)} frames of 3D joints to {out_path}")

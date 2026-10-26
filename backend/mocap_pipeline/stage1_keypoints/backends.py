@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 
 from .. import config
-from ..joints import JOINT_INDEX, NUM_JOINTS
+from ..joints import JOINT_INDEX, MEDIAPIPE_JOINTS, NUM_JOINTS
 
 DEFAULT_BACKEND = "mediapipe"
 
@@ -33,6 +33,9 @@ class PoseBackend:
     track the person from frame to frame).
     """
     name = ""
+    # the joints (MediaPipe names) this model can find; None means all of them.
+    # The others are NaN in every frame by design, not missed detections.
+    joints: tuple[str, ...] | None = None
 
     def __enter__(self) -> "PoseBackend":
         return self
@@ -231,6 +234,8 @@ class RTMPoseBackend(PoseBackend):
     be on the device asked for.
     """
     name = "rtmpose"
+    # Halpe-26 has no eye corners, mouth corners or finger points
+    joints = None   # set below, once MEDIAPIPE_FROM_HALPE26 is defined
     # class-level defaults so a backend built without __init__ (the tests) behaves as before
     _detect_every = 1
     _frame = 0
@@ -292,6 +297,15 @@ BACKENDS: dict[str, type[PoseBackend]] = {
     MediaPipeBackend.name: MediaPipeBackend,
     RTMPoseBackend.name: RTMPoseBackend,
 }
+
+
+RTMPoseBackend.joints = tuple(j for j in MEDIAPIPE_JOINTS if j in MEDIAPIPE_FROM_HALPE26)
+
+
+def joints_provided(name: str = DEFAULT_BACKEND) -> list[str]:
+    """The joints detector `name` can find, in MediaPipe order (all 33 for MediaPipe)."""
+    joints = BACKENDS[name].joints
+    return list(MEDIAPIPE_JOINTS) if joints is None else [j for j in MEDIAPIPE_JOINTS if j in joints]
 
 
 def create_backend(name: str = DEFAULT_BACKEND, model_path: str | None = None, **options) -> PoseBackend:
