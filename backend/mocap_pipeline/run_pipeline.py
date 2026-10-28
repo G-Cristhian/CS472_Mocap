@@ -327,6 +327,7 @@ def run(
     smoother: str = config.SMOOTHER,
     clap_threshold: float = 1.0,
     jobs: int = config.DETECT_JOBS,
+    sync_signal: str = "clap",
 ) -> None:
     """
     Runs every stage in order. With resume=True a stage whose file (io.stage_paths)
@@ -334,7 +335,9 @@ def run(
     the last stage to run (one of STAGES); its file is written and run() returns.
     clap_threshold multiplies the clap loudness thresholds in config (0.5
     accepts a clap half as strong, for a noisy room); the clap search is
-    skipped when clap_times are given. detector is the stage 1 pose model (a
+    skipped when clap_times are given. sync_signal is what marks t = 0 in
+    every video: "clap" or "chirp" (stage2_reconstruct/chirp.py); with the
+    chirp, the clap times and clap_threshold apply to the chirp. detector is the stage 1 pose model (a
     name in backends.BACKENDS); saved joints are only reused if the same
     detector made them. smoother is the
     stage 2c filter (a name in smooth.SMOOTHERS); it always runs, so two runs
@@ -362,6 +365,8 @@ def run(
         )
     if not clap_threshold > 0:
         raise ValueError(f"clap_threshold must be positive, got {clap_threshold}")
+    if sync_signal not in sync.SYNC_SIGNALS:
+        raise ValueError(f"sync_signal must be one of {sync.SYNC_SIGNALS}, got {sync_signal!r}")
     detect_jobs(n, jobs)  # validates jobs
 
     metrics.start(
@@ -395,6 +400,7 @@ def run(
                 smoother,
                 clap_threshold,
                 jobs,
+                sync_signal,
             )
     except BaseException as e:
         metrics.finish("failed", f"{type(e).__name__}: {e}")
@@ -424,6 +430,7 @@ def _run_stages(
     smoother,
     clap_threshold,
     jobs,
+    sync_signal="clap",
 ) -> str | None:
     """The stages in order; returns the stage name if stop_after ended the run early."""
     n = len(video_paths)
@@ -530,19 +537,21 @@ def _run_stages(
     try:
         with metrics.time("sync"):
             sync_result, keypoints = sync.synchronise(
-                video_paths, keypoints, clap_times, clap_threshold
+                video_paths, keypoints, clap_times, clap_threshold, signal=sync_signal
             )
     except sync.ClapNotFoundError as e:
+        mark = "chirp" if sync_signal == "chirp" else "clap"
         raise SystemExit(
-            f"{e}\n--sync takes one clap time per video in seconds, e.g. --sync 1.25 0.80 1.10; "
-            f"a video player shows the time. --clap-threshold 0.5 accepts weaker claps."
+            f"{e}\n--sync takes one {mark} time per video in seconds, e.g. --sync 1.25 0.80 1.10; "
+            f"a video player shows the time. --clap-threshold 0.5 accepts weaker {mark}s."
         )
     # rewriting an unchanged sync file would make the saved 3D points look stale
     if not sync_from_file:
         io.save_sync(sync_result, str(sync_path))
 
+    # api.py and the desktop tester take "Clap at" / "Chirp at" as the end of sync
     print(
-        "Clap at "
+        ("Chirp at " if sync_signal == "chirp" else "Clap at ")
         + ", ".join(f"{cid} {t:.3f} s" for cid, t in sync_result.clap_time_s.items())
     )
     metrics.record("sync.clap_time_s", sync_result.clap_time_s)
@@ -554,6 +563,7 @@ def _run_stages(
             else "saved file" if sync_from_file else "audio"
         ),
     )
+    metrics.record("sync.signal", sync_signal)
     metrics.record("sync.clap_threshold", float(clap_threshold))
     metrics.record("sync.common_frames", int(len(sync_result.common_timestamps)))
     metrics.record("sync.common_fps", float(config.TARGET_FPS))
@@ -717,6 +727,14 @@ def main() -> None:
         help="Clap time in seconds in each video, one per video. Default: found from the audio.",
     )
     parser.add_argument(
+        "--sync-signal",
+        choices=list(sync.SYNC_SIGNALS),
+        default="clap",
+        help="What marks t = 0 in every video (default: clap). chirp: the sweep from "
+        "python -m mocap_pipeline.stage2_reconstruct.chirp, played once from one speaker while "
+        "every camera records; --sync and --clap-threshold then apply to the chirp.",
+    )
+    parser.add_argument(
         "--clap-threshold",
         type=float,
         default=1.0,
@@ -813,6 +831,7 @@ def main() -> None:
         smoother=args.smoother,
         clap_threshold=args.clap_threshold,
         jobs=args.jobs,
+        sync_signal=args.sync_signal,
     )
 
 

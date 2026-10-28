@@ -52,6 +52,29 @@ CLAP_MAX_REFINE_S = 0.05
 # Resampling never interpolates across a hole longer than this many of the
 # camera's own frame intervals (a dropped frame is fine, a stall is a gap).
 SYNC_MAX_INTERP_GAP_FRAMES = 2.5
+# Chirp sync (stage2_reconstruct/chirp.py), the alternative to the clap: a
+# known sweep played from a speaker once every camera is recording, found by
+# correlating each video's audio with the same sweep (a matched filter). The
+# sweep stays inside what phone speakers play well and under the Nyquist
+# frequency of CLAP_AUDIO_RATE (8 kHz). Changing any of these four means the
+# chirp played on set must be regenerated (python -m mocap_pipeline.stage2_reconstruct.chirp,
+# and frontend/src/lib/chirp.ts uses the same numbers).
+CHIRP_F0_HZ = 1500.0
+CHIRP_F1_HZ = 6000.0
+CHIRP_DURATION_S = 0.5
+# The fades are long on purpose: a chirp that reaches full loudness more slowly
+# than CLAP_MAX_RISE_S is never taken for a clap, so a take can carry both
+# (clap and chirp in one take, to compare the two).
+CHIRP_FADE_S = 0.05
+# The chirp is accepted where the audio matches it at least this well
+# (normalised correlation, 0..1; room noise alone scores about 0.02). Scaled
+# by --clap-threshold like the clap thresholds.
+CHIRP_MIN_SCORE = 0.2
+# A second match at least this fraction as strong as the best, more than
+# CHIRP_ECHO_S away from it, makes the detection ambiguous (chirp played
+# twice, or two phones playing it); echoes off nearby walls arrive sooner.
+CHIRP_MAX_SECOND_PEAK = 0.7
+CHIRP_ECHO_S = 0.1
 
 # ---- Stage 2b: calibration -------------------------------------------------
 # Our calibration (calibrate.py) starts from the best-matched camera pair, adds

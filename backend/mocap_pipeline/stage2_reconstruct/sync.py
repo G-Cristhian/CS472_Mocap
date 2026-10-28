@@ -1,5 +1,6 @@
 """
-Stage 2a: put every camera on one clock using the clap.
+Stage 2a: put every camera on one clock using the clap (or a played chirp,
+see chirp.py; pick with signal="chirp" / run_pipeline.py --sync-signal chirp).
 
 Input : the video paths and their Keypoints2D.
 Output: SyncResult, plus Keypoints2D resampled onto the shared timeline.
@@ -17,8 +18,12 @@ from .. import config, metrics
 from ..schemas import Keypoints2D, SyncResult
 
 
+# what can mark t = 0 in every video: a hand clap, or the chirp from chirp.py
+SYNC_SIGNALS = ("clap", "chirp")
+
+
 class ClapNotFoundError(Exception):
-    pass
+    """No usable sync mark in a video (chirp.ChirpNotFoundError is one too)."""
 
 
 def _read_audio(video_path: str, max_seconds: float) -> np.ndarray:
@@ -202,6 +207,32 @@ def detect_claps(video_paths: list[str], threshold: float = 1.0) -> list[float]:
         for c in range(1, len(claps))]
 
 
+def find_chirp_time(video_path: str, threshold: float = 1.0) -> float:
+    """Seconds into this video at which the chirp starts. threshold as in chirp.find_chirp_in_audio."""
+    from . import chirp  # chirp imports ClapNotFoundError from here
+
+    audio = _read_audio(video_path, config.CLAP_SEARCH_WINDOW_S)
+    return chirp.find_chirp_in_audio(audio, config.CLAP_AUDIO_RATE, str(video_path), threshold)
+
+
+def detect_chirps(video_paths: list[str], threshold: float = 1.0) -> list[float]:
+    """
+    Chirp start time of every video. Each is found against the known sweep, to
+    a fraction of an audio sample, so there is no cross-check against camera 0
+    as for claps.
+    """
+    return [find_chirp_time(v, threshold) for v in video_paths]
+
+
+def detect_sync_times(video_paths: list[str], signal: str = "clap", threshold: float = 1.0) -> list[float]:
+    """The sync mark's time in every video: detect_claps or detect_chirps."""
+    if signal == "clap":
+        return detect_claps(video_paths, threshold)
+    if signal == "chirp":
+        return detect_chirps(video_paths, threshold)
+    raise ValueError(f"signal must be one of {SYNC_SIGNALS}, got {signal!r}")
+
+
 def _resample(kp: Keypoints2D, times: np.ndarray, common: np.ndarray):
     """Linear interpolation of points and confidence onto the common timeline."""
     n = len(times)
@@ -226,10 +257,13 @@ def _resample(kp: Keypoints2D, times: np.ndarray, common: np.ndarray):
 def synchronise(video_paths: list[str],
                 keypoints: list[Keypoints2D],
                 clap_times: list[float] | None = None,
-                clap_threshold: float = 1.0) -> tuple[SyncResult, list[Keypoints2D]]:
+                clap_threshold: float = 1.0,
+                signal: str = "clap") -> tuple[SyncResult, list[Keypoints2D]]:
     """
-    1. Clap time per video: given by hand (clap_times) or detect_claps, with
-       clap_threshold scaling how loud a clap must be (1.0 = config values).
+    1. Clap time per video: given by hand (clap_times) or found in the audio
+       (detect_sync_times: a clap, or the chirp with signal="chirp"), with
+       clap_threshold scaling how strong the mark must be (1.0 = config
+       values). With the chirp, "clap time" below means the chirp's start.
     2. Shift each camera's timestamps so the clap is t = 0.
     3. Shared timeline from 0 to the earliest end time among cameras, at
        config.TARGET_FPS.
@@ -239,7 +273,7 @@ def synchronise(video_paths: list[str],
     After this, frame i means the same instant in every camera.
     """
     if clap_times is None:
-        clap_times = detect_claps(video_paths, clap_threshold)
+        clap_times = detect_sync_times(video_paths, signal, clap_threshold)
 
     shifted = [kp.timestamps - clap for kp, clap in zip(keypoints, clap_times)]
     end = min(t[-1] for t in shifted)
