@@ -72,7 +72,7 @@ Also useful: `sync.cross_check` (a shift over 50 ms with `applied: false` means 
 
 ## 5. Watch it
 
-Open `output/take01/out3d.bvh` in the frontend viewer (`cd frontend && npm run dev`, or on Windows the commands in [windows-setup.md](windows-setup.md) step 5; open a project, "Open .bvh / .json") or in Blender. The skeleton should stand on the floor, face the viewer, and move like the take. Look at the fast moments: a wrist on a punch, a foot on a kick. Jitter, a lagging joint, or a joint that disappears are what the numbers above should have warned about.
+Open `output/take01/out3d.bvh` in the frontend viewer (`cd frontend && npm run dev`, or on Windows the commands in [windows-setup.md](windows-setup.md) step 5; log in, open a motion, "Open .bvh / .json") or in Blender. The skeleton should stand on the floor, face the viewer, and move like the take. Look at the fast moments: a wrist on a punch, a foot on a kick. Jitter, a lagging joint, or a joint that disappears are what the numbers above should have warned about.
 
 ## 6. Reruns that are worth doing
 
