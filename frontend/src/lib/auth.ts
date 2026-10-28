@@ -5,8 +5,6 @@
 
 import { DJANGO_URL, csrfHeaderFor } from '@/lib/django'
 
-export { DJANGO_URL }
-
 export interface AuthUser {
   id: number
   email: string
@@ -17,11 +15,6 @@ export interface AuthUser {
 /** Full name for labels, e.g. "Noah Smith". Falls back to the email when no name was given. */
 export function displayName(user: AuthUser): string {
   return [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email
-}
-
-/** First name for greetings, e.g. "Welcome back, Noah". */
-export function firstName(user: AuthUser): string {
-  return user.first_name || user.email
 }
 
 export interface SignUpInput {

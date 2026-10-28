@@ -1,6 +1,6 @@
 """
 check_videos and the clap detector on synthetic videos with known clap times.
-Encodes three short videos (about a second) per test session.
+Encodes four short videos (four seconds each) per test session.
 """
 import pytest
 

@@ -15,13 +15,6 @@ const base = (size: number) => ({
   'aria-hidden': true,
 })
 
-export const SearchIcon = ({ size = 18 }: IconProps) => (
-  <svg {...base(size)}>
-    <circle cx="11" cy="11" r="7" />
-    <path d="M20 20l-3.6-3.6" />
-  </svg>
-)
-
 export const HelpIcon = ({ size = 22 }: IconProps) => (
   <svg {...base(size)}>
     <circle cx="12" cy="12" r="9" />
@@ -40,21 +33,6 @@ export const GearIcon = ({ size = 22 }: IconProps) => (
 export const PlusIcon = ({ size = 18 }: IconProps) => (
   <svg {...base(size)}>
     <path d="M12 5v14M5 12h14" />
-  </svg>
-)
-
-export const GridIcon = ({ size = 18 }: IconProps) => (
-  <svg {...base(size)} strokeWidth={0} fill="currentColor">
-    <rect x="3" y="3" width="8" height="8" rx="2" />
-    <rect x="13" y="3" width="8" height="8" rx="2" />
-    <rect x="3" y="13" width="8" height="8" rx="2" />
-    <rect x="13" y="13" width="8" height="8" rx="2" />
-  </svg>
-)
-
-export const ListIcon = ({ size = 18 }: IconProps) => (
-  <svg {...base(size)} strokeWidth={2.2}>
-    <path d="M4 7h16M4 12h16M4 17h16" />
   </svg>
 )
 
@@ -130,15 +108,6 @@ export const LayoutIcon = ({ size = 18 }: IconProps) => (
     <rect x="13" y="3" width="8" height="8" rx="1.6" />
     <rect x="3" y="13" width="8" height="8" rx="1.6" />
     <rect x="13" y="13" width="8" height="8" rx="1.6" />
-  </svg>
-)
-
-export const ShareIcon = ({ size = 18 }: IconProps) => (
-  <svg {...base(size)}>
-    <circle cx="17.5" cy="6" r="2.5" />
-    <circle cx="6.5" cy="12" r="2.5" />
-    <circle cx="17.5" cy="18" r="2.5" />
-    <path d="M8.8 10.8l6.4-3.5M8.8 13.2l6.4 3.5" />
   </svg>
 )
 
