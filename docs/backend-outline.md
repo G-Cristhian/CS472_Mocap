@@ -88,7 +88,9 @@ after another, one frame after another. Everything after it is seconds. As of
 - Step 1 is the one part that runs in parallel: the videos of a take are
   detected several at a time, each in its own process (one per video by
   default, up to the processor's cores and `config.DETECT_MAX_AUTO_JOBS`,
-  which is 4 because each process loads its own copy of the pose model).
+  which is 4 because each process loads its own copy of the pose model;
+  with `--jobs 1`, or a single video left to detect, it runs in the main
+  process instead).
   Everything after step 1 runs on one core, and the web API processes one
   take at a time in one worker process.
 
@@ -200,7 +202,7 @@ groups:
 | step 1 | the path to the pose model file |
 | cameras | the minimum number of cameras, 2 |
 | step 2a, sync | how many seconds of audio to search for the clap; the shared clock rate; the audio sample rate and the window, smoothing, loudness and rise-time thresholds that define a clap; the cross-check window; the longest hole the resampler bridges |
-| step 2b, calibration | the minimum confidence for a landmark to count; the pixel tolerance for the camera-pair estimate; convergence settings for a method that is not used; the default field of view; the minimum number of shared points; the minimum points to place a further camera; the error above which the board fallback is used |
+| step 2b, calibration | the minimum confidence for a landmark to count; the pixel tolerance for the camera-pair estimate; the default field of view; the minimum number of shared points; the minimum points to place a further camera; the error above which the board fallback is used |
 | step 2b, scale and floor | the skull-above-ears and heel-above-floor offsets; the upright test tolerance; the minimum upright frames; the fraction of lowest foot points used for the floor |
 | step 2c, triangulation | the minimum confidence per camera; the minimum cameras per landmark; the longest gap filled; the reprojection error that drops a camera's view |
 | step 2c, smoothing | the Savitzky-Golay window and polynomial order; which smoother is the default; the Butterworth cutoff and order |
@@ -212,8 +214,12 @@ Every step's result can be written to disk and read back, so steps can be run
 one at a time and teammates can hand each other sample data.
 
 - **`stage_paths(out_path, camera_ids)`**. Takes the output path and the camera
-  ids. Gives back a dictionary of file paths for every step's file, derived
-  from the output path as in the table in section 0.
+  ids. Gives back a dictionary with the sync, pose, metrics and log file
+  paths, derived from the output path as in the table in section 0, plus one
+  landmark file path per camera id. The calibration file is not in it (its
+  path is the separate `--calibration` option, default
+  `backend/output/calibration.json`), and neither are the final `.json` and
+  `.bvh`, which are the output path and the output path with `.bvh`.
 - **`video_fingerprint(video_path)`**. Takes a video path. Gives back its size
   in bytes and its modification time. Enough to notice a swapped or re-exported
   video.
@@ -330,7 +336,7 @@ code 1 if anything failed.
   6. Never drop a frame: a frame with nobody in it gets NaN points and zero
      confidence, so the arrays stay aligned with the timestamps.
   7. Build the `Keypoints2D` with the camera id set to the file name stem, the
-     width and height from the first decoded frame, and the arrays stacked.
+     width and height of the decoded frames, and the arrays stacked.
 
 ### `mocap_pipeline/stage1_keypoints/backends.py`: the pose models
 
@@ -805,9 +811,10 @@ viewer's loader.
   them, depth first from the root. The motion lines must follow this order.
 - **`write_hierarchy(lines, rest_offsets)`**. Append the hierarchy to a list
   of lines by recursion from the root: `ROOT` for the hip with six channels
-  (position and rotation), `JOINT` for every other joint with three rotation
-  channels, each with its offset in centimetres, and an `End Site` block after
-  every leaf joint, using the stored end-site offset when there is one.
+  (position and rotation), `JOINT` for every other rotating joint with three
+  rotation channels, each with its offset in centimetres, and an `End Site`
+  block (offset only, no channels) for each joint in `RIG_END_SITES`, using
+  the stored end-site offset when there is one.
 - **`write_bvh(path, rest_offsets, root_positions, euler_degrees, fps)`**.
   Write the hierarchy, then `MOTION`, the frame count, the frame time as one
   over the frame rate, then one line per frame: the root position in
@@ -860,8 +867,9 @@ The one file that knows the order of the steps. Everything else calls `run()`.
   2. Step 1. With resume, reuse a video's saved landmarks if the video's
      fingerprint still matches and the same detector made them. The videos
      still to detect go to `_detect_videos`, several at a time, each in its
-     own process (`_detect_worker`, which also saves the landmark file and
-     sends what it prints back through a queue so it lands in the main log).
+     own process when more than one is detected at once (`_detect_worker`,
+     which also saves the landmark file and sends what it prints back through
+     a queue so it lands in the main log).
      Every video is attempted even if one fails; then each failure is
      printed with its file and reason, and the run stops with a summary
      naming the failed files. The landmarks of the videos that worked stay
@@ -884,8 +892,8 @@ The one file that knows the order of the steps. Everything else calls `run()`.
      smoother. Record the final summary. Write the viewer JSON.
   7. Step 3, unless disabled: write the animation file next to the JSON.
   After each of the first four steps it checks whether to stop early.
-- **`export_bvh(pose, bvh_path)`**. Step 3 in four calls: skeleton positions,
-  bone lengths and rest offsets, rotations, Euler angles, write. Records the
+- **`export_bvh(pose, bvh_path)`**. Step 3 in six calls: skeleton positions,
+  bone lengths, rest offsets, rotations, Euler angles, write. Records the
   bone length summary.
 - **`per_camera(parser, name, values, n)`**. Command-line helper: a flag that
   takes one value for all cameras or one per camera.
@@ -929,7 +937,7 @@ started fresh and imports it again.
   phrases ("Detecting joints in", "Clap at", "Saved calibration", "Saved ...
   frames of 3D joints") update the stage in the status record, so the
   frontend can show progress.
-- **`run_take(folder, video_paths, height_m)`**. One take start to finish:
+- **`run_take(folder_str, video_paths, height_m)`**. One take start to finish:
   mark it running, install the log writer, call the pipeline's `run` with
   recalibration forced, and mark the take done or failed with the error text.
 
@@ -944,8 +952,8 @@ dispatcher thread feeds the pool one at a time.
   previous server is marked failed.
 - **`dispatch(state)`**. The dispatcher thread's loop: take the next item,
   skip it if it was cancelled while waiting, submit it to the pool, and pass
-  the result or error to its future. If the pool's worker died hard, make a
-  new pool and retry.
+  the result or error to its future. If the pool's worker died hard, that
+  take is marked failed and a new pool is made for the next one.
 - **`lifespan(app)`**. What happens when the server starts (make the output
   folder, mark interrupted takes, create the pool, the job map, the queue and
   the dispatcher thread) and stops (cancel waiting jobs, stop the dispatcher,
@@ -1010,29 +1018,63 @@ framework. Where `api.py` only knows about takes, this one keeps a database of
 **projects**, **performers**, **recordings** (uploaded videos with thumbnails),
 **motions** (a set of recordings of one performance) and **motion versions**
 (one processing of a motion, with its settings and outputs). The frontend's
-sign-in, project, motion and recording pages talk to it; the viewer and footage
-pages still talk to `api.py`. Both expect to be on port 8000, so only one can
-run at a time until that is settled.
+sign-in, project, motion and recording pages talk to it, and the viewer loads
+each version's `.bvh` from it. No routed page calls `api.py` any more (its
+client code is still in the tree). Both servers default to port 8000, so run
+`api.py` on another port when both are needed.
 
 The part that touches the pipeline is `apps/motions/rendering.py`:
 
 - **`start_render(version_pk)`**. Starts `render_version` in a new process, so
   the web server keeps answering while the pipeline runs and the pipeline's
   memory is freed when it ends.
-- **`render_version(version_pk)`**. Sets Django up in the fresh process, writes
-  the motion's recordings into a temporary folder, calls `_run_pipeline`, keeps
-  the outputs, and marks the version done or failed with the error text.
+- **`render_version(version_pk)`**. Sets Django up in the fresh process, marks
+  the version running, makes a temporary folder for the outputs, calls
+  `_run_pipeline` with the recordings' stored video files, keeps the outputs
+  and the captured log, and marks the version done or failed with the error
+  text.
 - **`_run_pipeline(version, folder, log)`**. Imports `run` from
   `run_pipeline.py` only here, so Django never loads the pipeline's heavy
-  packages at start-up, and calls it with the version's settings (detector,
-  height, and so on). Everything the pipeline prints is captured into `log`.
-- **`_keep_outputs(version, folder)`**. Copies the 3D joints, the BVH, the
-  metrics and the log out of the temporary folder into the version's database
-  row, then the folder is deleted.
+  packages at start-up, and calls it with the version's height and pose
+  model; calibration is always redone and the `.bvh` always written.
+  Everything the pipeline prints is captured into `log`.
+- **`_keep_outputs(version, folder)`**. Reads the 3D joints, the BVH, the
+  calibration and the metrics out of the temporary folder into the version's
+  database row and derives the frame count, duration and frame rate from the
+  joints; then the folder is deleted.
 
 The database layout is in `apps/*/models.py`; the URL routes in
-`apps/api/urls.py`. The deployment described in the top-level `README.md`
-(PostgreSQL, nginx, gunicorn) is for this server.
+`motionboxpro/urls.py`, which includes each app's `urls.py` under `api/v1/`.
+The deployment described in the top-level `README.md` (PostgreSQL, nginx,
+gunicorn) is for this server.
+
+The models: `accounts.User` (the email is the login), `projects.Project` and
+`ProjectMotion` (a motion placed in a project), `motions.Motion`,
+`MotionVersion` (one render: status, height, pose model, and the outputs
+stored in the row) and `MotionRecording` (a recording in a camera slot of a
+motion), `recordings.Performer` (name and height) and `Recording` (one
+uploaded video with its size, frame rate and duration).
+
+The routes, all under `api/v1/`. Every one needs a logged-in user except the
+`auth/` ones other than `auth/me/`.
+
+| Route | Methods | What it does |
+|---|---|---|
+| `auth/csrf/` | GET | sets the CSRF cookie the frontend sends back with every change |
+| `auth/register/`, `auth/login/`, `auth/logout/` | POST | make an account, start a session, end it |
+| `auth/me/` | GET | the logged-in user |
+| `auth/password/reset/`, `auth/password/reset/confirm/` | POST | password reset by emailed token |
+| `projects/` | GET, POST | the user's projects; make one |
+| `motions/` | GET, POST | the user's motions; make one |
+| `motions/<uuid>/` | GET | one motion with its recordings, performers and versions |
+| `motions/<uuid>/recordings/` | PUT | set which recordings the motion uses, 2 to 4, in camera order |
+| `motions/<uuid>/projects/` | POST | add the motion to a project |
+| `motions/<uuid>/versions/` | POST | start a render; one at a time across the whole server |
+| `motions/<uuid>/versions/<n>/bvh/` | GET | the rendered skeleton file |
+| `recordings/` | GET, POST | the user's recordings; upload one video |
+| `recordings/<uuid>/` | GET, PATCH, DELETE | one recording; set its performer; delete it |
+| `recordings/<uuid>/video/`, `recordings/<uuid>/thumbnail/` | GET | the file and its thumbnail |
+| `performers/`, `performers/<id>/` | GET, POST; GET, PATCH | performers |
 
 ---
 
@@ -1121,14 +1163,17 @@ time and keeps the best layout it ever saw.
 ## 13. The tests: `backend/tests/`
 
 Not part of the pipeline, but the place to look when changing it. Each file
-tests one area with small made-up data; none needs a real video or model.
+tests one area with small made-up data; none needs real footage, and only
+the four desktop-tester subprocess tests load the MediaPipe model (on
+synthetic videos in which it finds nobody).
 
 - `conftest.py`: helpers that build small `Keypoints2D`, `SyncResult`,
   `CameraRig` and `Pose3D` objects, and two fake video files.
 - `synthetic_scene.py`: a synthetic performer, cameras and routine with known
   truth, used to measure the whole of step 2 against the right answer.
 - `test_synthetic_pipeline.py`, `test_metrics.py`, `evaluate_synthetic.py`:
-  step 2 end to end on the synthetic scene; the last one is a script that
+  steps 2 and 3 end to end on the synthetic scene (`test_metrics.py` mostly
+  tests `metrics.py` itself); the last one is a script that
   prints a comparison table, including raw against each smoother.
 - `test_resume.py`: the conductor's resume, stop-after, detector and smoother
   handling, with steps replaced by fakes that count calls.
@@ -1143,8 +1188,9 @@ tests one area with small made-up data; none needs a real video or model.
 - `test_placement.py`: the placement metric and the annealer.
 - `test_check_videos.py`: step 0 on small generated videos, made by
   `synthetic_video.py`.
-- `test_api.py` and `test_api_upload.py`: the web API's queue, cancellation
-  and restart recovery, and the streaming upload parser.
+- `test_api.py` and `test_api_upload.py`: the web API's queue, cancellation,
+  restart recovery and streaming upload parser, and `check_upload` on its
+  own.
 - `bvh_reader.py`: reads a BVH file back and recomputes joint positions, to
   check what step 3 wrote.
 

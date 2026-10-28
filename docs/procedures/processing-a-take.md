@@ -68,11 +68,11 @@ Open `output/take01/out3d.metrics.json`. Four numbers say whether the take is go
 | `pose_final.missing_fraction` | under 0.05 |[^8] high on one joint (`missing_fraction_per_joint`): hidden from all but one camera |
 | `scale.upright_frames` | 30 or more |[^9] near the minimum of 10: the height pose was short, the scale may be off |
 
-Also useful: `sync.cross_check` (a shift over 50 ms with `applied: false` means the clap was doubtful[^10]; check it by eye), `triangulate.views_dropped` (how often a camera disagreed), `timing` (seconds per stage). Every key is explained in the pipeline README, section Metrics.
+Also useful: `sync.cross_check` (one entry per video after camera 0, keyed by its file name, and only when the claps were searched for; a shift over 50 ms with `applied: false` means the clap was doubtful[^10]; check it by eye), `triangulate.views_dropped` (how often a camera disagreed), `timing` (seconds per stage). Every key is explained in the pipeline README, section Metrics.
 
 ## 5. Watch it
 
-Open `output/take01/out3d.bvh` in the frontend viewer (`cd frontend && npm run dev`, or on Windows the commands in [windows-setup.md](windows-setup.md) step 5; log in, open a motion, "Open .bvh / .json") or in Blender. The skeleton should stand on the floor, face the viewer, and move like the take. Look at the fast moments: a wrist on a punch, a foot on a kick. Jitter, a lagging joint, or a joint that disappears are what the numbers above should have warned about.
+Open `output/take01/out3d.bvh` in the frontend viewer (with the Django backend running, `cd frontend && npm run dev`, as in [mac-setup.md](mac-setup.md) step 5, or on Windows [windows-setup.md](windows-setup.md) step 5; log in, open a motion, "Open .bvh / .json") or in Blender. The skeleton should stand on the floor, face the viewer, and move like the take. Look at the fast moments: a wrist on a punch, a foot on a kick. Jitter, a lagging joint, or a joint that disappears are what the numbers above should have warned about.
 
 ## 6. Reruns that are worth doing
 
@@ -98,7 +98,7 @@ For each take: the input folder, the output folder, and one line in the session 
 [^5]: `run_pipeline.run`: with `--resume`, the saved sync file supplies the clap times, triangulation is skipped only if the pose file is newer than its inputs, and smoothing and the BVH always run.
 [^6]: The synthetic benchmark with realistic noise gives 1 to 3 px (`tests/evaluate_synthetic.py`); `CALIB_MAX_ERROR_PX = 10` is where the pipeline gives up (D-015). Reprojection error as the calibration quality measure: Zhang 2000, DOI 10.1109/34.888718.
 [^7]: Limb-length variability as the precision measure without ground truth: Karashchuk et al., "Anipose: A toolkit for robust markerless 3D pose estimation", *Cell Reports* 36(13), 2021, DOI 10.1016/j.celrep.2021.109730. The synthetic test accepts under 0.02 m with realistic noise; 0.01 m is the target for real footage and is team judgement until the first session.
-[^8]: `tests/test_metrics.py` requires under 0.05 on the synthetic scene with 2% dropout; a joint needs `MIN_CAMERAS_PER_JOINT = 2` views (`config.py`), and gaps over `MAX_GAP_FILL_FRAMES = 10` stay missing (D-016).
+[^8]: `tests/test_metrics.py` requires under 0.05 on the synthetic scene with 2% dropout; a joint needs 2 views (fixed in `stage2_reconstruct/triangulate.py`; `MIN_CAMERAS_PER_JOINT` in `config.py` is not read), and gaps over `MAX_GAP_FILL_FRAMES = 10` stay missing (D-016).
 [^9]: `MIN_UPRIGHT_FRAMES = 10` (`config.py`, D-012) is the pipeline's minimum; 30 frames is one second of the three-second height pose and is team judgement.
 [^10]: Corrected while adding these notes: the cross-check is rejected above `CLAP_MAX_REFINE_S = 0.05`, so `applied: false` means a shift over 50 ms, not 20 (`config.py`, `sync._refine_against_reference`). The metric records the shift either way.
 [^11]: Camera 0 is the reference frame for the calibration and the world (`schemas.py`, D-013); a calibration file is only reused when its camera count matches (`run_pipeline.py`).

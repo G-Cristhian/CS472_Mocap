@@ -2,7 +2,7 @@
 
 For the laptop that goes to the recording session. Steps 1 to 4 run locally from the terminal; no server, no account. The web viewer in step 5 needs the Django backend and a login. About twenty minutes, most of it downloads. Do this before the session day, on the network you will have there, because two things download once: the Python packages and, if you use the RTMPose detector, its models.
 
-Works on Apple Silicon and Intel. Every dependency ships a macOS wheel, so nothing is compiled.[^2]
+Works on Apple Silicon and Intel. Every pipeline dependency ships a macOS wheel, so steps 1 to 4 compile nothing.[^2] Step 5's `psycopg2` is the exception: it builds against `libpq` (top-level README, system packages).
 
 On Windows, follow [windows-setup.md](windows-setup.md) instead: the same steps, with the commands PowerShell needs.
 
@@ -29,8 +29,6 @@ python -m pip install -r mocap_pipeline/requirements.txt -r requirements-api.txt
 
 The venv lives in `backend/.venv` and is ignored by git. Every later terminal needs `source backend/.venv/bin/activate` first; the prompt shows `(.venv)` when it is active.
 
-Once pull request #21 is merged this becomes `backend/setup.sh`, one command.[^3] The lines above do the same thing by hand.
-
 ## 3. Prove it works, no footage needed
 
 From `backend/`, with the venv active:
@@ -54,7 +52,7 @@ python -c "from mocap_pipeline.stage1_keypoints.backends import create_backend; 
 
 To watch a result on the laptop you need Node. Check `node --version`; install from https://nodejs.org if missing.
 
-The viewer sits behind a login, so the Django backend (`backend/motionboxpro`) must be running. It needs PostgreSQL, a `backend/.env` copied from `backend/.env_`, and `python -m pip install -r requirements.txt` from `backend`, set up as in the top-level README (Database Setup, .env, Project Setup). Then, from `backend` with the venv active:
+The viewer sits behind a login, so the Django backend (`backend/motionboxpro`) must be running. It needs PostgreSQL, a `backend/.env` copied from `backend/.env_`, and `python -m pip install -r requirements.txt` from `backend`, set up as in the top-level README (Database Setup and .env; keep using `backend/.venv` from step 2 rather than the README's `./venv`). Then, from `backend` with the venv active:
 
 ```
 python manage.py migrate
@@ -86,10 +84,9 @@ Open the address it prints, register an account or log in, open a motion, and us
 ---
 ## Sources
 
-[^1]: MediaPipe's PyPI wheels cover CPython 3.9 to 3.12 at the time of writing (https://pypi.org/project/mediapipe/); pull request #21 pins 3.12 in `.python-version`.
+[^1]: MediaPipe's PyPI wheels cover CPython 3.9 to 3.12 at the time of writing (https://pypi.org/project/mediapipe/).
 [^2]: Checked on PyPI for mediapipe, opencv-contrib-python, onnxruntime, av and scipy: all publish `macosx_arm64` and `macosx_x86_64` wheels. aniposelib and rtmlib are pure Python.
-[^3]: Pull request #21 (issue #10): one pinned `backend/requirements.txt` and an idempotent `setup.sh` using uv.
-[^4]: Measured on 2026-10-16 on a Windows laptop: 93 tests in 47 s. A Mac of similar age should be close.
+[^4]: Measured on 2026-10-19 on a Windows laptop: 131 tests in 62 s (testing-the-backend.md, footnote 3). A Mac of similar age should be close.
 [^5]: The thresholds in `backend/tests/test_synthetic_pipeline.py`: under 0.1 px calibration error and under 3 mm MPJPE with no noise; under 3 px and 12 mm with realistic noise.
 [^6]: `POSE_MODEL_PATH` in `backend/mocap_pipeline/config.py`; `MODEL_FILEPATH` in a `.env` file or `--model` overrides it (D-005).
 [^7]: rtmlib downloads the YOLOX and RTMPose ONNX files on first use (`stage1_keypoints/backends.py`, `RTMPoseBackend` docstring; https://github.com/Tau-J/rtmlib).
