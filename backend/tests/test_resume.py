@@ -34,7 +34,7 @@ def fakes(monkeypatch, fake_videos):
         calls.options.append(options)
         return make_keypoints(camera_id=Path(video_path).stem, video_path=video_path)
 
-    def fake_synchronise(video_paths, keypoints, clap_times=None, clap_threshold=1.0):
+    def fake_synchronise(video_paths, keypoints, clap_times=None, clap_threshold=1.0, signal="clap"):
         calls.sync_clap_times.append(clap_times)
         calls.sync_thresholds.append(clap_threshold)
         if clap_times is None:
