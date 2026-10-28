@@ -31,7 +31,7 @@ build), `npm run typecheck`. On Windows, type `npm.cmd` in place of `npm`.
 | --- | --- | --- |
 | `/` | 1–3 | Landing page for visitors; a logged-in user skips it. |
 | `/login`, `/register`, `/forgot-password`, `/reset-password/:uid/:token` | — | Auth pages, against the Django accounts API. |
-| `/streaming` | 4 | Capture setup, camera monitor grid, connection alert, calibration toast. `Cameras` tab lists the rig. |
+| `/streaming` | 4 | Capture setup, camera monitor grid, connection alert. `Cameras` tab lists the rig. |
 | `/projects` | 5 | Project cards and a New project dialog. |
 | `/projects/:projectId` | 6 | One project's motions and a New motion dialog. |
 | `/motions/:motionId` | 6 | Motion workspace: its recordings and performers, the processing panel, versions, skeleton viewport, transport bar, and the Rig / Cameras / Streaming / Export inspector. |
@@ -60,7 +60,7 @@ The viewport on `/motions/:motionId` is a three.js scene (`src/features/viewer/`
 
 - Every nav link, card, breadcrumb and back link routes for real.
 - **Streaming** — start/stop a take (the timer runs), switch Quad / Split / Single layouts, reconnect
-  camera 3, dismiss the alert and the toast.
+  camera 3, dismiss the alert.
 - **Motion workspace** — pick a version, click a joint in the viewport or a part in the Rig list (they
   stay in sync), toggle the legend to dim a motion source, scrub and play the transport, add a recording,
   switch to the Cameras, Streaming and Export tabs.
@@ -74,7 +74,7 @@ The viewport on `/motions/:motionId` is a three.js scene (`src/features/viewer/`
 ```
 src/
   app/          router, app shell, settings + studio state providers
-  components/   TopNav, shared UI (buttons live in CSS, cards, badges, icons, modal/toast)
+  components/   TopNav, shared UI (buttons live in CSS, cards, icons, modal)
   features/     one folder per screen: landing, auth, projects, motions, library (recordings list),
                 recordings, streaming, settings, footage (not routed); home holds the not-found page
   lib/          API clients: Django (auth, projects, motions, recordings, performers), api.ts, Supabase

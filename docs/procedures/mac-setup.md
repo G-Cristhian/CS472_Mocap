@@ -1,6 +1,6 @@
 # Setting up the pipeline on a Mac
 
-For the laptop that goes to the recording session. Everything runs locally from the terminal; no server, no account. About twenty minutes, most of it downloads. Do this before the session day, on the network you will have there, because two things download once: the Python packages and, if you use the RTMPose detector, its models.
+For the laptop that goes to the recording session. Steps 1 to 4 run locally from the terminal; no server, no account. The web viewer in step 5 needs the Django backend and a login. About twenty minutes, most of it downloads. Do this before the session day, on the network you will have there, because two things download once: the Python packages and, if you use the RTMPose detector, its models.
 
 Works on Apple Silicon and Intel. Every dependency ships a macOS wheel, so nothing is compiled.[^2]
 
@@ -52,7 +52,16 @@ python -c "from mocap_pipeline.stage1_keypoints.backends import create_backend; 
 
 ## 5. The viewer (optional at the venue)
 
-To watch a result on the laptop you need Node. Check `node --version`; install from https://nodejs.org if missing. Then:
+To watch a result on the laptop you need Node. Check `node --version`; install from https://nodejs.org if missing.
+
+The viewer sits behind a login, so the Django backend (`backend/motionboxpro`) must be running. It needs PostgreSQL, a `backend/.env` copied from `backend/.env_`, and `python -m pip install -r requirements.txt` from `backend`, set up as in the top-level README (Database Setup, .env, Project Setup). Then, from `backend` with the venv active:
+
+```
+python manage.py migrate
+python manage.py runserver
+```
+
+In a second terminal:
 
 ```
 cd frontend
@@ -60,7 +69,7 @@ npm install
 npm run dev
 ```
 
-Open the address it prints, log in, open a motion, and use "Open .bvh / .json" at the bottom right of the viewport. Blender also opens the `.bvh` (File, Import, Motion Capture).[^8]
+Open the address it prints, register an account or log in, open a motion, and use "Open .bvh / .json" at the bottom right of the viewport. Blender also opens the `.bvh` (File, Import, Motion Capture).[^8]
 
 ## 6. On the day
 
