@@ -549,7 +549,7 @@ def _run_stages(
     if not sync_from_file:
         io.save_sync(sync_result, str(sync_path))
 
-    # api.py and the desktop tester take "Clap at" / "Chirp at" as the end of sync
+    # api.py takes "Clap at" / "Chirp at", the desktop tester "Clap at", as the end of sync
     print(
         ("Chirp at " if sync_signal == "chirp" else "Clap at ")
         + ", ".join(f"{cid} {t:.3f} s" for cid, t in sync_result.clap_time_s.items())

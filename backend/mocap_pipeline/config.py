@@ -57,8 +57,7 @@ SYNC_MAX_INTERP_GAP_FRAMES = 2.5
 # correlating each video's audio with the same sweep (a matched filter). The
 # sweep stays inside what phone speakers play well and under the Nyquist
 # frequency of CLAP_AUDIO_RATE (8 kHz). Changing any of these four means the
-# chirp played on set must be regenerated (python -m mocap_pipeline.stage2_reconstruct.chirp,
-# and frontend/src/lib/chirp.ts uses the same numbers).
+# chirp played on set must be regenerated (python -m mocap_pipeline.stage2_reconstruct.chirp).
 CHIRP_F0_HZ = 1500.0
 CHIRP_F1_HZ = 6000.0
 CHIRP_DURATION_S = 0.5
