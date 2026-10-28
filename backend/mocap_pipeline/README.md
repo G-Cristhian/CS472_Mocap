@@ -91,7 +91,7 @@ Every run writes `out3d.metrics.json` (next to `--out`, also when the run fails 
 | Key | What it says |
 |---|---|
 | `stage1.<camera>` | frames, fraction with no person, mean confidence overall and per joint |
-| `sync` | clap time per camera, where the times came from, the clap threshold; under `cross_check`, keyed by the video file name (a dot in the name splits the key), each camera's shift against camera 0 in ms and whether it was applied. Only when the claps were searched for, not with `--sync` or saved clap times |
+| `sync` | clap time per camera, where the times came from, the sync signal (clap or chirp), the clap threshold; under `cross_check`, keyed by the video file name (a dot in the name splits the key), each camera's shift against camera 0 in ms and whether it was applied. Only when the claps were searched for, not with `--sync` or saved clap times |
 | `calibrate` | starting pair, distinct correspondences per pair (how much the performer moved), reprojection error per camera, camera types, board fallback. When a saved calibration is reused only `reused_file` is recorded |
 | `scale`, `floor` | upright frames, metres per unit, floor fit residual and spread, tilt from the body's up direction, whether the fitted plane was trusted. Absent when a saved calibration is reused |
 | `triangulate` | mean reprojection error overall and per joint, views dropped as outliers, joints failed, joints with fewer than 2 views. Absent when `--resume` reuses the saved 3D joints; after `--stop-after calibrate` it holds the rough pass used to set the scale |
