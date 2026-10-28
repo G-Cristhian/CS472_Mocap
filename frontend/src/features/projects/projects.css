@@ -17,13 +17,6 @@
 .ws__crumbs b {
   font-weight: 800;
 }
-.ws__saved {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--muted);
-  font-size: calc(14px * var(--font-scale));
-}
 .ws {
   display: grid;
   grid-template-columns: 250px 1fr 360px;
@@ -94,12 +87,6 @@
 .takelist__name {
   margin: 0;
   font-weight: 600;
-}
-.takelist .dur {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: calc(12.5px * var(--font-scale));
-  color: var(--muted);
 }
 .viewport {
   position: relative;
