@@ -12,7 +12,9 @@ made false: a flag or default, a file name, a step, a printed message, a
 number a doc quotes, a function entry in the backend outline. It fixes each
 one with the smallest edit, in these files only: everything under `docs/`
 except the decisions sheet, plus the three READMEs under `backend/mocap_pipeline`,
-`desktop` and `frontend`. It never writes new sections, never rewrites prose,
+`desktop` and `frontend`, and the two environment templates `frontend/.env.example`
+and `backend/.env_` (variable names and comments, never a secret). It never
+writes new sections, never rewrites prose,
 and never touches the decisions sheet; that belongs to the design-decision
 detector.
 
@@ -41,6 +43,12 @@ When the keeper changed something, it opens one pull request from the branch
 description is its report: what it updated and why, what it read and found
 fine, and anything it doubted and left for a human ("Check by hand"). While
 that pull request is open, later runs add to it instead of opening another.
+
+If someone edits the same lines on `main` while the pull request is open, the
+next run cannot merge the branch. It does not stop: it drops the branch's
+version, reviews again from the commit the branch was based on, and rewrites
+the pull request from the result. Nothing is lost, but a fix you made on the
+branch by hand is redone by the keeper, so merge soon after editing it.
 
 ## Reviewing
 

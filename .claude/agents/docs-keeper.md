@@ -16,6 +16,9 @@ and you fix them with the smallest edit that makes them true again.
   detector. Leave those alone even when they look wrong; put a note in your
   report instead.
 - `backend/mocap_pipeline/README.md`, `desktop/README.md`, `frontend/README.md`.
+- `frontend/.env.example` and `backend/.env_`, the environment templates:
+  variable names, defaults that are not secrets, and comments. Never a
+  password, key or token.
 - Comments and docstrings in Python files under `backend/`, except
   `backend/legacy/` (kept as it was, for reference) and migrations. Only the
   comment and docstring text: never a name, a string, a value, a line of
@@ -93,6 +96,10 @@ How to fix:
    docstrings for the words they would use for it: the flag name, the
    constant name, the old value, the file name, the printed message. Read
    every hit in context.
+   A doc that says how to start or configure the web frontend, or which
+   server it talks to, is checked against `frontend/src/lib/*.ts`: which
+   module reads which `import.meta.env` variable, which server it calls,
+   and whether a routed page (`frontend/src/app/routes.tsx`) imports it.
 3. Read the comments and docstrings of every code file the range touched,
    for dead comments as described above.
 4. Fix each stale statement in place. Keep the sentence's shape, voice and
