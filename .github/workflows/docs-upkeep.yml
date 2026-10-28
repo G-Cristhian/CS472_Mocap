@@ -11,6 +11,14 @@
 # through .github/scripts/check_comment_only.py, which compares the syntax
 # trees with docstrings removed; any file whose code changed is put back.
 # Comments in other languages are listed in the report for a human to fix.
+# It may also edit the two environment templates, frontend/.env.example and
+# backend/.env_ (variable names and comments, never a value).
+#
+# If docs/pending no longer merges into main (someone edited the same lines),
+# the run drops the branch's version, starts the range at the commit the
+# branch was based on, and the pull request is rewritten from the redone
+# fixes. Before 2026-10-28 such a conflict failed every run until the branch
+# was deleted by hand.
 #
 # The range starts at the head of this workflow's last successful run on
 # main (looked up with gh), so no marker file is needed. A push that touches
@@ -67,18 +75,30 @@ jobs:
           fetch-depth: 0
 
       - name: Continue the pending docs branch, if there is one
+        id: pending
         run: |
           git config user.name "docs-upkeep workflow"
           git config user.email "workflow@users.noreply.github.com"
           if git ls-remote --exit-code --heads origin docs/pending >/dev/null 2>&1; then
             git fetch origin docs/pending
-            git merge --no-edit origin/docs/pending
+            if git merge --no-edit origin/docs/pending; then
+              echo "Merged docs/pending, so its unreviewed fixes are kept."
+            else
+              # someone edited the same lines on main while the pull request was open. Rather
+              # than stop here, drop the branch's version and redo its fixes from the commit it
+              # was based on; the pull request step then rewrites the branch from the result.
+              git merge --abort
+              since="$(git merge-base origin/docs/pending origin/main)"
+              echo "since=$since" >> "$GITHUB_OUTPUT"
+              echo "docs/pending conflicts with main; its fixes will be redone from $since."
+            fi
           fi
 
       - name: Pick the commit range
         id: range
         env:
           INPUT_RANGE: ${{ github.event.inputs.range }}
+          PENDING_SINCE: ${{ steps.pending.outputs.since }}
           GH_TOKEN: ${{ github.token }}
         run: |
           after="$(git rev-parse origin/main)"
@@ -86,8 +106,12 @@ jobs:
           if [ -n "$INPUT_RANGE" ]; then
             range="$INPUT_RANGE"
           else
-            # the head of this workflow's last successful run on main, else the previous commit
-            since="$(gh run list --workflow docs-upkeep.yml --branch main --status success --limit 1 --json headSha --jq '.[0].headSha' 2>/dev/null || true)"
+            # the commit a conflicting pending branch was based on, if there was one; else the
+            # head of this workflow's last successful run on main; else the previous commit
+            since="$PENDING_SINCE"
+            if [ -z "$since" ]; then
+              since="$(gh run list --workflow docs-upkeep.yml --branch main --status success --limit 1 --json headSha --jq '.[0].headSha' 2>/dev/null || true)"
+            fi
             if [ -z "$since" ] || ! git cat-file -e "$since" 2>/dev/null; then
               since="$(git rev-parse "$after~1")"
             fi
@@ -111,6 +135,10 @@ jobs:
           else
             echo "empty=false" >> "$GITHUB_OUTPUT"
             echo "$reviewable commit(s) touch files outside the excluded paths."
+            # a backlog (after a failed stretch, or the conflict fallback) needs more turns than one push
+            if [ "$reviewable" -gt 10 ]; then turns=150; else turns=80; fi
+            echo "turns=$turns" >> "$GITHUB_OUTPUT"
+            echo "Claude gets $turns turns."
           fi
 
       - name: Check the docs against the change
@@ -133,7 +161,7 @@ jobs:
           show_full_output: true
           claude_args: >-
             --allowedTools "Read,Grep,Glob,Edit,Write,Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git rev-parse *),Bash(git grep *),Bash(python3 .github/scripts/check_comment_only.py *),Bash(python .github/scripts/check_comment_only.py *)"
-            --max-turns 80
+            --max-turns ${{ steps.range.outputs.turns }}
 
       - name: Keep the Claude transcript
         if: always() && steps.range.outputs.empty == 'false'
@@ -151,7 +179,7 @@ jobs:
             printf 'Range: %s\nUpdated: none\n(no report written)\n' "${{ steps.range.outputs.range }}" > "$RUNNER_TEMP/docs-report.md"
           fi
           # the keeper may only touch these; anything else it changed is dropped
-          git checkout -- . ':!docs' ':!backend/mocap_pipeline/README.md' ':!desktop/README.md' ':!frontend/README.md' ':!backend/*.py' 2>/dev/null || true
+          git checkout -- . ':!docs' ':!backend/mocap_pipeline/README.md' ':!desktop/README.md' ':!frontend/README.md' ':!backend/*.py' ':!frontend/.env.example' ':!backend/.env_' 2>/dev/null || true
           git checkout -- docs/decisions/DECISIONS.md docs/decisions/.last-reviewed backend/legacy 2>/dev/null || true
           git checkout -- ':(glob)backend/**/migrations/**' 2>/dev/null || true
           git clean -fq -- backend
@@ -167,11 +195,11 @@ jobs:
               awk '$1 != "ok" {print "  " $2 ": " $1}' "$RUNNER_TEMP/comment-check.txt" >> "$RUNNER_TEMP/docs-report.md"
             fi
           fi
-          if git diff --quiet -- docs backend/mocap_pipeline/README.md desktop/README.md frontend/README.md 'backend/*.py'; then
+          if git diff --quiet -- docs backend/mocap_pipeline/README.md desktop/README.md frontend/README.md 'backend/*.py' frontend/.env.example backend/.env_; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            git diff --stat -- docs backend/mocap_pipeline/README.md desktop/README.md frontend/README.md 'backend/*.py'
+            git diff --stat -- docs backend/mocap_pipeline/README.md desktop/README.md frontend/README.md 'backend/*.py' frontend/.env.example backend/.env_
           fi
           cat "$RUNNER_TEMP/docs-report.md"
 
@@ -186,5 +214,5 @@ jobs:
           commit-message: "[AI] docs and comments: kept current with ${{ steps.range.outputs.range }}"
           labels: documentation
           reviewers: GianniGuava
-          add-paths: docs/**,backend/mocap_pipeline/README.md,desktop/README.md,frontend/README.md,backend/**/*.py
+          add-paths: docs/**,backend/mocap_pipeline/README.md,desktop/README.md,frontend/README.md,backend/**/*.py,frontend/.env.example,backend/.env_
           delete-branch: true
