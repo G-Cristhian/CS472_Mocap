@@ -37,7 +37,10 @@ The calibration is reused on the next run; add `--recalibrate` if a camera moved
 `--detector mediapipe|rtmpose` picks the stage 1 model (default `mediapipe`). Each model lives in `stage1_keypoints/backends.py` and fills the same 33 MediaPipe joints, so stages 2 and 3 do not change.
 
 - `mediapipe`: MediaPipe PoseLandmarker (heavy), tracks the performer between frames.
-- `rtmpose`: RTMPose with the Halpe-26 (body with feet) model, via `rtmlib`. A person detector runs every frame and the largest person is taken as the performer. Fills 21 of the 33 joints, every one stages 2 and 3 use (eye corners, mouth and fingers stay empty; the foot tip comes from the big toe). The models download on the first run, to `~/.cache/rtmlib`; `--model` is not used.
+- `rtmpose`: RTMPose with the Halpe-26 (body with feet) model, via `rtmlib`. A person detector runs every frame (every N frames with `--rtmpose-detect-every N`) and the largest person is taken as the performer. Fills 21 of the 33 joints, every one stages 2 and 3 use (eye corners, mouth and fingers stay empty; the foot tip comes from the big toe). The models download on the first run, to `~/.cache/rtmlib`; `--model` is not used.
+  - `--rtmpose-mode lightweight|balanced|performance`: the model size (default `balanced`, `config.RTMPOSE_MODE`).
+  - `--rtmpose-device cpu|cuda`: where it runs (default `cpu`). `cuda` needs an NVIDIA GPU and `onnxruntime-gpu` in place of `onnxruntime`; the run stops at once if the GPU cannot be used.
+  - `--rtmpose-detect-every N`: run the person detector every N frames (default 1, `config.RTMPOSE_DETECT_EVERY`); in between, the performer is looked for around the previous frame's joints.
 
 To compare models on the same take, give each its own output and calibration, so neither reuses the other's:
 ```
@@ -71,7 +74,7 @@ Every stage saves its result next to the `--out` file, named after it. For the d
 | `out3d.metrics.json` | all | quality numbers for the run, see Metrics below |
 | `out3d.log` | all | everything the run printed, time-stamped |
 
-`--resume` loads these instead of recomputing: detection is skipped for a video whose keypoints file exists, whose video has not changed (size and modification time are checked) and which was made with the same `--detector`, the clap search is skipped when the sync file exists, and triangulation is skipped when the pose file is newer than the calibration, sync and keypoints files. Smoothing and the `.bvh` always run, so tuning them is a quick `--resume` away:
+`--resume` loads these instead of recomputing: detection is skipped for a video whose keypoints file exists, whose video has not changed (size and modification time are checked) and which was made with the same `--detector`, `--rtmpose-mode` and `--rtmpose-detect-every`, the clap search is skipped when the sync file exists, and triangulation is skipped when the pose file is newer than the calibration, sync and keypoints files. Smoothing and the `.bvh` always run, so tuning them is a quick `--resume` away:
 ```
 $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --height-m 1.75            # full run, minutes
 $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --resume --no-smooth       # seconds
@@ -96,7 +99,7 @@ Every run writes `out3d.metrics.json` (next to `--out`, also when the run fails 
 | `scale`, `floor` | upright frames, metres per unit, floor fit residual and spread, tilt from the body's up direction, whether the fitted plane was trusted. Absent when a saved calibration is reused |
 | `triangulate` | mean reprojection error overall and per joint, views dropped as outliers, joints failed, joints with fewer than 2 views. Absent when `--resume` reuses the saved 3D joints; after `--stop-after calibrate` it holds the rough pass used to set the scale |
 | `smooth.gaps` | gaps filled and gaps left missing |
-| `pose_raw`, `pose_final` | missing fraction overall and per joint, mean cameras per joint, before and after smoothing |
+| `pose_raw`, `pose_final` | missing fraction overall and per joint, counting only the joints the detector can find (the others are listed under `joints_not_detected`), mean cameras per joint, before and after smoothing |
 | `rig.bone_lengths` | per bone: median length, standard deviation over the take and as a fraction; the cleanest precision number without ground truth |
 | `timing` | seconds per stage and total |
 

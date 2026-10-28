@@ -48,7 +48,7 @@ skeleton appears on screen within a fraction of a second, continuously.
 6. **Speed.** On a laptop processor the heavy MediaPipe model manages roughly
    10 to 20 frames per second for one stream; three or four streams at once
    need the lighter model, a graphics card, or both. See the hardware section
-   of the backend outline: nothing uses a graphics card today.
+   of the backend outline: only RTMPose with `--rtmpose-device cuda` uses a graphics card today.
 7. **Delivery.** The skeleton frames go to the viewer over a websocket instead
    of a file; the BVH would be written at the end as a recording of the
    session.

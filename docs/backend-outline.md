@@ -77,9 +77,9 @@ after another, one frame after another. Everything after it is seconds. As of
   to start, even on the processor.
 - The second detector, RTMPose, takes a `device` setting that can be `"cpu"`
   or `"cuda"` (an NVIDIA card, needing the `onnxruntime-gpu` package instead
-  of the plain one the requirements install). It defaults to `"cpu"`, and
-  `create_backend` never passes a device, so there is no flag that reaches it
-  from the command line, the desktop tester or the API.
+  of the plain one the requirements install). It defaults to `"cpu"`; the
+  command line sets it with `--rtmpose-device`, but the desktop tester and
+  the API never pass it.
 - Video decoding goes through OpenCV's software decoder. Hardware decoding is
   not requested.
 - Steps 2 and 3 are numpy, scipy, OpenCV and aniposelib arithmetic on the
@@ -94,8 +94,9 @@ after another, one frame after another. Everything after it is seconds. As of
   Everything after step 1 runs on one core, and the web API processes one
   take at a time in one worker process.
 
-The next cheapest speed-up would be exposing RTMPose's device setting for
-machines with an NVIDIA card, and only then anything deeper.
+The next cheapest speed-up would be passing RTMPose's device setting from
+the desktop tester and the API for machines with an NVIDIA card, and only
+then anything deeper.
 
 ---
 
@@ -199,7 +200,7 @@ groups:
 
 | Group | Constants |
 |---|---|
-| step 1 | the path to the pose model file |
+| step 1 | the path to the pose model file; RTMPose's default mode, how often its person detector runs, and the score, joint count and box growth used to follow the performer between detector frames |
 | cameras | the minimum number of cameras, 2 |
 | step 2a, sync | how many seconds of audio to search for the clap; the shared clock rate; the audio sample rate and the window, smoothing, loudness and rise-time thresholds that define a clap; the cross-check window; the longest hole the resampler bridges; the chirp's frequencies, length and fades, and the match score, second-match and echo limits for finding it |
 | step 2b, calibration | the minimum confidence for a landmark to count; the pixel tolerance for the camera-pair estimate; the default field of view; the minimum number of shared points; the minimum points to place a further camera; the error above which the board fallback is used |
@@ -260,9 +261,12 @@ stable the bone lengths are, how much the points jitter. The module keeps one
 - **`keypoints_summary(kp)`**. Step 1 quality for one camera: frame count,
   nominal frame rate, the fraction of frames with nobody detected, and the
   mean confidence overall and per landmark.
-- **`pose_summary(pose)`**. Step 2c coverage: frame count, the fraction of
+- **`pose_summary(pose, joints)`**. Step 2c coverage: frame count, the fraction of
   landmark-frames that are holes overall and per landmark, the mean number of
-  cameras per point, and the jitter number below.
+  cameras per point, and the jitter number below. `joints` are the landmarks
+  the detector can find (`backends.joints_provided`); the hole fractions count
+  only those, and the rest are listed under `joints_not_detected`. None
+  counts all 33.
 - **`jitter_mm(pts)`**. A smoothness measure: for each landmark, take its
   position in three consecutive frames and compute "next minus two times
   current plus previous", which is zero for steady motion and large for
@@ -322,8 +326,9 @@ code 1 if anything failed.
 
 ### `mocap_pipeline/stage1_keypoints/detect.py`: reading the video
 
-- **`detect_video(video_path, model_path, detector)`**. Takes one video, the
-  model file path, and the detector name. Gives back a `Keypoints2D`.
+- **`detect_video(video_path, model_path, detector, options)`**. Takes one video, the
+  model file path, the detector name, and the detector's settings (passed to
+  `create_backend`; None means its defaults). Gives back a `Keypoints2D`.
   1. Open the video with OpenCV. If it cannot be opened, raise an error.
   2. Read the claimed frame rate, falling back to 30 if the file reports none.
   3. Create the detector (section below) and loop over every frame in order.
@@ -355,7 +360,8 @@ produce stay NaN with confidence 0.
   milliseconds and returns points and confidences; the base class raises "not
   implemented" because each model overrides it. `close()` releases resources.
   Frames must be given in order, one video per instance, because some models
-  track the person from frame to frame.
+  track the person from frame to frame. Its `joints` attribute lists the
+  landmarks the model can find; None means all 33.
 - **`MediaPipeBackend`** (class). Google's MediaPipe Pose Landmarker in video
   mode with one person. Built from a `.task` model file; raises if none is
   given. `detect` wraps the frame in a MediaPipe image, forces the timestamp
@@ -369,18 +375,36 @@ produce stay NaN with confidence 0.
 - **`halpe26_to_mediapipe(keypoints, scores)`**. Takes one person's 26 points
   and scores. Gives back 33 points and confidences in our order, with the
   scores clipped to 0 to 1 and any landmark scored zero or less set to NaN.
+- **`box_from_joints(keypoints, scores, width, height)`**. The box to look
+  for the performer in on the next frame: the bounding box of the joints
+  scoring at least `config.RTMPOSE_TRACK_MIN_SCORE`, grown
+  `config.RTMPOSE_TRACK_BOX_SCALE` times about its centre and kept inside the
+  image. None if fewer than `config.RTMPOSE_TRACK_MIN_JOINTS` joints qualify.
 - **`pick_person(bboxes)`**. Given the boxes of everyone detected, the index
   of the largest box, taken to be the performer; None if nobody.
+- **`RTMPOSE_MODES`** and **`RTMPOSE_DEVICES`**: rtmlib's model sizes
+  ("lightweight", "balanced", "performance") and where RTMPose runs ("cpu",
+  "cuda").
+- **`check_rtmpose_device(device)`**. Raises, saying what to install, if
+  RTMPose cannot run on the device: for "cuda", if ONNX Runtime does not
+  offer its CUDA provider. Called before any video is read.
 - **`RTMPoseBackend`** (class). The RTMPose model through the rtmlib package,
-  which downloads its own files on first use. It does not track: every frame
-  a person detector finds everyone, `pick_person` chooses the largest, and
-  the pose model runs on that person's box. With no box it returns an empty
+  which downloads its own files on first use. Built with a `mode`, a `device`
+  and `detect_every`. A person detector finds everyone, `pick_person`
+  chooses the largest, and the pose model runs on that person's box. With
+  `detect_every` 1 (the default) the detector runs every frame; with N it
+  runs every Nth frame, and the frames between use `box_from_joints` on the
+  previous frame. With no box it returns an empty
   frame, because running the pose model on the whole image would always
-  "find" someone.
+  "find" someone. After loading it checks both models really run on the
+  device asked for, since ONNX Runtime falls back to the processor silently.
 - **`BACKENDS`**: dictionary from name to class. Adding a model means writing
   one class here and adding it to this dictionary.
-- **`create_backend(name, model_path)`**. Look the name up and build the
+- **`joints_provided(name)`**. The landmarks detector `name` can find, in
+  our order: all 33 for MediaPipe, 21 for RTMPose.
+- **`create_backend(name, model_path, **options)`**. Look the name up and build the
   class, with a clear error naming the valid choices if the name is unknown.
+  `options` go to the class (RTMPose: mode, device, detect_every).
 
 ---
 
@@ -890,19 +914,27 @@ The one file that knows the order of the steps. Everything else calls `run()`.
   if it exists and is at least as new as every existing input file.
 - **`_stop(stage, stop_after)`**. True, with a printed note, if the run should
   end after this stage.
+- **`detector_options(detector, rtmpose_mode, rtmpose_device, rtmpose_detect_every)`**.
+  The settings handed to `create_backend`; empty for MediaPipe.
+- **`detector_settings(options)`**. The settings that change what the saved
+  landmarks look like (mode and detect-every), only where they differ from
+  the defaults, stored in the fingerprint and compared on resume.
 - **`run(video_paths, out_path, ...)`**. The public entry point. Options:
   performer height, model path, camera types, fields of view, clap times,
   calibration path, recalibrate, the error limit, board videos, whether to
   smooth, whether to write the animation, resume, stop-after, detector,
   smoother, clap threshold, jobs (how many videos step 1 detects at
-  once; 0 means pick automatically), and the sync signal (clap or chirp). It validates the counts and names, opens a metrics run, calls
+  once; 0 means pick automatically), RTMPose's mode, device and
+  detect-every, and the sync signal (clap or chirp). It validates the counts and names, checks
+  the RTMPose device when RTMPose is chosen, opens a metrics run, calls
   `_run_stages` inside a total timer, and closes the run as done, stopped
   early, or failed with the error text. The metrics and log files are written
   even when the run fails.
 - **`_run_stages(...)`**. The steps in order.
   1. Decide the camera ids, file paths and camera types.
   2. Step 1. With resume, reuse a video's saved landmarks if the video's
-     fingerprint still matches and the same detector made them. The videos
+     fingerprint still matches and the same detector made them with the
+     same settings (`detector_settings`; the device does not count). The videos
      still to detect go to `_detect_videos`, several at a time, each in its
      own process when more than one is detected at once (`_detect_worker`,
      which also saves the landmark file and sends what it prints back through

@@ -8,6 +8,7 @@ Every stage writes its result next to --out (io.stage_paths). Re-running with
 --resume loads those files instead of recomputing, so a failed or tweaked run
 starts from the last good stage instead of running the pose model again.
 --detector picks the pose model for stage 1 (stage1_keypoints/backends.py).
+--rtmpose-mode, --rtmpose-device and --rtmpose-detect-every tune RTMPose.
 --smoother picks the stage 2c smoother (stage2_reconstruct/smooth.py).
 --stop-after writes one stage's file and exits, to hand data to a teammate.
 --jobs sets how many videos stage 1 detects at once, each in its own process
