@@ -1,7 +1,7 @@
 """
 Stage 1 pose backends: the Halpe-26 -> MediaPipe joint mapping, picking the
-performer, and the RTMPose backend's frame handling with a fake model in
-place of rtmlib (no model download needed).
+performer, the RTMPose backend's frame handling with a fake model in
+place of rtmlib (no model download needed), and its ONNX Runtime threads.
 """
 import numpy as np
 import pytest
@@ -110,3 +110,46 @@ def test_both_detectors_are_registered():
     assert {"mediapipe", "rtmpose"} <= set(backends.BACKENDS)
     with pytest.raises(ValueError, match="Unknown pose detector"):
         backends.create_backend("openpose")
+
+
+# ---- RTMPose's ONNX Runtime threads (config.RTMPOSE_THREAD_SPINNING) ---------------------
+
+class FakeTool:
+    """An rtmlib model (YOLOX or RTMPose) as far as stop_spinning sees it."""
+
+    def __init__(self, path):
+        self.onnx_model, self.session = path, "rtmlib's session"
+
+
+def test_stop_spinning_rebuilds_both_sessions_without_spinning(monkeypatch):
+    ort = pytest.importorskip("onnxruntime")
+    made = []
+    monkeypatch.setattr(ort, "InferenceSession",
+                        lambda path, sess_options, providers: made.append((path, sess_options, providers)) or path)
+    model = type("Model", (), {"det_model": FakeTool("yolox.onnx"), "pose_model": FakeTool("rtmpose.onnx")})()
+
+    backends.stop_spinning(model)
+
+    assert [m[0] for m in made] == ["yolox.onnx", "rtmpose.onnx"]
+    assert model.det_model.session == "yolox.onnx" and model.pose_model.session == "rtmpose.onnx"
+    for _, options, providers in made:
+        assert options.get_session_config_entry("session.intra_op.allow_spinning") == "0"
+        assert options.intra_op_num_threads == 0          # thread count left to ONNX Runtime
+        assert providers == ["CPUExecutionProvider"]
+
+
+@pytest.mark.parametrize("device, spinning, stopped", [("cpu", False, True), ("cpu", True, False),
+                                                        ("cuda", False, False)])
+def test_backend_stops_spinning_only_on_the_cpu_by_default(monkeypatch, device, spinning, stopped):
+    import sys
+    import types
+
+    fake_rtmlib = types.ModuleType("rtmlib")
+    fake_rtmlib.BodyWithFeet = lambda mode, backend, device: "model"
+    monkeypatch.setitem(sys.modules, "rtmlib", fake_rtmlib)
+    monkeypatch.setattr(backends.config, "RTMPOSE_THREAD_SPINNING", spinning)
+    calls = []
+    monkeypatch.setattr(backends, "stop_spinning", calls.append)
+
+    RTMPoseBackend(device=device)
+    assert calls == (["model"] if stopped else [])

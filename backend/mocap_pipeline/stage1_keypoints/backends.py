@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from .. import config
 from ..joints import JOINT_INDEX, NUM_JOINTS
 
 DEFAULT_BACKEND = "mediapipe"
@@ -170,7 +171,9 @@ class RTMPoseBackend(PoseBackend):
     both models on first use (into ~/.cache), so model_path is not used.
 
     mode: rtmlib's "lightweight", "balanced" or "performance" (slower, more
-    accurate). device: "cpu" or "cuda" (needs onnxruntime-gpu).
+    accurate). device: "cpu" or "cuda" (needs onnxruntime-gpu). On the CPU
+    the ONNX Runtime threads do not busy-wait unless
+    config.RTMPOSE_THREAD_SPINNING, so several videos can be detected at once.
     """
     name = "rtmpose"
 
@@ -178,6 +181,8 @@ class RTMPoseBackend(PoseBackend):
         from rtmlib import BodyWithFeet
 
         self._model = BodyWithFeet(mode=mode, backend="onnxruntime", device=device)
+        if device == "cpu" and not config.RTMPOSE_THREAD_SPINNING:
+            stop_spinning(self._model)
 
     def detect(self, rgb, frame_ms):
         import cv2
@@ -194,6 +199,22 @@ class RTMPoseBackend(PoseBackend):
 
         keypoints, scores = self._model.pose_model(bgr, bboxes=[bboxes[person]])
         return halpe26_to_mediapipe(keypoints[0], scores[0])
+
+
+def stop_spinning(model) -> None:
+    """
+    Rebuild rtmlib's two ONNX Runtime sessions (person detector and pose
+    model) from the same model files, with idle threads that sleep instead
+    of busy-waiting (see config.RTMPOSE_THREAD_SPINNING). rtmlib has no
+    option for it; the thread count stays ONNX Runtime's default.
+    """
+    import onnxruntime as ort
+
+    for tool in (model.det_model, model.pose_model):
+        options = ort.SessionOptions()
+        options.add_session_config_entry("session.intra_op.allow_spinning", "0")
+        tool.session = ort.InferenceSession(tool.onnx_model, sess_options=options,
+                                            providers=["CPUExecutionProvider"])
 
 
 # Detector name (what run_pipeline's --detector will take) -> backend class.
