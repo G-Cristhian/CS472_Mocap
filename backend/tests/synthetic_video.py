@@ -8,7 +8,6 @@ MediaPipe finds no person in these (every joint is NaN), so they exercise
 decoding, the clap search, resampling and the file handling, not the geometry.
 """
 from fractions import Fraction
-from pathlib import Path
 
 import av
 import numpy as np
