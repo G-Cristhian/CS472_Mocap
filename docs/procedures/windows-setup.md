@@ -1,6 +1,6 @@
 # Setting up the pipeline on Windows
 
-For a Windows laptop or desktop. The same steps as [mac-setup.md](mac-setup.md), with the commands Windows needs, in Windows PowerShell, the terminal built into Windows. Everything runs locally; no server, no account. The Python packages download once, so do this on a good connection.
+For a Windows laptop or desktop. The same steps as [mac-setup.md](mac-setup.md), with the commands Windows needs, in Windows PowerShell, the terminal built into Windows. Steps 1 to 4 and the desktop tester run locally; no server, no account. The web viewer in step 5 needs the Django backend and a login. The Python packages download once, so do this on a good connection.
 
 Before step 1: Git for Windows is installed (`git --version` prints a version), and Node from https://nodejs.org if you will use the web viewer or the desktop tester.
 
@@ -60,16 +60,26 @@ cd $HOME\CS472_Mocap\backend
 .venv\Scripts\python.exe -c "from mocap_pipeline.stage1_keypoints.backends import create_backend; create_backend('rtmpose').close(); print('rtmpose ready')"
 ```
 
-## 5. The API and the web frontend
+## 5. The web frontend and its backend
 
-The web frontend talks to the API, so start the API first and leave its window open:
+The web frontend talks to the Django backend (`backend\motionboxpro`), so start it first and leave its window open. It needs PostgreSQL, a `backend\.env` copied from `backend\.env_`, and the Django packages, set up as in the top-level README (Database Setup and .env; keep using `backend\.venv` from step 2 rather than the README's `./venv`); the Windows form of the install is `.venv\Scripts\python.exe -m pip install -r requirements.txt` from `backend`. Then:
 
 ```
 cd $HOME\CS472_Mocap\backend
-.venv\Scripts\python.exe -m uvicorn api:app --reload
+.venv\Scripts\python.exe manage.py migrate
+.venv\Scripts\python.exe manage.py runserver
 ```
 
-It prints `Application startup complete.` and answers on http://127.0.0.1:8000; http://127.0.0.1:8000/docs lists its routes.[^6] Ctrl+C stops it. Do not stop it, or edit a backend `.py` file (which makes `--reload` restart it), while a take is detecting: the detection processes would keep running on their own.[^7]
+It answers on http://127.0.0.1:8000. Ctrl+C stops it.
+
+The FastAPI server (`api.py`) is a separate take runner that the web frontend no longer calls. To run it on its own, on another port if Django is up:
+
+```
+cd $HOME\CS472_Mocap\backend
+.venv\Scripts\python.exe -m uvicorn api:app --reload --port 8001
+```
+
+It prints `Application startup complete.` and answers on http://127.0.0.1:8001; http://127.0.0.1:8001/docs lists its routes.[^6] Ctrl+C stops it. Do not stop it, or edit a backend `.py` file (which makes `--reload` restart it), while a take is detecting: the detection processes would keep running on their own.[^7]
 
 Then, in a second PowerShell window:
 
@@ -79,7 +89,7 @@ npm.cmd install
 npm.cmd run dev
 ```
 
-Open http://localhost:5173. The frontend looks for the API at http://localhost:8000 unless `frontend\.env` sets `VITE_API_URL` to something else.[^8] After a pull that adds packages to `frontend\package.json`, run `npm.cmd install` again before `npm.cmd run dev`; npm may end it with `npm warn allow-scripts`, and the install still completes.[^10]
+Open http://localhost:5173 and register an account, or log in. The frontend looks for the Django backend at http://localhost:8000 unless `frontend\.env` sets `VITE_DJANGO_URL` to something else.[^8] After a pull that adds packages to `frontend\package.json`, run `npm.cmd install` again before `npm.cmd run dev`; npm may end it with `npm warn allow-scripts`, and the install still completes.[^10]
 
 ## 6. The desktop tester
 
@@ -123,10 +133,10 @@ Both show the Windows commands next to the Mac ones.
 [^1]: Checked on 2026-10-20 on Windows 11, in a Windows PowerShell 5.1 session with the Restricted execution policy, started in the home folder: `npm --version` failed with the `npm.ps1` error while `npm.cmd --version` worked; `echo a && echo b` was rejected; `.venv\Scripts\python.exe` ran from `backend` without activation; and `check_videos` given `take01\*.MOV` received the name unexpanded and reported it could not be opened. Restricted is the default policy on Windows client editions (Microsoft Learn, about_Execution_Policies), and `&&` arrived in PowerShell 7 (Microsoft Learn, about_Pipeline_Chain_Operators).
 [^2]: Python documentation, "Using Python on Windows", the Python install manager and launcher sections (https://docs.python.org/3/using/windows.html). On the machine this page was checked on, `py -3.12 --version` printed Python 3.12.10.
 [^3]: Checked on 2026-10-20: in a fresh `py -3.12` venv, `pip install --dry-run` of the same three requirement lists resolved every package for Windows without building any from source. The project's own venv on that machine was installed with the same command.
-[^4]: Measured on 2026-10-20 on the Windows laptop, in a Restricted PowerShell session, with exactly these commands: 124 tests passed in 44 s, and the quick benchmark finished in 26 s with 0.00 px and 0.7 mm in its first row.
+[^4]: Measured on 2026-10-20 on the Windows laptop, in a Restricted PowerShell session, with exactly these commands: 124 tests passed in 44 s (before the seven desktop tests existed; the suite is 131 tests now), and the quick benchmark finished in 26 s with 0.00 px and 0.7 mm in its first row.
 [^5]: `rtmlib/tools/file.py`, `_get_rtmhub_dir`: the models go under `~/.cache/rtmlib`, which is the home folder on Windows too, unless the `TORCH_HOME` or `XDG_CACHE_HOME` environment variable is set.
-[^6]: Checked on 2026-10-20: started with this command, the API printed "Application startup complete." and answered `GET /takes` and `/docs` with HTTP 200.
+[^6]: Checked on 2026-10-20 with this command on its default port 8000, before the Django backend took that port (`--port 8001` was added afterwards and has not been rechecked): the API printed "Application startup complete." and answered `GET /takes` and `/docs` with HTTP 200.
 [^7]: Since stage 1 detects the videos in their own processes (D-048), the API's shutdown stops the take's process but not those detection processes. Seen on 2026-10-19: two detection processes and their manager kept running for minutes after the API's take worker was stopped mid-detection.
-[^8]: `frontend/src/lib/api.ts`, `API_URL`: `VITE_API_URL` if set, else `http://localhost:8000`.
+[^8]: `frontend/src/lib/django.ts`, `DJANGO_URL`: `VITE_DJANGO_URL` if set, else `http://localhost:8000`. `frontend/src/lib/api.ts` reads `VITE_API_URL` the same way for the FastAPI server, but no routed page uses it.
 [^9]: Checked on 2026-10-20 with a `.MOV`, an `.mp4` and a `.txt` file in one folder: `$videos` held the two videos in name order, and `check_videos $videos` read both.
 [^10]: Checked on 2026-10-20, after the merge that added `@supabase/supabase-js` to the frontend: the package was missing from `frontend\node_modules` until `npm.cmd install` ran from a Restricted PowerShell. That install exited 0, printed the `allow-scripts` warning for esbuild and changed no tracked file, and the dev server then served the home page with no console errors.

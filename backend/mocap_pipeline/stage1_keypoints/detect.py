@@ -56,7 +56,6 @@ def detect_video(video_path: str, model_path: str, detector: str = DEFAULT_BACKE
 
     with create_backend(detector, model_path, **(options or {})) as backend:
         frame_idx = 0
-        last_ms = -1
 
         while True:     # while video can still be read, continues
             ok, frame = cap.read()

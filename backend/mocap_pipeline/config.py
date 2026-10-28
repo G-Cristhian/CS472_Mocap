@@ -78,10 +78,6 @@ SYNC_MAX_INTERP_GAP_FRAMES = 2.5
 CALIB_MIN_CONFIDENCE = 0.8
 # RANSAC inlier threshold in pixels for the camera pose from the joints.
 RANSAC_REPROJ_THRESHOLD_PX = 3.0
-# Stop the alternate intrinsic/extrinsic loop when mean reprojection error
-# improves by less than this between iterations. (Liu et al. only, not used by ours.)
-CALIB_CONVERGENCE_PX = 0.01
-CALIB_MAX_ITERATIONS = 50
 # Initial guess for a phone main camera's horizontal field of view, used to
 # seed the focal length (the paper seeds from factory values we do not have).
 # iPhones read their real focal length from the video metadata instead.

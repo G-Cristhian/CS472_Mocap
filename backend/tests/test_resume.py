@@ -104,7 +104,7 @@ def test_changed_video_is_detected_again(fakes, fake_videos, tmp_path):
 
 
 def test_new_calibration_retriangulates(fakes, fake_videos, tmp_path):
-    out = run(fake_videos, tmp_path)
+    run(fake_videos, tmp_path)
     bump_mtime(tmp_path / "output" / "calibration.json")
     run(fake_videos, tmp_path, resume=True)
     assert len(fakes.detect) == 2

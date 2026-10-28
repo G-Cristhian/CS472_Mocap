@@ -14,8 +14,8 @@ starts from the last good stage instead of running the pose model again.
 (default: one per video, up to the core count and config.DETECT_MAX_AUTO_JOBS);
 a video that fails is named with the others once every video has been tried.
 
-This file is the one place that knows the order of the stages. When the web
-backend is built later, it should call run() rather than repeat this logic.
+This file is the one place that knows the order of the stages. The web
+backends (api.py, motionboxpro) call run() rather than repeat this logic.
 """
 
 from __future__ import annotations
@@ -447,7 +447,7 @@ def run(
                 options,
             )
     except BaseException as e:
-        path = metrics.finish("failed", f"{type(e).__name__}: {e}")
+        metrics.finish("failed", f"{type(e).__name__}: {e}")
         raise
     path = metrics.finish("done" if stopped is None else f"stopped after {stopped}")
     if path is not None and stopped is None:
