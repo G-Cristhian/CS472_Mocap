@@ -297,16 +297,17 @@ code 1 if anything failed.
 - **`iphone_info(path)`**. The phone model, lens and 35 mm equivalent focal
   length if the file carries Apple's metadata, else None. Uses
   `iphone_camera.read_metadata`.
-- **`clap_time(path)`**. The clap time in seconds using the same three
+- **`clap_time(path, threshold)`**. The clap time in seconds using the same
   functions step 2a uses, or None and the reason.
-- **`check(video_paths)`**. For every video, prints the size, frame rate,
+- **`check(video_paths, threshold)`**. For every video, prints the size, frame rate,
   length, lens information and clap time, with a warning if the frame rate is
   under 50, if a `.MOV` file lacks iPhone metadata (it was probably
   re-exported), or if the clap sits near the end of the search window. Then
   across cameras: warns if frame rates or resolutions differ, if lengths
   differ by more than 5 seconds, and runs the cross-check from step 2a to
   show the refined clap times. Returns 1 if any file failed.
-- **`main()`**. Command-line wrapper around `check`.
+- **`main()`**. Command-line wrapper around `check`, with the same
+  `--clap-threshold` flag as the pipeline.
 
 ---
 
@@ -394,23 +395,34 @@ offset. After this step, frame i means the same instant in every camera.
   each value averaged over a centred 10 millisecond span. The averaging stops
   the pitch of a voice from looking like a string of tiny claps. Uses a
   cumulative sum of squared samples so every window is one subtraction.
-- **`_clap_from_loudness(rms, name)`**. Find the clap onset in a loudness
-  curve. The idea: a clap goes from quiet to full loudness within a few
-  milliseconds, while speech, music and footsteps ramp up slowly.
+- **`_peak_and_rise_time(rms, before, i, far, win_s)`**. From one candidate
+  moment, find the sound's true peak within the next 100 milliseconds, then
+  walk back from the peak to where the loudness was a quarter of the way up
+  from what came before. Gives back where the peak is and how long that climb
+  took, in seconds.
+- **`_clap_from_loudness(rms, name, threshold)`**. Find the clap onset in a
+  loudness curve. The idea: a clap goes from quiet to full loudness within a
+  few milliseconds, while speech, music and footsteps ramp up slowly.
+  `threshold` (1 by default, set by `--clap-threshold`) multiplies both
+  loudness tests in steps 3 and 4; 0.5 accepts a clap half as strong. The
+  25 millisecond limit is not scaled.
   1. Background level: the median loudness.
   2. For every moment, the loudest moment 30 to 100 milliseconds before it
      (the 30 millisecond gap skips the pre-echo that phone audio compression
      smears ahead of a sharp sound). The "rise" is the moment's loudness
      divided by that.
-  3. Ignore moments not at least 8 times the background.
-  4. Take the 200 strongest rises in order. For each, find the true peak
-     within the next 100 milliseconds, then walk back from the peak to where
-     the loudness was a quarter of the way up from what came before. If that
-     took longer than 25 milliseconds it is not a clap; try the next.
+  3. Ignore moments not at least 4 times the background.
+  4. Take the 200 strongest rises in order, stopping at the first that is
+     less than 2. For each, measure its climb with `_peak_and_rise_time`. If
+     the climb took longer than 25 milliseconds it is not a clap; try the
+     next.
   5. For the first that passes, the onset is the first moment within 10
      milliseconds before the peak that is at least halfway up. Return it in
-     seconds. If none passes, raise with a message explaining the thresholds.
-- **`find_clap_time(video_path)`**. The two functions above on one video.
+     seconds. If none passes, raise with a message giving the sharpest sound's
+     time and its three measurements against the three tests, and suggesting
+     a rerun with half the threshold or clap times given by hand with `--sync`.
+- **`find_clap_time(video_path, threshold)`**. The three functions above on one
+  video.
 - **`_refine_against_reference(rms_ref, clap_ref, rms, clap, name)`**. Cross
   check one camera's clap against camera 0's: take the loudness curve a
   quarter second either side of each clap, remove each curve's mean, slide one
@@ -418,8 +430,8 @@ offset. After this step, frame i means the same instant in every camera.
   under 50 milliseconds, apply it; otherwise keep the detected clap and warn,
   because the match probably locked onto something else. Records the shift
   in the metrics.
-- **`detect_claps(video_paths)`**. Clap time of every video, each refined
-  against camera 0's.
+- **`detect_claps(video_paths, threshold)`**. Clap time of every video, each
+  refined against camera 0's.
 - **`_resample(kp, times, common)`**. Put one camera's landmarks onto the
   shared timeline by straight-line interpolation between its two nearest
   frames. For each shared tick, find the camera frames just before and after,
@@ -428,8 +440,9 @@ offset. After this step, frame i means the same instant in every camera.
   this camera's frame intervals apart (the camera stalled), the tick becomes
   NaN with confidence 0 instead of a blend; and if either neighbour is NaN
   the result is NaN.
-- **`synchronise(video_paths, keypoints, clap_times)`**. The whole step.
-  1. Use the given clap times, or detect them.
+- **`synchronise(video_paths, keypoints, clap_times, clap_threshold)`**. The
+  whole step.
+  1. Use the given clap times, or detect them with `clap_threshold`.
   2. Shift each camera's timestamps so its clap is time 0.
   3. Build the shared timeline from 0 to the earliest end among cameras, at
      the shared clock rate from the configuration (30 per second).
