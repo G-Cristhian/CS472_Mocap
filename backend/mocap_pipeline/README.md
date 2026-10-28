@@ -4,6 +4,8 @@ The team's outline with stages 1 and 2 filled in from our first multi-camera pip
 
 Videos from 2 or more cameras (iPhones and webcams can be mixed), each starting with a clap, go in. 3D joints per frame come out, in metres, Y up, floor at Y = 0.
 
+New to the code? [docs/backend-outline.md](../../docs/backend-outline.md) walks through every step, file and function in plain language.
+
 ---
 # Running
 ```
