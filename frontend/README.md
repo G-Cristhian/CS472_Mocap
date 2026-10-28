@@ -1,6 +1,7 @@
 # Hybrid Mocap — frontend
 
-A navigable React prototype of every screen in `refs/Hybrid-Mocap-Screens.pdf`. Cameras, rig parts,
+The web app, grown from a React prototype of the screens in `refs/Hybrid-Mocap-Screens.pdf` (the Home
+and Motion Library screens were dropped). Cameras, rig parts,
 saved devices and seed recordings are mocked in `src/lib/data.ts`. Login, projects, motions, their versions
 and uploaded recordings come from the Django API (`src/lib/auth.ts`, `projects.ts`, `motions.ts`,
 `recordings.ts`), at `VITE_DJANGO_URL` or http://localhost:8000. The Supabase upload code
@@ -14,7 +15,9 @@ npm install
 npm run dev      # http://localhost:5173
 ```
 
-On Windows, in PowerShell, start the API first ([windows-setup.md](../docs/procedures/windows-setup.md) step 5), then:
+Every page but the landing and sign-in ones needs the Django backend running first
+([mac-setup.md](../docs/procedures/mac-setup.md) step 5). On Windows, in PowerShell
+([windows-setup.md](../docs/procedures/windows-setup.md) step 5):
 
 ```
 cd $HOME\CS472_Mocap\frontend
@@ -29,14 +32,14 @@ build), `npm run typecheck`. On Windows, type `npm.cmd` in place of `npm`.
 
 | Route | Deck page | What it covers |
 | --- | --- | --- |
-| `/` | 1–3 | Landing page for visitors; a logged-in user skips it. |
+| `/` | — | Landing page for visitors; a logged-in user skips it. |
 | `/login`, `/register`, `/forgot-password`, `/reset-password/:uid/:token` | — | Auth pages, against the Django accounts API. |
 | `/streaming` | 4 | Capture setup, camera monitor grid, connection alert. `Cameras` tab lists the rig. |
 | `/projects` | 5 | Project cards and a New project dialog. |
-| `/projects/:projectId` | 6 | One project's motions and a New motion dialog. |
+| `/projects/:projectId` | — | One project's motions and a New motion dialog. |
 | `/motions/:motionId` | 6 | Motion workspace: its recordings and performers, the processing panel, versions, skeleton viewport, transport bar, and the Rig / Cameras / Streaming / Export inspector. |
-| `/motions` | 7 | Every motion across all projects. |
-| `/recordings` | — | The user's recordings, with upload. `/recordings/new` records from one camera; `/recordings/:recordingId` plays one. `/record` redirects to `/recordings/new`. |
+| `/motions` | — | Every motion across all projects. |
+| `/recordings` | — | The user's recordings, with upload. `/recordings/new` mocks recording from one camera (a timer, no camera access); `/recordings/:recordingId` plays one. `/record` redirects to `/recordings/new`. |
 | `/settings/:section` | 8 | Settings. `accessibility` is the screen in the deck; `devices`, `calibration` and `api` are the other three sections in the sidebar. |
 
 Every route except `/` and the auth pages needs a logged-in user. Anything not routed falls through to a friendly not-found page.
@@ -73,7 +76,7 @@ The viewport on `/motions/:motionId` is a three.js scene (`src/features/viewer/`
 
 ```
 src/
-  app/          router, app shell, settings + studio state providers
+  app/          router, app shell, auth guard, auth + settings + studio state providers
   components/   TopNav, shared UI (buttons live in CSS, cards, icons, modal)
   features/     one folder per screen: landing, auth, projects, motions, library (recordings list),
                 recordings, streaming, settings, footage (not routed); home holds the not-found page
@@ -91,4 +94,6 @@ and `public/favicon.svg`.
 
 ## Not built yet
 
-Live video in the camera tiles.
+Live video in the camera tiles; recording on `/recordings/new` (a timer only); the Cameras tab,
+Start streaming, Export take and Manual edit on the motion page, which are placeholders; start/stop
+on the Streaming page (a timer only); the keyboard shortcuts the help menu lists.
