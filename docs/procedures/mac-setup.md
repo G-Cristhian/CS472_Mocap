@@ -60,7 +60,7 @@ npm install
 npm run dev
 ```
 
-Open the address it prints, open a project, and use "Open .bvh / .json" at the bottom right of the viewport. Blender also opens the `.bvh` (File, Import, Motion Capture).[^8]
+Open the address it prints, log in, open a motion, and use "Open .bvh / .json" at the bottom right of the viewport. Blender also opens the `.bvh` (File, Import, Motion Capture).[^8]
 
 ## 6. On the day
 
