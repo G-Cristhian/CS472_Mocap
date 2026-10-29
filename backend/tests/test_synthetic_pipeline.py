@@ -23,10 +23,29 @@ from tests.synthetic_scene import (PERFORMER_HEIGHT_M, Noise, Routine, Scene, al
 SHORT = Routine(stand_s=2.0, walk_s=6.0, perform_s=3.0)
 REALISTIC = Noise(pixel_sigma=1.5, dropout=0.02, outlier=0.005)
 
+# Calibration's bundle adjustment (aniposelib) picks the points it refines on with numpy's global
+# random generator. Most results here barely move with it, but the narrow baseline's error swings
+# widely (narrow/wide ratio 2.8 to 12 over seeds 0-39); seed 0 gives the median, 5.0.
+CALIBRATION_SEED = 0
+
+
+def seed_calibration():
+    """
+    Make the next calibration repeatable, whichever tests ran before it in this process.
+    aniposelib imports jax on its first triangulation and importing jax draws from
+    np.random, so jax is imported before seeding.
+    """
+    try:
+        import jax  # noqa: F401
+    except ImportError:
+        pass
+    np.random.seed(CALIBRATION_SEED)
+
 
 def stage2(scene: Scene, intrinsics=None):
     """calibrate -> rough triangulation -> metric -> triangulation -> clean-up, as run_pipeline does."""
     kps = scene.synced_keypoints()
+    seed_calibration()
     rig = calibrate.calibrate_rig(kps, intrinsics)
     rough = triangulate.triangulate_sequence(kps, rig)
     rig = scale_floor.make_metric(rig, rough, PERFORMER_HEIGHT_M)
@@ -141,7 +160,7 @@ def test_narrow_baseline_is_much_worse_than_the_protocol_arc():
     wide = Scene(routine=SHORT, angles_deg=(-35, 35), noise=Noise(pixel_sigma=1.5))
     e_narrow, _, _ = aligned_mpjpe(stage2(narrow)[0].points, narrow.truth_in_pipeline_frame())
     e_wide, _, _ = aligned_mpjpe(stage2(wide)[0].points, wide.truth_in_pipeline_frame())
-    assert e_narrow > 3 * e_wide
+    assert e_narrow > 3 * e_wide              # measured 29 mm against 5.9 mm with CALIBRATION_SEED
 
 
 def test_wrong_field_of_view_costs_accuracy_but_still_runs():
