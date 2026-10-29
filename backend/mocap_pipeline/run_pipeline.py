@@ -35,7 +35,7 @@ from .stage1_keypoints.backends import (BACKENDS, DEFAULT_BACKEND, RTMPOSE_DEVIC
                                         check_rtmpose_device, joints_provided)
 from .stage2_reconstruct import calibrate, scale_floor, smooth, sync, triangulate
 from .stage3_rig import bvh_writer, rotations, skeleton
-from .joints import RIG_JOINTS, RIG_PARENTS
+from .joints import RIG_END_SITES, RIG_JOINTS, RIG_PARENTS
 from .stage2_reconstruct.iphone_camera import (
     is_iphone_video,
     iphone_intrinsics,
@@ -712,7 +712,18 @@ def export_bvh(pose, bvh_path: str) -> None:
         metrics.bone_length_summary(rig_positions, RIG_JOINTS, RIG_PARENTS),
     )
     offsets = skeleton.rest_pose_offsets(skeleton.bone_lengths(rig_positions))
-    root_positions, local_rotations = rotations.solve_rotations(rig_positions, offsets)
+    root_positions, local_rotations, unsolved = rotations.solve_rotations(rig_positions, offsets)
+    rotating = [n for n in RIG_JOINTS if n not in RIG_END_SITES]
+    per_joint = {n: int(c) for n, c in zip(rotating, unsolved.sum(axis=0))}
+    held = int(unsolved.any(axis=1).sum())
+    metrics.record("rig.unsolved_frames", held)
+    metrics.record("rig.unsolved_frames_per_joint", per_joint)
+    if held:
+        joints = ", ".join(f"{n} {c}" for n, c in per_joint.items() if c)
+        print(
+            f"{held} frames had a joint whose rotation could not be "
+            f"solved ({joints}); it keeps the previous frame's rotation there"
+        )
     euler = rotations.to_euler_degrees(local_rotations, bvh_writer.ROTATION_ORDER)
     bvh_writer.write_bvh(bvh_path, offsets, root_positions, euler, pose.fps)
 

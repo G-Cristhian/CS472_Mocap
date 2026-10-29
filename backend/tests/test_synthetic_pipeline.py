@@ -195,7 +195,7 @@ def test_bvh_round_trip_reproduces_the_rig_positions(tmp_path):
     pose = Scene(routine=SHORT).truth_pose()
     rig_pos = skeleton.rig_joint_positions(pose)
     offsets = skeleton.rest_pose_offsets(skeleton.bone_lengths(rig_pos))
-    root, local = rotations.solve_rotations(rig_pos, offsets)
+    root, local, _ = rotations.solve_rotations(rig_pos, offsets)
     euler = rotations.to_euler_degrees(local, bvh_writer.ROTATION_ORDER)
     path = tmp_path / "truth.bvh"
     bvh_writer.write_bvh(str(path), offsets, root, euler, pose.fps)
