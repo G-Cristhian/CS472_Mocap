@@ -80,7 +80,7 @@ DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 
 # printed line prefix -> stage shown to the user (sync prints nothing until it
 # finishes, so it falls under detecting)
-STAGE_PREFIXES = [("Detecting joints in", "detecting"), ("Clap at", "calibrating"),
+STAGE_PREFIXES = [("Detecting joints in", "detecting"), ("Clap at", "calibrating"), ("Chirp at", "calibrating"),
                   ("Saved calibration", "triangulating")]
 
 

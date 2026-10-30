@@ -14,8 +14,8 @@ starts from the last good stage instead of running the pose model again.
 (default: one per video, up to the core count and config.DETECT_MAX_AUTO_JOBS);
 a video that fails is named with the others once every video has been tried.
 
-This file is the one place that knows the order of the stages. When the web
-backend is built later, it should call run() rather than repeat this logic.
+This file is the one place that knows the order of the stages. The web
+backends (api.py, motionboxpro) call run() rather than repeat this logic.
 """
 
 from __future__ import annotations
@@ -31,7 +31,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from . import config, io, metrics
 from .stage1_keypoints import detect
-from .stage1_keypoints.backends import BACKENDS, DEFAULT_BACKEND
+from .stage1_keypoints.backends import (BACKENDS, DEFAULT_BACKEND, RTMPOSE_DEVICES, RTMPOSE_MODES,
+                                        check_rtmpose_device, joints_provided)
 from .stage2_reconstruct import calibrate, scale_floor, smooth, sync, triangulate
 from .stage3_rig import bvh_writer, rotations, skeleton
 from .joints import RIG_JOINTS, RIG_PARENTS
@@ -180,6 +181,34 @@ def _stop(stage: str, stop_after: str | None) -> bool:
     return False
 
 
+def detector_options(detector: str, rtmpose_mode: str = config.RTMPOSE_MODE,
+                     rtmpose_device: str = "cpu",
+                     rtmpose_detect_every: int = config.RTMPOSE_DETECT_EVERY) -> dict:
+    """The settings handed to the stage 1 backend (backends.create_backend). Empty for MediaPipe."""
+    if detector != "rtmpose":
+        return {}
+    return {"mode": rtmpose_mode, "device": rtmpose_device, "detect_every": rtmpose_detect_every}
+
+
+# detector options at these values leave the joints as they were before the options existed
+_DEFAULT_DETECTOR_SETTINGS = {"mode": config.RTMPOSE_MODE, "detect_every": config.RTMPOSE_DETECT_EVERY}
+
+
+def detector_settings(options: dict) -> dict:
+    """
+    The options that decide what the saved joints look like, for --resume:
+    only those that differ from the defaults, so joints saved before an
+    option existed still count as made with its default.
+    """
+    return {k: v for k, v in options.items()
+            if k in _DEFAULT_DETECTOR_SETTINGS and v != _DEFAULT_DETECTOR_SETTINGS[k]}
+
+
+def _options_kwarg(options: dict | None) -> dict:
+    # passed only when set, so detect_video stand-ins in the tests need no options parameter
+    return {"options": options} if options else {}
+
+
 def detect_jobs(n_videos: int, jobs: int = config.DETECT_JOBS) -> int:
     """
     How many videos to detect at once: `jobs` if given, else one per video up
@@ -220,7 +249,7 @@ class _QueueWriter:
             self.partial = ""
 
 
-def _detect_worker(video, model_path, detector, kp_path, fingerprint, camera_id, queue):
+def _detect_worker(video, model_path, detector, kp_path, fingerprint, camera_id, queue, options=None):
     """
     Detect one video in its own process and save its joints file. What it
     prints travels back through `queue`. Returns (camera_id, seconds taken);
@@ -230,7 +259,7 @@ def _detect_worker(video, model_path, detector, kp_path, fingerprint, camera_id,
     sys.stdout = writer
     try:
         t0 = time.perf_counter()
-        kp = detect.detect_video(video, model_path, detector=detector)
+        kp = detect.detect_video(video, model_path, detector=detector, **_options_kwarg(options))
         kp.camera_id = camera_id
         io.save_keypoints(kp, str(kp_path), fingerprint)
         return camera_id, time.perf_counter() - t0
@@ -239,13 +268,14 @@ def _detect_worker(video, model_path, detector, kp_path, fingerprint, camera_id,
         sys.stdout = sys.__stdout__
 
 
-def _detect_videos(todo, model_path, detector, jobs, worker=_detect_worker):
+def _detect_videos(todo, model_path, detector, jobs, worker=_detect_worker, options=None):
     """
     Stage 1 for every (video, camera_id, kp_path, fingerprint) in `todo`,
     `jobs` videos at a time in separate processes, or one after another in
     this process when jobs is 1. Every video is attempted even if another
-    fails. Returns ({camera_id: seconds}, {camera_id: error text}); the joints
-    of the successful videos are in their files.
+    fails. options are the detector's settings (detector_options). Returns
+    ({camera_id: seconds}, {camera_id: error text}); the joints of the
+    successful videos are in their files.
     """
     seconds, failures = {}, {}
 
@@ -261,7 +291,7 @@ def _detect_videos(todo, model_path, detector, jobs, worker=_detect_worker):
         for video, cid, kp_path, fingerprint in todo:
             try:
                 t0 = time.perf_counter()
-                kp = detect.detect_video(video, model_path, detector=detector)
+                kp = detect.detect_video(video, model_path, detector=detector, **_options_kwarg(options))
                 kp.camera_id = cid
                 io.save_keypoints(kp, str(kp_path), fingerprint)
                 finished(video, cid, time.perf_counter() - t0)
@@ -289,7 +319,8 @@ def _detect_videos(todo, model_path, detector, jobs, worker=_detect_worker):
         ) as pool:
             futures = {
                 pool.submit(
-                    worker, video, model_path, detector, str(kp_path), fingerprint, cid, queue
+                    worker, video, model_path, detector, str(kp_path), fingerprint, cid, queue,
+                    **_options_kwarg(options)
                 ): (video, cid)
                 for video, cid, kp_path, fingerprint in todo
             }
@@ -327,6 +358,10 @@ def run(
     smoother: str = config.SMOOTHER,
     clap_threshold: float = 1.0,
     jobs: int = config.DETECT_JOBS,
+    rtmpose_mode: str = config.RTMPOSE_MODE,
+    rtmpose_device: str = "cpu",
+    rtmpose_detect_every: int = config.RTMPOSE_DETECT_EVERY,
+    sync_signal: str = "clap",
 ) -> None:
     """
     Runs every stage in order. With resume=True a stage whose file (io.stage_paths)
@@ -334,9 +369,16 @@ def run(
     the last stage to run (one of STAGES); its file is written and run() returns.
     clap_threshold multiplies the clap loudness thresholds in config (0.5
     accepts a clap half as strong, for a noisy room); the clap search is
-    skipped when clap_times are given. detector is the stage 1 pose model (a
+    skipped when clap_times are given. sync_signal is what marks t = 0 in
+    every video: "clap" or "chirp" (stage2_reconstruct/chirp.py); with the
+    chirp, the clap times and clap_threshold apply to the chirp. detector is the stage 1 pose model (a
     name in backends.BACKENDS); saved joints are only reused if the same
-    detector made them. smoother is the
+    detector made them. rtmpose_mode is rtmlib's model size for RTMPose
+    (backends.RTMPOSE_MODES; ignored for MediaPipe), rtmpose_device where it
+    runs ("cpu" or "cuda"; checked before any video is read, and the device
+    does not count as a different setting for --resume), rtmpose_detect_every
+    how often its person detector runs (1 = every frame; see
+    backends.RTMPoseBackend). smoother is the
     stage 2c filter (a name in smooth.SMOOTHERS); it always runs, so two runs
     with --resume compare smoothers on the same triangulation. jobs is how
     many videos stage 1 detects at once, each in its own process (0 picks a
@@ -356,18 +398,30 @@ def run(
         raise ValueError(f"stop_after must be one of {STAGES}, got {stop_after!r}")
     if detector not in BACKENDS:
         raise ValueError(f"detector must be one of {tuple(BACKENDS)}, got {detector!r}")
+    if rtmpose_mode not in RTMPOSE_MODES:
+        raise ValueError(f"rtmpose_mode must be one of {RTMPOSE_MODES}, got {rtmpose_mode!r}")
+    if rtmpose_device not in RTMPOSE_DEVICES:
+        raise ValueError(f"rtmpose_device must be one of {RTMPOSE_DEVICES}, got {rtmpose_device!r}")
+    if not isinstance(rtmpose_detect_every, int) or rtmpose_detect_every < 1:
+        raise ValueError(f"rtmpose_detect_every must be 1 or more, got {rtmpose_detect_every!r}")
+    if detector == "rtmpose":
+        check_rtmpose_device(rtmpose_device)
+    options = detector_options(detector, rtmpose_mode, rtmpose_device, rtmpose_detect_every)
     if smoother not in smooth.SMOOTHERS:
         raise ValueError(
             f"smoother must be one of {smooth.SMOOTHERS}, got {smoother!r}"
         )
     if not clap_threshold > 0:
         raise ValueError(f"clap_threshold must be positive, got {clap_threshold}")
+    if sync_signal not in sync.SYNC_SIGNALS:
+        raise ValueError(f"sync_signal must be one of {sync.SYNC_SIGNALS}, got {sync_signal!r}")
     detect_jobs(n, jobs)  # validates jobs
 
     metrics.start(
         out_path,
         videos=[str(v) for v in video_paths],
         detector=detector,
+        detector_options=options or None,
         smoother=smoother,
         performer_height_m=performer_height_m,
         resume=resume,
@@ -395,9 +449,11 @@ def run(
                 smoother,
                 clap_threshold,
                 jobs,
+                options,
+                sync_signal,
             )
     except BaseException as e:
-        path = metrics.finish("failed", f"{type(e).__name__}: {e}")
+        metrics.finish("failed", f"{type(e).__name__}: {e}")
         raise
     path = metrics.finish("done" if stopped is None else f"stopped after {stopped}")
     if path is not None and stopped is None:
@@ -424,6 +480,8 @@ def _run_stages(
     smoother,
     clap_threshold,
     jobs,
+    options=None,
+    sync_signal="clap",
 ) -> str | None:
     """The stages in order; returns the stage name if stop_after ended the run early."""
     n = len(video_paths)
@@ -443,6 +501,8 @@ def _run_stages(
     # own process; every one is attempted, and the failures are reported together.
     keypoints: list = [None] * n
     todo = []
+    options = options or {}
+    settings = detector_settings(options)
     for i, (video, cid) in enumerate(zip(video_paths, ids)):
         kp_path = paths["keypoints"][cid]
         if resume and kp_path.exists():
@@ -457,23 +517,30 @@ def _run_stages(
                 print(
                     f"{kp_path.name} was made with {saved_detector}, detecting again with {detector}"
                 )
+            elif fingerprint.get("detector_settings", {}) != settings:
+                print(
+                    f"{kp_path.name} was made with other {detector} settings "
+                    f"({fingerprint.get('detector_settings') or 'defaults'}), detecting again"
+                )
             else:
                 print(f"Using saved joints for {video} ({kp_path.name})")
                 saved.camera_id = cid
                 keypoints[i] = saved
                 continue
         todo.append(
-            (video, cid, kp_path, {**io.video_fingerprint(video), "detector": detector})
+            (video, cid, kp_path, {**io.video_fingerprint(video), "detector": detector,
+                                   **({"detector_settings": settings} if settings else {})})
         )
 
     if todo:
         at_once = detect_jobs(len(todo), jobs)
         for video, cid, _, _ in todo:
-            print(f"Detecting joints in {video} ({detector})")
+            print(f"Detecting joints in {video} ({detector}"
+                  + "".join(f", {k} {v}" for k, v in options.items()) + ")")
         if at_once > 1:
             print(f"Detecting {len(todo)} videos at once, {at_once} processes")
         with metrics.time("detect_total"):
-            seconds, failures = _detect_videos(todo, model_path, detector, at_once)
+            seconds, failures = _detect_videos(todo, model_path, detector, at_once, options=options)
         for cid, took in seconds.items():
             metrics.record(f"timing.detect.{cid}_s", round(took, 3))
         if failures:
@@ -530,19 +597,21 @@ def _run_stages(
     try:
         with metrics.time("sync"):
             sync_result, keypoints = sync.synchronise(
-                video_paths, keypoints, clap_times, clap_threshold
+                video_paths, keypoints, clap_times, clap_threshold, signal=sync_signal
             )
     except sync.ClapNotFoundError as e:
+        mark = "chirp" if sync_signal == "chirp" else "clap"
         raise SystemExit(
-            f"{e}\n--sync takes one clap time per video in seconds, e.g. --sync 1.25 0.80 1.10; "
-            f"a video player shows the time. --clap-threshold 0.5 accepts weaker claps."
+            f"{e}\n--sync takes one {mark} time per video in seconds, e.g. --sync 1.25 0.80 1.10; "
+            f"a video player shows the time. --clap-threshold 0.5 accepts weaker {mark}s."
         )
     # rewriting an unchanged sync file would make the saved 3D points look stale
     if not sync_from_file:
         io.save_sync(sync_result, str(sync_path))
 
+    # api.py and the desktop tester take "Clap at" / "Chirp at" as the end of sync
     print(
-        "Clap at "
+        ("Chirp at " if sync_signal == "chirp" else "Clap at ")
         + ", ".join(f"{cid} {t:.3f} s" for cid, t in sync_result.clap_time_s.items())
     )
     metrics.record("sync.clap_time_s", sync_result.clap_time_s)
@@ -554,6 +623,7 @@ def _run_stages(
             else "saved file" if sync_from_file else "audio"
         ),
     )
+    metrics.record("sync.signal", sync_signal)
     metrics.record("sync.clap_threshold", float(clap_threshold))
     metrics.record("sync.common_frames", int(len(sync_result.common_timestamps)))
     metrics.record("sync.common_fps", float(config.TARGET_FPS))
@@ -612,7 +682,7 @@ def _run_stages(
         with metrics.time("triangulate"):
             pose = triangulate.triangulate_sequence(keypoints, rig)
         io.save_pose3d(pose, str(pose_path))
-    metrics.record("pose_raw", metrics.pose_summary(pose))
+    metrics.record("pose_raw", metrics.pose_summary(pose, joints_provided(detector)))
 
     if _stop("triangulate", stop_after):
         return "triangulate"
@@ -620,7 +690,7 @@ def _run_stages(
     if smoothing:
         with metrics.time("smooth"):
             pose = smooth.smooth(smooth.fill_gaps(pose), smoother)
-    metrics.record("pose_final", metrics.pose_summary(pose))
+    metrics.record("pose_final", metrics.pose_summary(pose, joints_provided(detector)))
 
     io.save_pose3d_json(pose, out_path, sync_result.common_timestamps)
     print(f"Saved {len(pose.points)} frames of 3D joints to {out_path}")
@@ -689,6 +759,28 @@ def main() -> None:
         "first detector's calibration is reused.",
     )
     parser.add_argument(
+        "--rtmpose-mode",
+        choices=list(RTMPOSE_MODES),
+        default=config.RTMPOSE_MODE,
+        help=f"RTMPose model size (default: {config.RTMPOSE_MODE}). lightweight is fastest, "
+        "performance most accurate; only used with --detector rtmpose.",
+    )
+    parser.add_argument(
+        "--rtmpose-device",
+        choices=list(RTMPOSE_DEVICES),
+        default="cpu",
+        help="Where RTMPose runs (default: cpu). cuda needs an NVIDIA GPU and onnxruntime-gpu "
+        "installed in place of onnxruntime; the run stops at once if the GPU cannot be used.",
+    )
+    parser.add_argument(
+        "--rtmpose-detect-every",
+        type=int,
+        default=config.RTMPOSE_DETECT_EVERY,
+        help="Run RTMPose's person detector every N frames (default: 1, every frame). In between, "
+        "the performer is looked for around the previous frame's joints: faster, but check fast "
+        "movement and people walking through the shot.",
+    )
+    parser.add_argument(
         "--model",
         default=None,
         help="MediaPipe pose_landmarker .task file (default: MODEL_FILEPATH in .env, or the "
@@ -715,6 +807,14 @@ def main() -> None:
         type=float,
         default=None,
         help="Clap time in seconds in each video, one per video. Default: found from the audio.",
+    )
+    parser.add_argument(
+        "--sync-signal",
+        choices=list(sync.SYNC_SIGNALS),
+        default="clap",
+        help="What marks t = 0 in every video (default: clap). chirp: the sweep from "
+        "python -m mocap_pipeline.stage2_reconstruct.chirp, played once from one speaker while "
+        "every camera records; --sync and --clap-threshold then apply to the chirp.",
     )
     parser.add_argument(
         "--clap-threshold",
@@ -813,6 +913,10 @@ def main() -> None:
         smoother=args.smoother,
         clap_threshold=args.clap_threshold,
         jobs=args.jobs,
+        rtmpose_mode=args.rtmpose_mode,
+        rtmpose_device=args.rtmpose_device,
+        rtmpose_detect_every=args.rtmpose_detect_every,
+        sync_signal=args.sync_signal,
     )
 
 

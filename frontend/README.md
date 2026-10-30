@@ -1,11 +1,11 @@
 # Hybrid Mocap — frontend
 
-A navigable React prototype of every screen in `refs/Hybrid-Mocap-Screens.pdf`. Projects, cameras and
-saved devices are mocked in `src/lib/data.ts`. Clips are those mock clips plus any uploaded to Supabase
-(`src/lib/clips.ts`). The Footage page uploads raw camera videos to Supabase (`src/lib/footage.ts`) and
-sends a set of them to the backend API as one take. Takes, their results and their 2D joints come from the
-API (`src/lib/api.ts`), at `VITE_API_URL` or http://localhost:8000. Without `VITE_SUPABASE_URL` and
-`VITE_SUPABASE_PUBLISHABLE_KEY` (see `.env.example`), uploads are off and only the mock clips show.
+The web app, grown from a React prototype of the screens in `refs/Hybrid-Mocap-Screens.pdf` (the Home
+and Motion Library screens were dropped). Cameras, rig parts,
+saved devices and seed recordings are mocked in `src/lib/data.ts`. Login, projects, motions, their versions
+and uploaded recordings come from the Django API (`src/lib/auth.ts`, `projects.ts`, `motions.ts`,
+`recordings.ts`), at `VITE_DJANGO_URL` or http://localhost:8000. The Supabase upload code
+(`src/lib/clips.ts`, `src/lib/footage.ts`) and the Footage page are still in the tree but no route opens them.
 
 ## Run it
 
@@ -15,7 +15,9 @@ npm install
 npm run dev      # http://localhost:5173
 ```
 
-On Windows, in PowerShell, start the API first ([windows-setup.md](../docs/procedures/windows-setup.md) step 5), then:
+Every page but the landing and sign-in ones needs the Django backend running first
+([mac-setup.md](../docs/procedures/mac-setup.md) step 5). On Windows, in PowerShell
+([windows-setup.md](../docs/procedures/windows-setup.md) step 5):
 
 ```
 cd $HOME\CS472_Mocap\frontend
@@ -30,25 +32,28 @@ build), `npm run typecheck`. On Windows, type `npm.cmd` in place of `npm`.
 
 | Route | Deck page | What it covers |
 | --- | --- | --- |
-| `/` | 1–3 | Home. All three concepts from the deck, switchable in the “Home layout” strip: **A — Cards**, **B — Hero**, **C — Minimal**. Shareable as `/?layout=b`. |
-| `/record` | 4 | Capture setup, camera monitor grid, connection alert, calibration toast. `Cameras` tab lists the rig. |
-| `/projects` | 5 | Project browser with search, “only my projects”, sort, grid/list views. |
-| `/projects/:projectId` | 6 | Project workspace: clip list, skeleton viewport, transport bar, and the Rig / Streaming / Export inspector. |
-| `/library` | 7 | Motion Library with source filters and grid/list views. |
+| `/` | — | Landing page for visitors; a logged-in user skips it. |
+| `/login`, `/register`, `/forgot-password`, `/reset-password/:uid/:token` | — | Auth pages, against the Django accounts API. |
+| `/streaming` | 4 | Capture setup, camera monitor grid, connection alert. `Cameras` tab lists the rig. |
+| `/projects` | 5 | Project cards and a New project dialog. |
+| `/projects/:projectId` | — | One project's motions and a New motion dialog. |
+| `/motions/:motionId` | 6 | Motion workspace: its recordings and performers, the processing panel, versions, skeleton viewport, transport bar, and the Rig / Cameras / Streaming / Export inspector. |
+| `/motions` | — | Every motion across all projects. |
+| `/recordings` | — | The user's recordings, with upload. `/recordings/new` mocks recording from one camera (a timer, no camera access); `/recordings/:recordingId` plays one. `/record` redirects to `/recordings/new`. |
 | `/settings/:section` | 8 | Settings. `accessibility` is the screen in the deck; `devices`, `calibration` and `api` are the other three sections in the sidebar. |
 
-Anything not routed falls through to a friendly not-found page.
+Every route except `/` and the auth pages needs a logged-in user. Anything not routed falls through to a friendly not-found page.
 
-## 3D viewer (project workspace)
+## 3D viewer (motion workspace)
 
-The viewport on `/projects/:projectId` is a three.js scene (`src/features/viewer/`, via @react-three/fiber and drei):
+The viewport on `/motions/:motionId` is a three.js scene (`src/features/viewer/`, via @react-three/fiber and drei):
 
 - Plays the pipeline's skeleton animation (`.bvh`, read with three's BVHLoader) or its raw 3D joints
   (`out3d.json`, 33 MediaPipe landmarks), over a floor grid. Drag to orbit, scroll to zoom.
-- Opens `public/samples/sample_take.bvh` by default (made by `backend/mocap_pipeline` from simulated
-  cameras). **Open .bvh / .json** (bottom right of the viewport) or drag a file onto it to play another take,
-  e.g. `backend/output/out3d.bvh` or `backend/output/out3d.json`. A take processed by the API plays
-  from its link, `/projects/:projectId?clip=<take id>`.
+- Shows the chosen version's `.bvh` once that version has rendered, and its status until then.
+  **Open .bvh / .json** (bottom right of the viewport) or drag a file onto it to play another take,
+  e.g. `backend/output/out3d.bvh`, `backend/output/out3d.json`, or the test file
+  `public/samples/sample_take.bvh` (made by `backend/mocap_pipeline` from simulated cameras).
 - The transport bar plays, pauses and scrubs the file; joints are coloured by rig part, the legend dims a
   source, and clicking a joint selects its rig part.
 - The old 2D `SkeletonViewport.tsx` is kept (its colours are still used by the legend).
@@ -57,24 +62,26 @@ The viewport on `/projects/:projectId` is a three.js scene (`src/features/viewer
 ## What is interactive
 
 - Every nav link, card, breadcrumb and back link routes for real.
-- **Record** — start/stop a take (the timer runs), switch Quad / Split / Single layouts, reconnect
-  camera 3, dismiss the alert and the toast.
-- **Project workspace** — pick a take, click a joint in the viewport or a part in the Rig list (they
-  stay in sync), toggle the legend to dim a motion source, scrub and play the transport, add a take,
-  switch to the Streaming and Export tabs.
+- **Streaming** — start/stop a take (the timer runs), switch Quad / Split / Single layouts, reconnect
+  camera 3, dismiss the alert.
+- **Motion workspace** — pick a version, click a joint in the viewport or a part in the Rig list (they
+  stay in sync), toggle the legend to dim a motion source, scrub and play the transport, add a recording,
+  switch to the Cameras, Streaming and Export tabs.
 - **Settings → Accessibility** — text size, letter/word spacing, line height, link underlines and
   reduced motion are applied live to every screen and persisted to `localStorage` on *Save changes*.
   “Freeze the 3D viewport” changes how the workspace viewport starts.
-- **New project** creates a real (in-memory) project and opens its workspace.
+- **New project** creates a project through the Django API and opens it.
 
 ## Layout of the code
 
 ```
 src/
-  app/          router, app shell, settings + studio state providers
-  components/   TopNav, shared UI (buttons live in CSS, cards, badges, icons, modal/toast)
-  features/     one folder per screen: home, record, projects, library, settings
-  lib/data.ts   mock projects, clips, cameras, rig parts, devices
+  app/          router, app shell, auth guard, auth + settings + studio state providers
+  components/   TopNav, shared UI (buttons live in CSS, cards, icons, modal)
+  features/     one folder per screen: landing, auth, projects, motions, library (recordings list),
+                recordings, streaming, settings, footage (not routed); home holds the not-found page
+  lib/          API clients: Django (auth, projects, motions, recordings, performers), api.ts, Supabase
+  lib/data.ts   mock cameras, rig parts, devices, seed recordings
   styles/       tokens.css (colours, radii, accessibility variables) + global.css
   types/        shared types
 ```
@@ -87,5 +94,6 @@ and `public/favicon.svg`.
 
 ## Not built yet
 
-Live video in the camera tiles, a real 3D viewport (the skeleton is SVG), auth, and any backend
-wiring.
+Live video in the camera tiles; recording on `/recordings/new` (a timer only); the Cameras tab,
+Start streaming, Export take and Manual edit on the motion page, which are placeholders; start/stop
+on the Streaming page (a timer only); the keyboard shortcuts the help menu lists.

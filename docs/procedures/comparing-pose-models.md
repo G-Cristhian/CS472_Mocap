@@ -41,7 +41,7 @@ Open each run's `out3d.metrics.json` and put these side by side, per take:
 | `triangulate.views_dropped`, `joints_failed` | yes | fewer: fewer mis-detections that the other cameras had to outvote |
 | `pose_final.missing_fraction` and `_per_joint` | yes | lower: fewer frames where a joint was seen by under two cameras |
 | `rig.bone_lengths.mean_std_m` and `per_bone` | yes | lower: steadier joints over time |
-| `timing.detect.<camera>` | yes | faster, if the quality is equal |
+| `timing.detect.<camera>_s` | yes | faster, if the quality is equal |
 | `stage1.<camera>.mean_confidence` | **no** | each model scores on its own scale; RTMPose scores are clipped to 0..1 and are not probabilities[^5]. Do not rank models on this. |
 | `stage1.<camera>.no_person_fraction` | mostly | a model that loses the person in frames the other keeps is worse, unless those frames had nobody in them |
 
