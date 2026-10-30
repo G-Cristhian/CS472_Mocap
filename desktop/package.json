@@ -20,5 +20,9 @@
   },
   "dependencies": {
     "three": "^0.186.1"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true,
+    "esbuild@0.21.5": true
   }
 }
