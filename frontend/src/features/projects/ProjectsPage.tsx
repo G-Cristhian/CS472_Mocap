@@ -13,7 +13,7 @@ export function ProjectsPage() {
   const searchText = searchBox.trim()
   const searchDisplay = searchText
     ? projects.filter((project) => project.name.toLowerCase().includes(searchText.toLowerCase())
-    || (project.category ?? '').toLowerCase().includes(searchText.toLowerCase())) : projects
+    || (project.category ?? '').toLowerCase().startsWith(searchText.toLowerCase())) : projects
 
   return (
     <div className="page">

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { RecordingCard } from '@/components/ui/RecordingCard'
 import { listRecordings, uploadRecording } from '@/lib/recordings'
+import { SearchIcon } from '@/components/ui/Icons'
 import type { Recording } from '@/types'
 
 export function RecordingsPage() {
@@ -9,6 +10,14 @@ export function RecordingsPage() {
   const [recordings, setRecordings] = useState<Recording[] | null>(null)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // for a search bar!
+  const [searchBox, setSearchBox] = useState('') // creates the list
+  const searchText = searchBox.trim()            // excludes space before and after typed text
+  const recList = recordings ?? []            // if recordings null, use empty list instead
+  const searchDisplay = searchText ? recList.filter((rec) =>
+    rec.name.toLowerCase().includes(searchText.toLowerCase())): recList
+
 
   useEffect(() => {
     listRecordings()
@@ -61,11 +70,38 @@ export function RecordingsPage() {
         </p>
       )}
 
+      <div className = "page-search-bar">
+        <label className = "search page-search">
+          <SearchIcon />
+          <input
+            type = "search"
+            placeholder = "Type here to find your recording!"
+            aria-label = "Search box for recordings"
+            value = {searchBox}
+            onChange = {(event) => setSearchBox(event.target.value)}
+            onKeyDown = {(event) =>
+              {if (event.key == 'Escape')
+                setSearchBox('')}}
+          />
+        </label>
+      </div>
+
       {recordings === null ? null : recordings.length === 0 ? (
         <div className="no-cards">No recordings yet.</div>
+      ) : searchDisplay.length === 0 ? (
+        <div className = "no-cards">
+          <p> No match found for "{searchText}". </p>
+          <button
+            type = "button"
+            className = "btn btn-project"
+            style = {{ marginTop: 16 }}
+            onClick = {() => setSearchBox('')}>
+              Clear search
+            </button>
+        </div>
       ) : (
         <div className="grid-cards">
-          {recordings.map((recording) => (
+          {searchDisplay.map((recording) => (
             <RecordingCard key={recording.id} recording={recording} motionName={null} />
           ))}
         </div>
