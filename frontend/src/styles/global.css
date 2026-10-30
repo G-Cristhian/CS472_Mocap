@@ -92,16 +92,6 @@ textarea {
   text-transform: uppercase;
   color: var(--muted);
 }
-.section-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-  margin: 44px 0 18px;
-}
-.section-title {
-  font-size: calc(24px * var(--font-scale));
-}
 .row {
   display: flex;
   align-items: center;
@@ -154,13 +144,6 @@ textarea {
 }
 .btn--primary:hover {
   background: var(--purple-strong);
-}
-.btn--blue {
-  background: var(--blue);
-  color: #fff;
-}
-.btn--blue:hover {
-  background: var(--blue-strong);
 }
 .btn--pink {
   background: var(--pink);
@@ -283,8 +266,7 @@ textarea {
   font-size: calc(14px * var(--font-scale));
   cursor: pointer;
 }
-.chip[aria-pressed='true'],
-.chip--active {
+.chip[aria-pressed='true'] {
   background: var(--ink);
   border-color: var(--ink);
   color: #fff;
@@ -293,15 +275,6 @@ textarea {
   cursor: default;
 }
 
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  background: var(--purple-50);
-  border-radius: var(--r-pill);
-  padding: 10px 10px 10px 20px;
-  font-size: calc(14px * var(--font-scale));
-}
 
 /* ---------- form controls ---------- */
 .field {
@@ -350,11 +323,6 @@ textarea {
   top: 50%;
   transform: translateY(-50%);
   color: var(--muted);
-}
-.search--focusring input:focus {
-  outline: none;
-  border-color: var(--blue);
-  box-shadow: 0 0 0 4px rgba(91, 140, 255, 0.28);
 }
 
 .check {
@@ -425,30 +393,6 @@ textarea {
   text-align: right;
   font-weight: 700;
   font-family: var(--font-mono);
-}
-
-.segmented {
-  display: inline-flex;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: 4px;
-  gap: 4px;
-}
-.segmented button {
-  border: 0;
-  background: transparent;
-  border-radius: 9px;
-  padding: 8px 16px;
-  font-weight: 700;
-  font-size: calc(14px * var(--font-scale));
-  cursor: pointer;
-  color: var(--muted);
-}
-.segmented button[aria-pressed='true'] {
-  background: var(--surface);
-  color: var(--ink);
-  box-shadow: var(--shadow-sm);
 }
 
 

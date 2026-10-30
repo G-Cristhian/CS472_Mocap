@@ -74,8 +74,10 @@ class FakeRtmlib:
     def __init__(self, bboxes):
         self.bboxes = np.asarray(bboxes, dtype=float).reshape(-1, 4)
         self.posed = []
+        self.detections = 0
 
     def det_model(self, image):
+        self.detections += 1
         return self.bboxes
 
     def pose_model(self, image, bboxes):
@@ -110,3 +112,119 @@ def test_both_detectors_are_registered():
     assert {"mediapipe", "rtmpose"} <= set(backends.BACKENDS)
     with pytest.raises(ValueError, match="Unknown pose detector"):
         backends.create_backend("openpose")
+
+
+def test_unknown_rtmpose_mode_is_rejected_before_loading_rtmlib():
+    with pytest.raises(ValueError, match="RTMPose mode must be one of"):
+        RTMPoseBackend(mode="turbo")
+
+
+def test_create_backend_passes_options(monkeypatch):
+    seen = {}
+
+    class Recorder(backends.PoseBackend):
+        def __init__(self, model_path=None, **options):
+            seen.update(options, model_path=model_path)
+
+    monkeypatch.setitem(backends.BACKENDS, "recorder", Recorder)
+    backends.create_backend("recorder", "m.task", mode="lightweight")
+    assert seen == {"mode": "lightweight", "model_path": "m.task"}
+
+
+def test_gpu_check_explains_a_cpu_only_onnxruntime(monkeypatch):
+    onnxruntime = pytest.importorskip("onnxruntime")
+    monkeypatch.setattr(onnxruntime, "get_available_providers", lambda: ["CPUExecutionProvider"])
+    with pytest.raises(RuntimeError, match="pip install \"onnxruntime-gpu"):
+        backends.check_rtmpose_device("cuda")
+    backends.check_rtmpose_device("cpu")                # always fine
+    with pytest.raises(ValueError, match="device must be one of"):
+        backends.check_rtmpose_device("tpu")
+
+
+class FakeSession:
+    def __init__(self, providers):
+        self.providers = providers
+
+    def get_providers(self):
+        return self.providers
+
+
+def test_silent_cpu_fallback_is_caught():
+    fake = FakeRtmlib([])
+    fake.det_model = type("Det", (), {"session": FakeSession(["CUDAExecutionProvider", "CPUExecutionProvider"])})()
+    fake.pose_model = type("Pose", (), {"session": FakeSession(["CPUExecutionProvider"])})()
+    backend = make_backend(fake)
+    with pytest.raises(RuntimeError, match="pose model is running on CPUExecutionProvider"):
+        backend._check_running_on("cuda")
+    fake.pose_model.session.providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    backend._check_running_on("cuda")                    # both on the GPU: fine
+
+
+def tracking_backend(fake, every):
+    backend = make_backend(fake)
+    backend._detect_every = every
+    return backend
+
+
+def test_detect_every_n_runs_the_detector_on_every_nth_frame():
+    fake = FakeRtmlib([[200, 50, 400, 450]])
+    backend = tracking_backend(fake, 3)
+    frame = np.zeros((480, 640, 3), np.uint8)
+    for i in range(7):
+        backend.detect(frame, i * 33.0)
+    assert fake.detections == 3                          # frames 0, 3 and 6
+    # in between, the box comes from the previous frame's joints, not the detector
+    joints = halpe_person(offset=200)[0]
+    assert fake.posed[1][0] < joints[:, 0].min() and fake.posed[1][2] > joints[:, 0].max()
+
+
+def test_every_frame_is_the_default():
+    fake = FakeRtmlib([[200, 50, 400, 450]])
+    backend = make_backend(fake)
+    for i in range(4):
+        backend.detect(np.zeros((480, 640, 3), np.uint8), i * 33.0)
+    assert fake.detections == 4
+
+
+def test_uncertain_joints_send_the_next_frame_to_the_detector():
+    class Unsure(FakeRtmlib):
+        def pose_model(self, image, bboxes):
+            keypoints, scores = super().pose_model(image, bboxes)
+            return keypoints, scores * 0.1                # every joint below the tracking score
+    fake = Unsure([[200, 50, 400, 450]])
+    backend = tracking_backend(fake, 10)
+    for i in range(3):
+        backend.detect(np.zeros((480, 640, 3), np.uint8), i * 33.0)
+    assert fake.detections == 3
+
+
+def test_box_from_joints_stays_in_the_image():
+    keypoints = np.array([[-20.0, 10], [630, 470], [300, 200], [310, 210], [320, 220], [330, 230]])
+    box = backends.box_from_joints(keypoints, np.full(6, 0.9), 640, 480)
+    assert box[0] == 0 and box[1] == 0 and box[2] == 639 and box[3] == 479
+    assert backends.box_from_joints(keypoints[:3], np.full(3, 0.9), 640, 480) is None   # too few joints
+
+
+def test_detect_every_is_validated():
+    with pytest.raises(ValueError, match="detect_every must be a whole number"):
+        RTMPoseBackend(detect_every=0)
+
+
+def test_gpu_check_preloads_the_cuda_libraries_first(monkeypatch):
+    onnxruntime = pytest.importorskip("onnxruntime")
+    order = []
+    monkeypatch.setattr(onnxruntime, "preload_dlls", lambda: order.append("preload"), raising=False)
+    monkeypatch.setattr(onnxruntime, "get_available_providers",
+                        lambda: order.append("providers") or ["CUDAExecutionProvider", "CPUExecutionProvider"])
+    backends.check_rtmpose_device("cuda")
+    assert order == ["preload", "providers"]
+
+
+def test_a_failing_preload_is_left_to_the_provider_check(monkeypatch):
+    onnxruntime = pytest.importorskip("onnxruntime")
+    def broken():
+        raise OSError("cudnn64_9.dll not found")
+    monkeypatch.setattr(onnxruntime, "preload_dlls", broken, raising=False)
+    monkeypatch.setattr(onnxruntime, "get_available_providers", lambda: ["CPUExecutionProvider"])
+    with pytest.raises(RuntimeError, match="needs onnxruntime-gpu"):
+        backends.check_rtmpose_device("cuda")

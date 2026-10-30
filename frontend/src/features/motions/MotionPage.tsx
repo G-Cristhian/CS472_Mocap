@@ -71,7 +71,7 @@ export function MotionPage() {
   const canRender = !busy && !rendering && (detail?.recordings.length ?? 0) >= 2
   const motionName = detail?.name ?? ''
   // the transport's clock: the motion's length until a file loads
-  const take = { id: motionId ?? '', name: motionName, duration: '0:24' }
+  const take = { name: motionName, duration: '0:24' }
   const [viewer, setViewer] = useState<ViewerState>({ message: 'Loading motion…' })
   const [tab, setTab] = useState<'rig' | 'cameras' | 'streaming' | 'export'>('rig')
   const [selectedPart, setSelectedPart] = useState('left-forearm')

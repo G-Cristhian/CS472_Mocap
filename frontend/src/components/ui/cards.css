@@ -79,24 +79,6 @@
   transform: translateY(-3px);
   box-shadow: 0 10px 24px -14px rgba(11, 11, 18, 0.6);
 }
-.mcard__chip {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--font-scale));
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.mcard__badge {
-  position: absolute;
-  top: 12px;
-  right: 52px; /* left of the menu button */
-}
 .mcard__time {
   position: absolute;
   right: 12px;
@@ -212,18 +194,6 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-.rcard__cam {
-  position: absolute;
-  z-index: 1;
-  top: 22px;
-  left: 14px;
-  color: #fff;
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--font-scale));
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  opacity: 0.75;
 }
 /* the duration on a preview: white on a dark chip, so it reads on any picture */
 .rcard__time {

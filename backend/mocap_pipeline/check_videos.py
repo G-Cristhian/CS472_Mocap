@@ -6,7 +6,7 @@ tripods come down (docs/procedures/filming.md, section 9):
     python -m mocap_pipeline.check_videos take01/*
 
 For every video: resolution, frame rate, length, audio, iPhone lens metadata
-and the clap time. Then the claps are cross-checked between cameras the same
+and the clap time (or the chirp's, with --sync-signal chirp). Then the claps are cross-checked between cameras the same
 way the pipeline does. Problems are printed as WARNING (worth a retake) or
 FAIL (the pipeline cannot use the file). Exit code 1 if anything FAILed.
 
@@ -58,16 +58,18 @@ def iphone_info(path: str) -> dict | None:
     return {"model": md.get(MODEL_KEY), "lens": md.get(LENS_KEY), "focal_35mm": md.get(FOCAL_35MM_KEY)}
 
 
-def clap_time(path: str, threshold: float = 1.0) -> tuple[float | None, str | None]:
-    """Clap time in seconds, or (None, reason). threshold as in sync.find_clap_time."""
+def clap_time(path: str, threshold: float = 1.0, signal: str = "clap") -> tuple[float | None, str | None]:
+    """Clap (or chirp) time in seconds, or (None, reason). threshold as in sync.find_clap_time."""
     try:
+        if signal == "chirp":
+            return sync.find_chirp_time(path, threshold), None
         audio = sync._read_audio(path, config.CLAP_SEARCH_WINDOW_S)
         return sync._clap_from_loudness(sync._loudness(audio), path, threshold), None
     except sync.ClapNotFoundError as e:
         return None, str(e)
 
 
-def check(video_paths: list[str], threshold: float = 1.0) -> int:
+def check(video_paths: list[str], threshold: float = 1.0, signal: str = "clap") -> int:
     problems = 0
     results = []
 
@@ -97,14 +99,15 @@ def check(video_paths: list[str], threshold: float = 1.0) -> int:
         else:
             print(f"  lens    no lens metadata (not an iPhone file): needs --fov, default {config.DEFAULT_HFOV_DEG:.0f}")
 
-        t, reason = clap_time(path, threshold)
+        t, reason = clap_time(path, threshold, signal)
         if t is None:
-            print(f"  FAIL    no clap: {reason}")
+            print(f"  FAIL    no {signal}: {reason}")
             problems += 1
         else:
-            print(f"  clap    {t:.3f} s")
+            print(f"  {signal:<7} {t:.3f} s")
             if t > config.CLAP_SEARCH_WINDOW_S - 1.0:
-                print(f"  WARNING clap close to the {config.CLAP_SEARCH_WINDOW_S:.0f} s search window; clap sooner")
+                print(f"  WARNING {signal} close to the {config.CLAP_SEARCH_WINDOW_S:.0f} s search window; "
+                      f"{'play it' if signal == 'chirp' else 'clap'} sooner")
 
         results.append({**info, "duration": duration, "clap": t})
 
@@ -122,7 +125,8 @@ def check(video_paths: list[str], threshold: float = 1.0) -> int:
         if max(durations) - min(durations) > MAX_DURATION_SPREAD_S:
             print(f"  WARNING lengths differ by {max(durations) - min(durations):.1f} s; "
                   f"was a phone started late or stopped early?")
-        if all(r["clap"] is not None for r in good) and len(good) == len(results):
+        # chirps are found against the known sweep, so there is nothing to cross-check
+        if signal == "clap" and all(r["clap"] is not None for r in good) and len(good) == len(results):
             try:
                 refined = sync.detect_claps(video_paths, threshold)
                 print("  claps   " + ", ".join(f"{Path(p).name} {t:.3f} s" for p, t in zip(video_paths, refined))
@@ -141,8 +145,10 @@ def main() -> None:
     parser.add_argument("videos", nargs="+", help="The videos of one take, camera 0 first.")
     parser.add_argument("--clap-threshold", type=float, default=1.0,
                         help="Multiplies how loud a clap must be against the room (0.5 accepts a clap half as strong).")
+    parser.add_argument("--sync-signal", choices=list(sync.SYNC_SIGNALS), default="clap",
+                        help="Look for the clap (default) or the sync chirp.")
     args = parser.parse_args()
-    sys.exit(check(args.videos, args.clap_threshold))
+    sys.exit(check(args.videos, args.clap_threshold, args.sync_signal))
 
 
 if __name__ == "__main__":
