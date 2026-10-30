@@ -118,6 +118,13 @@ export const ExportIcon = ({ size = 18 }: IconProps) => (
   </svg>
 )
 
+export const SearchIcon = ({ size = 18 }: IconProps) => (
+  <svg {...base(size)}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="M20 20l-3.6-3.6" />
+  </svg>
+)
+
 // MotionBoxPro mark: a play symbol whose corners are tracked joints, so playback is the motion.
 // Hex colours only, so public/logo.svg and public/favicon.svg match it exactly.
 export const MoreIcon = ({ size = 18 }: IconProps) => (
