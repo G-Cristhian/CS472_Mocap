@@ -15,8 +15,6 @@ Make the sound file to play on set:
     cd backend
     python -m mocap_pipeline.stage2_reconstruct.chirp --out chirp.wav
 
-The web app plays the same sweep (frontend/src/lib/chirp.ts).
-
 Like the clap, sound needs time to travel: a camera 3 m further from the
 speaker hears the chirp about 9 ms later. Keep the speaker about the same
 distance from every camera (the middle of the capture area works).
