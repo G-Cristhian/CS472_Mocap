@@ -100,4 +100,5 @@ A citation is a paper, book, standard, or the official documentation of the chos
 |---|---|
 | `DECISIONS.md` | The sheet. |
 | `README.md` | This file: what counts, the columns, statuses, lineage, how the detector works, citations. |
+| `EXPLAINED.md` | A companion for the reviewer: one plain-language section per row, grouped by what a user would notice, with what the decision affects, what reversing it would cost, and what the reviewer is being asked to confirm. Written against a named commit with an AI pass; not maintained by the detector. |
 | `.last-reviewed` | One commit SHA: the last commit on `main` the detector has reviewed. Advanced only by the detector, through the review pull request. Delete it to make the next run review everything since `0e1eea9`, the seed commit. |
