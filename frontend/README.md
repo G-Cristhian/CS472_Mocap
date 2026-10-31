@@ -5,7 +5,7 @@ and Motion Library screens were dropped). Cameras, rig parts,
 saved devices and seed recordings are mocked in `src/lib/data.ts`. Login, projects, motions, their versions
 and uploaded recordings come from the Django API (`src/lib/auth.ts`, `projects.ts`, `motions.ts`,
 `recordings.ts`), at `VITE_DJANGO_URL` or http://localhost:8000. The Supabase upload code
-(`src/lib/clips.ts`, `src/lib/footage.ts`) and the Footage page are still in the tree but no route opens them.
+(`src/lib/clips.ts`) is still in the tree but nothing imports it.
 
 ## Run it
 
