@@ -79,7 +79,7 @@ src/
   app/          router, app shell, auth guard, auth + settings + studio state providers
   components/   TopNav, shared UI (buttons live in CSS, cards, icons, modal)
   features/     one folder per screen: landing, auth, projects, motions, library (recordings list),
-                recordings, streaming, settings, footage (not routed); home holds the not-found page
+                recordings, streaming, settings; home holds the not-found page
   lib/          API clients: Django (auth, projects, motions, recordings, performers), api.ts, Supabase
   lib/data.ts   mock cameras, rig parts, devices, seed recordings
   styles/       tokens.css (colours, radii, accessibility variables) + global.css
