@@ -30,7 +30,6 @@ export function TopNav() {
           <NavLink
             key={link.to}
             to={link.to}
-            end={link.end}
             className={({ isActive }) => `topnav__link${isActive ? ' is-active' : ''}`}
           >
             {link.label}
