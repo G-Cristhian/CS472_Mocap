@@ -1,5 +1,5 @@
 import { Link, useParams } from 'react-router-dom'
-import { useSettings, type TextSize } from '@/app/SettingsProvider'
+import { SETTING_RANGES, useSettings, type TextSize } from '@/app/SettingsProvider'
 import {
   AccessibilityIcon,
   CalibrateIcon,
@@ -121,8 +121,7 @@ export function SettingsPage() {
                       <div className="slider" style={{ marginTop: 10 }}>
                         <input
                           type="range"
-                          min={0}
-                          max={100}
+                          {...SETTING_RANGES.cueVolume}
                           value={settings.cueVolume}
                           aria-label="Cue volume"
                           onChange={(e) => update({ cueVolume: Number(e.target.value) })}
@@ -156,8 +155,7 @@ export function SettingsPage() {
                     <div className="slider" style={{ marginTop: 10 }}>
                       <input
                         type="range"
-                        min={0}
-                        max={0.2}
+                        {...SETTING_RANGES.letterSpacing}
                         step={0.01}
                         value={settings.letterSpacing}
                         aria-label="Letter spacing"
@@ -175,8 +173,7 @@ export function SettingsPage() {
                     <div className="slider" style={{ marginTop: 10 }}>
                       <input
                         type="range"
-                        min={0}
-                        max={0.4}
+                        {...SETTING_RANGES.wordSpacing}
                         step={0.01}
                         value={settings.wordSpacing}
                         aria-label="Word spacing"
@@ -191,8 +188,7 @@ export function SettingsPage() {
                     <div className="slider" style={{ marginTop: 10 }}>
                       <input
                         type="range"
-                        min={1.2}
-                        max={2.2}
+                        {...SETTING_RANGES.lineHeight}
                         step={0.1}
                         value={settings.lineHeight}
                         aria-label="Line height"

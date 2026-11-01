@@ -1,0 +1,164 @@
+/* Fixed px and literal colours throughout: saved accessibility settings may be what
+   crashed the page, so this screen uses none of their CSS variables. The letter and word
+   spacing, line height and font size set here stop body's settings-driven values inheriting. */
+.crash {
+  min-height: calc(100vh - 72px); /* the top nav's height */
+  padding: 56px 64px;
+  background: #fbfbfd;
+  color: #0b0b12;
+  font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 16px;
+  line-height: normal;
+  letter-spacing: 0;
+  word-spacing: 0;
+}
+.crash--standalone {
+  min-height: 100vh;
+}
+.crash__content {
+  max-width: 600px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.crash__header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.crash__eyebrow {
+  font: 500 13px 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #6b6b7b;
+}
+.crash__title {
+  margin: 0;
+  font-size: 32px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0b0b12;
+}
+.crash__title:focus,
+.crash__title:focus-visible {
+  outline: none;
+}
+.crash__message {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.55;
+  color: #6b6b7b;
+  text-wrap: pretty;
+}
+
+.crash__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.crash__btn {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid #e4e4ec;
+  border-radius: 8px;
+  background: #fff;
+  color: #0b0b12;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.crash__btn--primary {
+  padding: 0 20px;
+  border-color: #6d4aff;
+  background: #6d4aff;
+  color: #fff;
+}
+.crash__btn--primary:hover {
+  background: #5b34f0;
+}
+.crash__btn--secondary:hover {
+  background: #f7f7fa;
+}
+.crash__btn--reset {
+  align-self: flex-start;
+}
+.crash__btn--reset:hover {
+  border-color: #c9c9d6;
+}
+
+.crash__disclosure {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.crash__toggle {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin-left: -4px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #6d4aff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.crash__glyph {
+  width: 12px;
+  font: 500 14px 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.crash__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border-radius: 12px;
+  background: #f7f7fa;
+}
+.crash__note {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #6b6b7b;
+  text-wrap: pretty;
+}
+
+/* The radius is repeated because the global :focus-visible rule sets its own */
+.crash__btn:focus-visible,
+.crash__toggle:focus-visible {
+  outline: 3px solid rgba(109, 74, 255, 0.35);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.crash__toggle:focus-visible {
+  outline-offset: 0;
+}
+
+@media (max-width: 600px) {
+  .crash {
+    padding: 24px 16px;
+  }
+  .crash__title {
+    font-size: 24px;
+  }
+  .crash__actions {
+    flex-direction: column;
+  }
+  .crash__btn {
+    min-height: 48px;
+    font-size: 16px;
+  }
+  .crash__toggle {
+    min-height: 48px;
+  }
+  .crash__panel {
+    padding: 16px;
+  }
+  .crash__btn--reset {
+    align-self: stretch;
+  }
+}
