@@ -39,6 +39,8 @@ export interface Recording {
   origin: 'upload' | 'stream'
   /** The performer chosen in the API; empty for recordings from the mock data */
   performerId?: number | null
+  /** The recording's own height in metres, used when it has no performer */
+  performerHeight?: number | null
   /** True when the server has a preview image for this recording */
   hasThumbnail?: boolean
 }

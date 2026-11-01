@@ -19,6 +19,8 @@ export interface ApiMotionRecording {
   fps: number | null
   duration_s: number | null
   performer: ApiPerformerRef | null
+  /** The height this recording counts with: its performer's if it has one, otherwise its own */
+  performer_height: number | null
 }
 
 /** One output of a motion: a pipeline run, or a manual edit of one. */
@@ -47,6 +49,8 @@ export interface ApiMotion {
   recordings: ApiMotionRecording[]
   /** The performers in those recordings, each once */
   performers: ApiPerformerRef[]
+  /** The height a render would use and the camera it comes from; null if no recording has one */
+  render_height: { height_m: number; camera_slot: number } | null
   /** The motion's outputs, oldest first */
   versions: ApiMotionVersion[]
   created_at: string

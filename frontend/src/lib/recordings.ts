@@ -6,6 +6,7 @@ export interface ApiRecording {
   uuid: string
   name: string
   performer: number | null
+  performer_height: number | null
   has_thumbnail: boolean
   lens_source: string
   width: number | null
@@ -44,6 +45,7 @@ function toRecording(api: Pick<ApiRecording, 'uuid' | 'name'> & Partial<ApiRecor
     camera: 'Upload',
     origin: 'upload',
     performerId: api.performer ?? null,
+    performerHeight: api.performer_height ?? null,
     hasThumbnail: api.has_thumbnail ?? false,
   }
 }
@@ -72,11 +74,14 @@ export async function uploadRecording(file: File): Promise<Recording> {
   return toRecording(body)
 }
 
-/** Sets which performer a recording belongs to. Pass null to clear it. */
-export async function setRecordingPerformer(uuid: string, performerId: number | null): Promise<Recording> {
+/** Sets who a recording belongs to (null clears it) and, optionally, its own height. Leave the height out to keep it. */
+export async function updateRecordingPerformer(
+  uuid: string,
+  changes: { performer: number | null; performer_height?: number | null },
+): Promise<Recording> {
   const body = await djangoJson<ApiRecording>(`${BASE}${uuid}/`, {
     method: 'PATCH',
-    body: JSON.stringify({ performer: performerId }),
+    body: JSON.stringify(changes),
   })
 
   return toRecording(body)

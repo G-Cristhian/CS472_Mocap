@@ -19,6 +19,11 @@ def performer_data(performer):
     return {"id": performer.pk, "full_name": performer.full_name, "height_m": performer.height_m}
 
 
+def render_height_link(links):
+    """The camera a render takes its height from: the first, by camera slot, whose recording has a height. Or None."""
+    return next((link for link in links if link.recording.effective_height is not None), None)
+
+
 class MotionSerializer(serializers.ModelSerializer):
     """
     A motion in the logged-in user's list. It can go into one of the user's projects when
@@ -39,6 +44,7 @@ class MotionSerializer(serializers.ModelSerializer):
     recording_count = serializers.IntegerField(read_only=True)
     recordings = serializers.SerializerMethodField()
     performers = serializers.SerializerMethodField()
+    render_height = serializers.SerializerMethodField()
     versions = serializers.SerializerMethodField()
 
     class Meta:
@@ -52,6 +58,7 @@ class MotionSerializer(serializers.ModelSerializer):
             "recording_count",
             "recordings",
             "performers",
+            "render_height",
             "versions",
             "created_at",
             "updated_at",
@@ -85,6 +92,7 @@ class MotionSerializer(serializers.ModelSerializer):
                 "fps": link.recording.fps,
                 "duration_s": link.recording.duration_s,
                 "performer": performer_data(link.recording.performer),
+                "performer_height": link.recording.effective_height,
             }
             for link in self._camera_links(obj)
         ]
@@ -97,6 +105,13 @@ class MotionSerializer(serializers.ModelSerializer):
                 found[performer.pk] = performer_data(performer)
 
         return list(found.values())
+
+    def get_render_height(self, obj):
+        link = render_height_link(self._camera_links(obj))
+        if link is None:
+            return None
+
+        return {"height_m": link.recording.effective_height, "camera_slot": link.camera_slot}
 
     def get_versions(self, obj):
         return [
@@ -197,8 +212,8 @@ class MotionProjectAddSerializer(serializers.Serializer):
 class StartRenderingSerializer(serializers.Serializer):
     """
     Renders the motion as a new version. The motion comes from the view. Checks that the
-    motion has enough cameras, that no other render is running, and that a performer's
-    height is known; the height is what the pipeline needs.
+    motion has enough cameras, that no other render is running, and that a height is
+    known; the height is what the pipeline needs.
     """
 
     pose_model = serializers.ChoiceField(choices=MotionVersion.PoseModel.choices, default=MotionVersion.PoseModel.MEDIAPIPE)
@@ -214,14 +229,11 @@ class StartRenderingSerializer(serializers.Serializer):
         if busy.exists():
             raise serializers.ValidationError("Another render is still running. Wait until it has finished.")
 
-        height = next(
-            (link.recording.performer.height_m for link in links if link.recording.performer and link.recording.performer.height_m),
-            None,
-        )
-        if height is None:
-            raise serializers.ValidationError("Set a performer with a height on one of the recordings first.")
+        link = render_height_link(links)
+        if link is None:
+            raise serializers.ValidationError("Set a height on one of the recordings first.")
 
-        attrs["height_m"] = height
+        attrs["height_m"] = link.recording.effective_height
 
         return attrs
 

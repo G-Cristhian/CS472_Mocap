@@ -300,6 +300,11 @@ textarea {
   padding: 12px 14px;
   margin-top: 10px;
 }
+.input[readonly] {
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: default;
+}
 .select {
   appearance: none;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%236b6b7b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
@@ -437,6 +442,18 @@ textarea {
 }
 .note b {
   color: var(--ink);
+}
+
+/* A button that looks like a link; it keeps the global :focus-visible outline */
+.linkbtn {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  color: var(--blue-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .alert {
