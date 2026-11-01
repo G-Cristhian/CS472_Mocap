@@ -263,10 +263,13 @@
 }
 .numinput {
   width: 110px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   border-radius: var(--r-md);
   padding: 11px 12px;
   font-family: var(--font-mono);
+}
+.numinput:hover:not(:disabled):not([readonly]) {
+  border-color: var(--muted);
 }
 
 @media (max-width: 1280px) {
