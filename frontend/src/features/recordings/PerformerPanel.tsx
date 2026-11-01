@@ -16,7 +16,7 @@ interface Draft {
 interface Props {
   recordingId: string
   performerId: number | null
-  /** The logged-in user's name, used as the default performer when none is chosen yet */
+  /** The logged-in user's name, used to pre-fill the name of a new performer */
   accountName: string
   onSaved: (performerId: number | null) => void
 }
@@ -24,7 +24,8 @@ interface Props {
 /** Who is in this recording: pick someone from your list, or add a new performer, then save. */
 export function PerformerPanel({ recordingId, performerId, accountName, onSaved }: Props) {
   const [performers, setPerformers] = useState<Performer[] | null>(null)
-  const [choice, setChoice] = useState<string>(performerId != null ? String(performerId) : NEW)
+  const [choice, setChoice] = useState<string>(performerId != null ? String(performerId) : NONE)
+  const [savedId, setSavedId] = useState<number | null>(performerId)
   const [name, setName] = useState(accountName)
   const [height, setHeight] = useState('')
   const [email, setEmail] = useState('')
@@ -36,19 +37,13 @@ export function PerformerPanel({ recordingId, performerId, accountName, onSaved 
   const [detailsSaving, setDetailsSaving] = useState(false)
 
   const selected = performers?.find((p) => String(p.id) === choice) ?? null
+  const isSaved = choice === (savedId != null ? String(savedId) : NONE)
 
   useEffect(() => {
     listPerformers()
-      .then((list) => {
-        setPerformers(list)
-        // Nothing chosen yet: default to the account holder if they are already in the list
-        if (!performerId) {
-          const sameName = list.find((p) => p.full_name === accountName)
-          if (sameName) setChoice(String(sameName.id))
-        }
-      })
+      .then(setPerformers)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not load performers.'))
-  }, [performerId, accountName])
+  }, [])
 
   async function onSave(e: FormEvent) {
     e.preventDefault()
@@ -68,9 +63,11 @@ export function PerformerPanel({ recordingId, performerId, accountName, onSaved 
         target = Number(choice)
       }
 
-      await setRecordingPerformer(recordingId, target)
+      // Refresh the list first, so a failure here can't report a save the server already made as unsaved
       setPerformers(await listPerformers())
+      await setRecordingPerformer(recordingId, target)
       setChoice(target == null ? NONE : String(target))
+      setSavedId(target)
       onSaved(target)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save the performer.')
@@ -110,7 +107,7 @@ export function PerformerPanel({ recordingId, performerId, accountName, onSaved 
     }
   }
 
-  const canSave = !saving && performers !== null && (choice !== NEW || name.trim() !== '')
+  const canSave = !saving && performers !== null && !isSaved && (choice !== NEW || name.trim() !== '')
   const canSaveDetails = !detailsSaving && draft.full_name.trim() !== ''
 
   return (
@@ -135,6 +132,11 @@ export function PerformerPanel({ recordingId, performerId, accountName, onSaved 
           <option value={NEW}>Add new performer…</option>
         </select>
       </label>
+
+      {/* Always mounted so screen readers announce the change; display: contents leaves no grid gap when empty */}
+      <div role="status" style={{ display: 'contents' }}>
+        {!isSaved && <p style={{ color: 'var(--muted)', fontSize: 13 }}>Unsaved</p>}
+      </div>
 
       {selected && !editing && (
         <button type="button" className="btn btn--ghost btn--sm" onClick={() => startEditing(selected)}>

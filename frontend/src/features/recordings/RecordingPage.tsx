@@ -127,6 +127,7 @@ export function RecordingPage() {
 
           {fetched && (
             <PerformerPanel
+              key={fetched.id}
               recordingId={fetched.id}
               performerId={fetched.performerId ?? null}
               accountName={accountName}
