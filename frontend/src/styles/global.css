@@ -294,11 +294,20 @@ textarea {
 .input,
 .select {
   width: 100%;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   border-radius: var(--r-md);
   background: var(--surface);
   padding: 12px 14px;
   margin-top: 10px;
+}
+.input:hover:not(:disabled):not([readonly]),
+.select:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+.input[readonly] {
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: default;
 }
 .select {
   appearance: none;
@@ -312,10 +321,13 @@ textarea {
 }
 .search input {
   width: 100%;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   border-radius: var(--r-md);
   padding: 13px 14px 13px 42px;
   background: var(--surface);
+}
+.search input:hover:not(:disabled):not([readonly]) {
+  border-color: var(--muted);
 }
 .search svg {
   position: absolute;
@@ -336,12 +348,15 @@ textarea {
   appearance: none;
   width: 20px;
   height: 20px;
-  border: 1.5px solid var(--muted-2);
+  border: 1.5px solid var(--line-control);
   border-radius: 5px;
   flex: none;
   cursor: pointer;
   display: grid;
   place-content: center;
+}
+.check input:hover:not(:disabled):not(:checked) {
+  border-color: var(--muted);
 }
 .check input:checked {
   background: var(--purple);
@@ -368,7 +383,8 @@ textarea {
   flex: 1;
   height: 6px;
   border-radius: var(--r-pill);
-  background: var(--line);
+  /* --fill comes from rangeFill() */
+  background: linear-gradient(to right, var(--purple) var(--fill, 0%), var(--line) var(--fill, 0%));
   outline-offset: 6px;
 }
 .slider input[type='range']::-webkit-slider-thumb {
@@ -437,6 +453,18 @@ textarea {
 }
 .note b {
   color: var(--ink);
+}
+
+/* A button that looks like a link; it keeps the global :focus-visible outline */
+.linkbtn {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  color: var(--blue-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .alert {
@@ -508,4 +536,13 @@ textarea {
   .page-title {
     font-size: calc(30px * var(--font-scale));
   }
+}
+
+.page-search-bar {
+  margin-top: 28px;
+}
+.page-search {
+  display: block;
+  width: 320px;
+  max-width: 100%;
 }

@@ -5,6 +5,7 @@ import { displayName } from '@/lib/auth'
 import { StickFigure } from '@/components/ui/StickFigure'
 import { AlertIcon, CloseIcon, InfoIcon, LayoutIcon } from '@/components/ui/Icons'
 import { cameras as seedCameras } from '@/lib/data'
+import { rangeFill } from '@/lib/rangeFill'
 import type { Camera } from '@/types'
 import './streaming.css'
 
@@ -98,6 +99,7 @@ export function StreamingPage() {
                     max={3}
                     step={0.1}
                     value={smoothing}
+                    style={rangeFill(smoothing, 0, 3)}
                     aria-label="Smoothing"
                     onChange={(e) => setSmoothing(Number(e.target.value))}
                   />

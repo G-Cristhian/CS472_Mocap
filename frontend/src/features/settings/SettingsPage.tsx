@@ -1,5 +1,5 @@
 import { Link, useParams } from 'react-router-dom'
-import { useSettings, type TextSize } from '@/app/SettingsProvider'
+import { SETTING_RANGES, useSettings, type TextSize } from '@/app/SettingsProvider'
 import {
   AccessibilityIcon,
   CalibrateIcon,
@@ -8,6 +8,7 @@ import {
   LinkIcon,
 } from '@/components/ui/Icons'
 import { savedDevices } from '@/lib/data'
+import { rangeFill } from '@/lib/rangeFill'
 import './settings.css'
 
 const SECTIONS = [
@@ -121,9 +122,9 @@ export function SettingsPage() {
                       <div className="slider" style={{ marginTop: 10 }}>
                         <input
                           type="range"
-                          min={0}
-                          max={100}
+                          {...SETTING_RANGES.cueVolume}
                           value={settings.cueVolume}
+                          style={rangeFill(settings.cueVolume, SETTING_RANGES.cueVolume.min, SETTING_RANGES.cueVolume.max)}
                           aria-label="Cue volume"
                           onChange={(e) => update({ cueVolume: Number(e.target.value) })}
                         />
@@ -156,10 +157,10 @@ export function SettingsPage() {
                     <div className="slider" style={{ marginTop: 10 }}>
                       <input
                         type="range"
-                        min={0}
-                        max={0.2}
+                        {...SETTING_RANGES.letterSpacing}
                         step={0.01}
                         value={settings.letterSpacing}
+                        style={rangeFill(settings.letterSpacing, SETTING_RANGES.letterSpacing.min, SETTING_RANGES.letterSpacing.max)}
                         aria-label="Letter spacing"
                         onChange={(e) => update({ letterSpacing: Number(e.target.value) })}
                       />
@@ -175,10 +176,10 @@ export function SettingsPage() {
                     <div className="slider" style={{ marginTop: 10 }}>
                       <input
                         type="range"
-                        min={0}
-                        max={0.4}
+                        {...SETTING_RANGES.wordSpacing}
                         step={0.01}
                         value={settings.wordSpacing}
+                        style={rangeFill(settings.wordSpacing, SETTING_RANGES.wordSpacing.min, SETTING_RANGES.wordSpacing.max)}
                         aria-label="Word spacing"
                         onChange={(e) => update({ wordSpacing: Number(e.target.value) })}
                       />
@@ -191,10 +192,10 @@ export function SettingsPage() {
                     <div className="slider" style={{ marginTop: 10 }}>
                       <input
                         type="range"
-                        min={1.2}
-                        max={2.2}
+                        {...SETTING_RANGES.lineHeight}
                         step={0.1}
                         value={settings.lineHeight}
+                        style={rangeFill(settings.lineHeight, SETTING_RANGES.lineHeight.min, SETTING_RANGES.lineHeight.max)}
                         aria-label="Line height"
                         onChange={(e) => update({ lineHeight: Number(e.target.value) })}
                       />

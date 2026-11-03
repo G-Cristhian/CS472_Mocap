@@ -23,12 +23,15 @@ from ..schemas import Keypoints2D
 from .backends import DEFAULT_BACKEND, create_backend
 
 
-def detect_video(video_path: str, model_path: str, detector: str = DEFAULT_BACKEND) -> Keypoints2D:
+def detect_video(video_path: str, model_path: str, detector: str = DEFAULT_BACKEND,
+                 options: dict | None = None) -> Keypoints2D:
     """
     Every frame of one video -> pixel joints + confidence + real timestamps.
 
     detector picks the pose model (a name in backends.BACKENDS); model_path
     is the model file for detectors that need one (MediaPipe's .task file).
+    options are the detector's settings (backends.create_backend), e.g.
+    RTMPose's mode; None means its defaults.
 
     Frames with no person get NaN points and 0 confidence; no frame is ever
     dropped, so the arrays stay aligned with timestamps. Low-confidence joints
@@ -51,7 +54,7 @@ def detect_video(video_path: str, model_path: str, detector: str = DEFAULT_BACKE
 
     points, confidence, timestamps = [], [], []
 
-    with create_backend(detector, model_path) as backend:
+    with create_backend(detector, model_path, **(options or {})) as backend:
         frame_idx = 0
 
         while True:     # while video can still be read, continues

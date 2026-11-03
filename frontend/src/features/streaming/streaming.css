@@ -1,7 +1,7 @@
 .record {
   display: grid;
   grid-template-columns: 420px 1fr;
-  min-height: calc(100vh - 72px);
+  min-height: calc(100vh - var(--topnav-height, 72px));
 }
 .record__side {
   border-right: 1px solid var(--line);

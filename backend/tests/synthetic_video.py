@@ -1,7 +1,7 @@
 """
 Synthetic "phone videos" for tests that need real files but no footage: a
 moving rectangle on a grey background, plus an audio track with room noise and
-one sharp clap at a chosen time. Each camera gets a different clap time, as if
+one sharp clap (or the sync chirp) at a chosen time. Each camera gets a different clap time, as if
 the phones had been started at different moments.
 
 MediaPipe finds no person in these (every joint is NaN), so they exercise
@@ -15,8 +15,13 @@ import numpy as np
 AUDIO_RATE = 48000
 
 
-def write_video(path, fps, seconds, clap_at, width=640, height=360, seed=0, clap_gain=1.0):
-    """clap_gain scales the clap against the room noise (1.0 is a loud clap, 0.02 a faint one)."""
+def write_video(path, fps, seconds, clap_at, width=640, height=360, seed=0, clap_gain=1.0,
+                chirp_at=None, chirp_gain=0.3):
+    """
+    clap_gain scales the clap against the room noise (1.0 is a loud clap, 0.02 a faint one).
+    chirp_at, if given, adds the sync chirp (chirp.chirp_template) starting at that time, peak
+    amplitude chirp_gain (the room noise is 0.003 rms).
+    """
     rng = np.random.default_rng(seed)
     with av.open(str(path), "w") as out:
         v = out.add_stream("mpeg4", rate=fps)
@@ -43,6 +48,12 @@ def write_video(path, fps, seconds, clap_at, width=640, height=360, seed=0, clap
             burst = rng.normal(0, 0.8 * clap_gain, int(0.015 * AUDIO_RATE)).astype(np.float32)
             burst *= np.exp(-np.linspace(0, 6, len(burst)))           # sharp attack, fast decay
             audio[s:s + len(burst)] += burst
+        if chirp_at is not None:
+            from mocap_pipeline.stage2_reconstruct.chirp import chirp_template
+
+            sweep = (chirp_gain * chirp_template(AUDIO_RATE)).astype(np.float32)
+            s = int(round(chirp_at * AUDIO_RATE))
+            audio[s:s + len(sweep)] += sweep[:len(audio) - s]
         chunk = 1024
         pts = 0
         for start in range(0, len(audio), chunk):
