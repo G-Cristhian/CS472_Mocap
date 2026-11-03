@@ -92,7 +92,7 @@ For each take: the input folder, the output folder, and one line in the session 
 ## Sources
 
 [^1]: The pipeline reuses an existing `--calibration` file unless `--recalibrate` is given (`run_pipeline.py`, README "Running"). Issue #16 proposes making a per-take calibration the default.
-[^2]: README "Rerunning and debugging": a full run takes minutes, a `--resume` run seconds. Keypoints are reused when the video's size and modification time and the detector name match (`io.fingerprint_matches`, D-023).
+[^2]: README "Rerunning and debugging": a full run takes minutes, a `--resume` run seconds. Keypoints are reused when the video's size and modification time, the detector name and its settings match (`io.fingerprint_matches`, `run_pipeline.detector_settings`, D-023).
 [^3]: POSIX shells expand globs in sorted order (bash manual, Filename Expansion; zsh does the same), and the file naming in filming.md section 8 puts the camera number first.
 [^4]: iPhone focal lengths come from the file's metadata; anything else uses `--fov` with default `DEFAULT_HFOV_DEG = 65` (`config.py`). 75 is the Fold estimate from filming.md section 3.
 [^5]: `run_pipeline.run`: with `--resume`, the saved sync file supplies the clap times, triangulation is skipped only if the pose file is newer than its inputs, and smoothing and the BVH always run.

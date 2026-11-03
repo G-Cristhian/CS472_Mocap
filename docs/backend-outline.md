@@ -77,9 +77,9 @@ after another, one frame after another. Everything after it is seconds. As of
   to start, even on the processor.
 - The second detector, RTMPose, takes a `device` setting that can be `"cpu"`
   or `"cuda"` (an NVIDIA card, needing the `onnxruntime-gpu` package instead
-  of the plain one the requirements install). It defaults to `"cpu"`, and
-  `create_backend` never passes a device, so there is no flag that reaches it
-  from the command line, the desktop tester or the API.
+  of the plain one the requirements install). It defaults to `"cpu"`; the
+  command line sets it with `--rtmpose-device`, but the desktop tester and
+  the API never pass it.
 - Video decoding goes through OpenCV's software decoder. Hardware decoding is
   not requested.
 - Steps 2 and 3 are numpy, scipy, OpenCV and aniposelib arithmetic on the
@@ -94,8 +94,9 @@ after another, one frame after another. Everything after it is seconds. As of
   Everything after step 1 runs on one core, and the web API processes one
   take at a time in one worker process.
 
-The next cheapest speed-up would be exposing RTMPose's device setting for
-machines with an NVIDIA card, and only then anything deeper.
+The next cheapest speed-up would be passing RTMPose's device setting from
+the desktop tester and the API for machines with an NVIDIA card, and only
+then anything deeper.
 
 ---
 
@@ -199,9 +200,9 @@ groups:
 
 | Group | Constants |
 |---|---|
-| step 1 | the path to the pose model file |
+| step 1 | the path to the pose model file; RTMPose's default mode, how often its person detector runs, and the score, joint count and box growth used to follow the performer between detector frames |
 | cameras | the minimum number of cameras, 2 |
-| step 2a, sync | how many seconds of audio to search for the clap; the shared clock rate; the audio sample rate and the window, smoothing, loudness and rise-time thresholds that define a clap; the cross-check window; the longest hole the resampler bridges |
+| step 2a, sync | how many seconds of audio to search for the clap; the shared clock rate; the audio sample rate and the window, smoothing, loudness and rise-time thresholds that define a clap; the cross-check window; the longest hole the resampler bridges; the chirp's frequencies, length and fades, and the match score, second-match and echo limits for finding it |
 | step 2b, calibration | the minimum confidence for a landmark to count; the pixel tolerance for the camera-pair estimate; the default field of view; the minimum number of shared points; the minimum points to place a further camera; the error above which the board fallback is used |
 | step 2b, scale and floor | the skull-above-ears and heel-above-floor offsets; the upright test tolerance; the minimum upright frames; the fraction of lowest foot points used for the floor |
 | step 2c, triangulation | the minimum confidence per camera; the minimum cameras per landmark; the longest gap filled; the reprojection error that drops a camera's view |
@@ -260,9 +261,12 @@ stable the bone lengths are, how much the points jitter. The module keeps one
 - **`keypoints_summary(kp)`**. Step 1 quality for one camera: frame count,
   nominal frame rate, the fraction of frames with nobody detected, and the
   mean confidence overall and per landmark.
-- **`pose_summary(pose)`**. Step 2c coverage: frame count, the fraction of
+- **`pose_summary(pose, joints)`**. Step 2c coverage: frame count, the fraction of
   landmark-frames that are holes overall and per landmark, the mean number of
-  cameras per point, and the jitter number below.
+  cameras per point, and the jitter number below. `joints` are the landmarks
+  the detector can find (`backends.joints_provided`); the hole fractions count
+  only those, and the rest are listed under `joints_not_detected`. None
+  counts all 33.
 - **`jitter_mm(pts)`**. A smoothness measure: for each landmark, take its
   position in three consecutive frames and compute "next minus two times
   current plus previous", which is zero for steady motion and large for
@@ -303,17 +307,18 @@ code 1 if anything failed.
 - **`iphone_info(path)`**. The phone model, lens and 35 mm equivalent focal
   length if the file carries Apple's metadata, else None. Uses
   `iphone_camera.read_metadata`.
-- **`clap_time(path, threshold)`**. The clap time in seconds using the same
-  functions step 2a uses, or None and the reason.
-- **`check(video_paths, threshold)`**. For every video, prints the size, frame rate,
-  length, lens information and clap time, with a warning if the frame rate is
+- **`clap_time(path, threshold, signal)`**. The clap time in seconds (or the
+  chirp's, when `signal` is "chirp") using the same functions step 2a uses,
+  or None and the reason.
+- **`check(video_paths, threshold, signal)`**. For every video, prints the size, frame rate,
+  length, lens information and clap (or chirp) time, with a warning if the frame rate is
   under 50, if a `.MOV` file lacks iPhone metadata (it was probably
   re-exported), or if the clap sits near the end of the search window. Then
   across cameras: warns if frame rates or resolutions differ, if lengths
-  differ by more than 5 seconds, and runs the cross-check from step 2a to
+  differ by more than 5 seconds, and, for claps only, runs the cross-check from step 2a to
   show the refined clap times. Returns 1 if any file failed.
 - **`main()`**. Command-line wrapper around `check`, with the same
-  `--clap-threshold` flag as the pipeline.
+  `--clap-threshold` and `--sync-signal` flags as the pipeline.
 
 ---
 
@@ -321,8 +326,9 @@ code 1 if anything failed.
 
 ### `mocap_pipeline/stage1_keypoints/detect.py`: reading the video
 
-- **`detect_video(video_path, model_path, detector)`**. Takes one video, the
-  model file path, and the detector name. Gives back a `Keypoints2D`.
+- **`detect_video(video_path, model_path, detector, options)`**. Takes one video, the
+  model file path, the detector name, and the detector's settings (passed to
+  `create_backend`; None means its defaults). Gives back a `Keypoints2D`.
   1. Open the video with OpenCV. If it cannot be opened, raise an error.
   2. Read the claimed frame rate, falling back to 30 if the file reports none.
   3. Create the detector (section below) and loop over every frame in order.
@@ -354,7 +360,8 @@ produce stay NaN with confidence 0.
   milliseconds and returns points and confidences; the base class raises "not
   implemented" because each model overrides it. `close()` releases resources.
   Frames must be given in order, one video per instance, because some models
-  track the person from frame to frame.
+  track the person from frame to frame. Its `joints` attribute lists the
+  landmarks the model can find; None means all 33.
 - **`MediaPipeBackend`** (class). Google's MediaPipe Pose Landmarker in video
   mode with one person. Built from a `.task` model file; raises if none is
   given. `detect` wraps the frame in a MediaPipe image, forces the timestamp
@@ -368,18 +375,36 @@ produce stay NaN with confidence 0.
 - **`halpe26_to_mediapipe(keypoints, scores)`**. Takes one person's 26 points
   and scores. Gives back 33 points and confidences in our order, with the
   scores clipped to 0 to 1 and any landmark scored zero or less set to NaN.
+- **`box_from_joints(keypoints, scores, width, height)`**. The box to look
+  for the performer in on the next frame: the bounding box of the joints
+  scoring at least `config.RTMPOSE_TRACK_MIN_SCORE`, grown
+  `config.RTMPOSE_TRACK_BOX_SCALE` times about its centre and kept inside the
+  image. None if fewer than `config.RTMPOSE_TRACK_MIN_JOINTS` joints qualify.
 - **`pick_person(bboxes)`**. Given the boxes of everyone detected, the index
   of the largest box, taken to be the performer; None if nobody.
+- **`RTMPOSE_MODES`** and **`RTMPOSE_DEVICES`**: rtmlib's model sizes
+  ("lightweight", "balanced", "performance") and where RTMPose runs ("cpu",
+  "cuda").
+- **`check_rtmpose_device(device)`**. Raises, saying what to install, if
+  RTMPose cannot run on the device: for "cuda", if ONNX Runtime does not
+  offer its CUDA provider. Called before any video is read.
 - **`RTMPoseBackend`** (class). The RTMPose model through the rtmlib package,
-  which downloads its own files on first use. It does not track: every frame
-  a person detector finds everyone, `pick_person` chooses the largest, and
-  the pose model runs on that person's box. With no box it returns an empty
+  which downloads its own files on first use. Built with a `mode`, a `device`
+  and `detect_every`. A person detector finds everyone, `pick_person`
+  chooses the largest, and the pose model runs on that person's box. With
+  `detect_every` 1 (the default) the detector runs every frame; with N it
+  runs every Nth frame, and the frames between use `box_from_joints` on the
+  previous frame. With no box it returns an empty
   frame, because running the pose model on the whole image would always
-  "find" someone.
+  "find" someone. After loading it checks both models really run on the
+  device asked for, since ONNX Runtime falls back to the processor silently.
 - **`BACKENDS`**: dictionary from name to class. Adding a model means writing
   one class here and adding it to this dictionary.
-- **`create_backend(name, model_path)`**. Look the name up and build the
+- **`joints_provided(name)`**. The landmarks detector `name` can find, in
+  our order: all 33 for MediaPipe, 21 for RTMPose.
+- **`create_backend(name, model_path, **options)`**. Look the name up and build the
   class, with a clear error naming the valid choices if the name is unknown.
+  `options` go to the class (RTMPose: mode, device, detect_every).
 
 ---
 
@@ -391,9 +416,10 @@ The phones were not started at the same instant. The clap is a sharp sound in
 every recording, so finding it in each audio track tells us each camera's
 offset. After this step, frame i means the same instant in every camera.
 
+- **`SYNC_SIGNALS`**. What can mark time 0 in every video: "clap" or "chirp".
 - **`ClapNotFoundError`** (class). Raised when no clear clap is found, so the
   user re-records or gives the times by hand rather than getting silently
-  wrong 3D.
+  wrong 3D. A missing chirp raises a subclass of it.
 - **`_read_audio(video_path, max_seconds)`**. Decode the first `max_seconds`
   of the audio track with the PyAV library, resampled to mono at 16 kHz,
   as one float array. Raises `ClapNotFoundError` if the file has no audio.
@@ -438,6 +464,13 @@ offset. After this step, frame i means the same instant in every camera.
   in the metrics.
 - **`detect_claps(video_paths, threshold)`**. Clap time of every video, each
   refined against camera 0's.
+- **`find_chirp_time(video_path, threshold)`**. Where the chirp starts in one
+  video: reads the audio and hands it to `chirp.find_chirp_in_audio`.
+- **`detect_chirps(video_paths, threshold)`**. Chirp start time of every
+  video. No cross-check against camera 0, since each is matched against the
+  known sweep.
+- **`detect_sync_times(video_paths, signal, threshold)`**. `detect_claps` or
+  `detect_chirps`, by `signal`.
 - **`_resample(kp, times, common)`**. Put one camera's landmarks onto the
   shared timeline by straight-line interpolation between its two nearest
   frames. For each shared tick, find the camera frames just before and after,
@@ -446,14 +479,42 @@ offset. After this step, frame i means the same instant in every camera.
   this camera's frame intervals apart (the camera stalled), the tick becomes
   NaN with confidence 0 instead of a blend; and if either neighbour is NaN
   the result is NaN.
-- **`synchronise(video_paths, keypoints, clap_times, clap_threshold)`**. The
+- **`synchronise(video_paths, keypoints, clap_times, clap_threshold, signal)`**. The
   whole step.
-  1. Use the given clap times, or detect them with `clap_threshold`.
+  1. Use the given clap times, or detect them with `clap_threshold`
+     (`detect_sync_times`; with `signal` "chirp" the chirp's start counts as
+     the clap time).
   2. Shift each camera's timestamps so its clap is time 0.
   3. Build the shared timeline from 0 to the earliest end among cameras, at
      the shared clock rate from the configuration (30 per second).
   4. Resample every camera onto it. Return the `SyncResult` and the list of
      resampled `Keypoints2D`, each now carrying the shared rate.
+
+### `mocap_pipeline/stage2_reconstruct/chirp.py`: the chirp, instead of the clap
+
+A chirp is a half-second tone that sweeps from 1500 to 6000 Hz. One speaker
+plays it once while every camera records. Each video's audio is compared with
+the same sweep, made here; the best match is where the chirp starts. Chosen
+with `--sync-signal chirp`. Run as a script, it writes the sound file to play.
+
+- **`ChirpNotFoundError`** (class). No usable chirp. A kind of
+  `ClapNotFoundError`, so the pipeline handles both the same way.
+- **`chirp_template(rate, f0, f1, duration_s, fade_s)`**. The sweep as an
+  array, peak 1, with gentle fades at both ends so the speaker does not click.
+  Defaults are the configuration values.
+- **`match_scores(audio, template)`**. How well every window of the audio
+  matches the sweep, from 0 to 1, whatever the loudness.
+- **`_subsample_peak(scores, i)`**. The best match's position to a fraction
+  of a sample, from a parabola through it and its neighbours.
+- **`find_chirp_in_audio(audio, rate, name, threshold)`**. Seconds into the
+  audio where the chirp starts. `threshold` (set by `--clap-threshold`)
+  multiplies the minimum score. Raises if nothing matches well enough, or if
+  a second place more than 0.1 seconds away matches at least 0.7 as well
+  (played twice, or two speakers).
+- **`write_chirp_wav(path, rate, lead_s, tail_s, level)`**. The chirp as a
+  16-bit mono WAV file, with half a second of silence either side.
+- **`main()`**. Command-line wrapper around `write_chirp_wav`, with `--out`
+  and `--rate`.
 
 ---
 
@@ -853,19 +914,27 @@ The one file that knows the order of the steps. Everything else calls `run()`.
   if it exists and is at least as new as every existing input file.
 - **`_stop(stage, stop_after)`**. True, with a printed note, if the run should
   end after this stage.
+- **`detector_options(detector, rtmpose_mode, rtmpose_device, rtmpose_detect_every)`**.
+  The settings handed to `create_backend`; empty for MediaPipe.
+- **`detector_settings(options)`**. The settings that change what the saved
+  landmarks look like (mode and detect-every), only where they differ from
+  the defaults, stored in the fingerprint and compared on resume.
 - **`run(video_paths, out_path, ...)`**. The public entry point. Options:
   performer height, model path, camera types, fields of view, clap times,
   calibration path, recalibrate, the error limit, board videos, whether to
   smooth, whether to write the animation, resume, stop-after, detector,
-  smoother, clap threshold, and jobs (how many videos step 1 detects at
-  once; 0 means pick automatically). It validates the counts and names, opens a metrics run, calls
+  smoother, clap threshold, jobs (how many videos step 1 detects at
+  once; 0 means pick automatically), RTMPose's mode, device and
+  detect-every, and the sync signal (clap or chirp). It validates the counts and names, checks
+  the RTMPose device when RTMPose is chosen, opens a metrics run, calls
   `_run_stages` inside a total timer, and closes the run as done, stopped
   early, or failed with the error text. The metrics and log files are written
   even when the run fails.
 - **`_run_stages(...)`**. The steps in order.
   1. Decide the camera ids, file paths and camera types.
   2. Step 1. With resume, reuse a video's saved landmarks if the video's
-     fingerprint still matches and the same detector made them. The videos
+     fingerprint still matches and the same detector made them with the
+     same settings (`detector_settings`; the device does not count). The videos
      still to detect go to `_detect_videos`, several at a time, each in its
      own process when more than one is detected at once (`_detect_worker`,
      which also saves the landmark file and sends what it prints back through
@@ -876,9 +945,10 @@ The one file that knows the order of the steps. Everything else calls `run()`.
      saved, so a resumed run only redoes the bad ones. Record the time per
      video and the per-camera summary.
   3. Step 2a. With resume and a saved sync file for these cameras, take the
-     clap times from it instead of searching the audio; resampling always
+     clap times from it instead of searching the audio for the clap or the
+     chirp; resampling always
      runs because it is cheap. Save the sync file unless it was reused. Print
-     and record the clap times and where they came from. A missing clap stops
+     and record the clap times, where they came from and the sync signal. A missing clap stops
      the run with a message explaining how to give the times by hand.
   4. Step 2b. Reuse an existing calibration file unless told to recalibrate,
      checking it has the right number of cameras. Otherwise require the
@@ -934,7 +1004,7 @@ started fresh and imports it again.
 
 - **`LogWriter`** (class). Stands in for standard output inside the worker:
   every printed line goes to `log.txt`, and lines that start with known
-  phrases ("Detecting joints in", "Clap at", "Saved calibration", "Saved ...
+  phrases ("Detecting joints in", "Clap at", "Chirp at", "Saved calibration", "Saved ...
   frames of 3D joints") update the stage in the status record, so the
   frontend can show progress.
 - **`run_take(folder_str, video_paths, height_m)`**. One take start to finish:
@@ -1188,6 +1258,9 @@ synthetic videos in which it finds nobody).
 - `test_placement.py`: the placement metric and the annealer.
 - `test_check_videos.py`: step 0 on small generated videos, made by
   `synthetic_video.py`.
+- `test_chirp.py`: finding the chirp in noisy audio with echoes and a clap,
+  rejecting audio without it or with it twice, and step 2a end to end on
+  generated videos.
 - `test_api.py` and `test_api_upload.py`: the web API's queue, cancellation,
   restart recovery and streaming upload parser, and `check_upload` on its
   own.
