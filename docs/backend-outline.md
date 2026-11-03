@@ -774,6 +774,8 @@ the pose.
   follows from the right-hand rule. Where the two directions are nearly
   parallel, for instance an arm raised straight up, the fallback direction is
   used as the secondary instead.
+- **`_hold(matrices, solved)`**. Replaces every frame that was not solved by
+  the last solved frame before it, or by the identity when there is none.
 - **`bone_rotation(rest_direction, current_direction)`**. The smallest rotation
   taking one unit vector onto another, by Rodrigues' formula: the axis is
   their cross product, the angle comes from their dot product. Handles the
@@ -782,14 +784,23 @@ the pose.
   1. Measure the body's up (thorax to neck), left (right shoulder to left
      shoulder) and forward (their cross product) directions per frame.
   2. For every joint with a rule, build its world orientation from the rule's
-     two directions, using the body forward or up direction as the fallback.
-     Ankles and wrists, whose only child is an end site, copy their parent's.
+     two directions, using the body forward or up direction as the fallback,
+     except the Spine and the Neck, whose fallback is the shoulder line or the
+     hip line (`FALLBACK_SECONDARY`) because their own primary direction is
+     the body's up. Ankles and wrists, whose only child is an end site, copy
+     their parent's.
   3. Each joint's local rotation is its parent's world orientation transposed
      times its own world orientation. The root's local rotation is its world
      orientation.
-  Returns the root position per frame (the hip position) and the local
-  rotation matrices, shape (frames, 16, 3, 3), for the rotating joints in
-  skeleton order. The T-pose has every joint's orientation equal to the
+  4. A frame where a joint's directions cannot define an orientation (a bone
+     of zero length, or both the secondary and the fallback within about 11.5
+     degrees of the primary, `PARALLEL_SIN`) keeps that joint's previous local
+     rotation, or the rest pose before its first solvable frame (`_hold`).
+  Returns the root position per frame (the hip position), the local rotation
+  matrices, shape (frames, 16, 3, 3), for the rotating joints in skeleton
+  order, and a (frames, 16) mask of where step 4 was used. `export_bvh`
+  prints how many frames were held and records them as `rig.unsolved_frames`
+  and `rig.unsolved_frames_per_joint` in the metrics. The T-pose has every joint's orientation equal to the
   identity, which is why a measured orientation can be used directly.
 - **`to_euler_degrees(local_rotations, order)`**. Convert the rotation
   matrices to three Euler angles each, in the channel order the file declares

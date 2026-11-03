@@ -33,6 +33,12 @@ is an End Site (ankles, wrists) copy their parent's rotation.
 
 Known limitation: twist along a limb can't be recovered from joint positions,
 so arm twist follows the body's up direction and leg twist the hip line.
+
+A frame where a joint's directions can't define an orientation (a bone of
+zero length, or every candidate secondary direction parallel to the primary,
+as when a shoulder triangulated metres away drags the shoulder line and the
+neck onto one line) keeps that joint's previous rotation, or the rest pose
+before its first solvable frame. solve_rotations says which frames.
 """
 from __future__ import annotations
 
@@ -59,6 +65,19 @@ FRAME_RULES = {
     "RightShoulder": (("x", ("RightShoulder", "RightElbow")), ("y", ("Neck", "Thorax"))),
     "RightElbow":    (("x", ("RightElbow", "RightWrist")), ("y", ("Neck", "Thorax"))),
 }
+# secondary direction to use when the rule's own lines up with the primary. The
+# default (body forward for a "y" secondary, body up for an "x" one) is no use for
+# these two: the Neck's primary IS body up (Head - Neck and Neck - Thorax are both
+# the shoulder centre to ear centre line, joints.RIG_JOINT_SOURCES), and the
+# Spine's primary is close to it whenever the performer is upright. The other
+# side of the body gives them a left/right direction instead.
+FALLBACK_SECONDARY = {
+    "Spine": ("LeftShoulder", "RightShoulder"),
+    "Neck":  ("LeftHip", "RightHip"),
+}
+# below this |sin| between primary and secondary (about 11.5 degrees) the
+# secondary is treated as parallel, too unreliable to fix the joint's twist
+PARALLEL_SIN = 0.2
 
 
 def _normalize(v):
@@ -71,11 +90,19 @@ def _frame_from_axes(primary_axis, primary, secondary_axis, secondary, fallback)
     close to `secondary` as possible (video2bvh's dcm_from_axis). Where the
     two are nearly parallel (e.g. an arm raised straight up), `fallback` is
     used as the secondary direction instead.
+    Returns (R, solved): solved (F,) is False where the fallback is no better
+    (also parallel, or zero length, or `primary` itself has no length); R on
+    those frames is not a rotation and must not be used.
     """
     a = _normalize(primary)
-    s = _normalize(secondary)
-    parallel = np.linalg.norm(np.cross(a, s), axis=-1) < 0.2
-    s = np.where(parallel[:, None], _normalize(fallback), s)
+
+    def usable(direction):
+        # a zero-length or NaN direction fails too: its cross product is 0 or NaN
+        return np.linalg.norm(np.cross(a, _normalize(direction)), axis=-1) >= PARALLEL_SIN
+
+    own = usable(secondary)
+    solved = own | usable(fallback)
+    s = np.where(own[:, None], _normalize(secondary), _normalize(fallback))
 
     i, j = AXES[primary_axis], AXES[secondary_axis]
     k = 3 - i - j
@@ -88,7 +115,18 @@ def _frame_from_axes(primary_axis, primary, secondary_axis, secondary, fallback)
     R = np.empty(a.shape[:-1] + (3, 3))
     R[..., :, i], R[..., :, j], R[..., :, k] = a, b, c
 
-    return R
+    return R, solved
+
+
+def _hold(matrices, solved):
+    """
+    (F, 3, 3) rotation matrices with every frame that wasn't solved replaced by the
+    last solved frame before it, or the identity (rest pose) if there is none.
+    """
+    frames = np.arange(len(solved))
+    last = np.maximum.accumulate(np.where(solved, frames, -1))
+
+    return np.where((last >= 0)[:, None, None], matrices[np.maximum(last, 0)], np.eye(3))
 
 
 def bone_rotation(rest_direction, current_direction):
@@ -124,8 +162,12 @@ def solve_rotations(rig_positions, rest_offsets):
       2. Every other joint: orientation from FRAME_RULES; ankles and wrists
          copy their parent's.
       3. Local rotation = inverse(parent world rotation) x world rotation.
-    Returns (root_positions (F, 3), local_rotations (F, J, 3, 3)) with J the
-    rotating joints (RIG_JOINTS minus RIG_END_SITES) in RIG_JOINTS order.
+      4. Frames where a joint can't be solved keep its previous local
+         rotation (the rest pose before its first solved frame); its world
+         rotation, which its children are measured against, follows from that.
+    Returns (root_positions (F, 3), local_rotations (F, J, 3, 3), unsolved
+    (F, J) bool, True where step 4 was used) with J the rotating joints
+    (RIG_JOINTS minus RIG_END_SITES) in RIG_JOINTS order.
     rest_offsets is not needed here: the T-pose frames are all the identity.
     """
     index = {name: i for i, name in enumerate(RIG_JOINTS)}
@@ -138,28 +180,34 @@ def solve_rotations(rig_positions, rest_offsets):
     body_left = vec(("LeftShoulder", "RightShoulder"))
     body_forward = np.cross(body_left, body_up)
 
+    rotating = [n for n in RIG_JOINTS if n not in RIG_END_SITES]
+    local = np.empty((len(rig_positions), len(rotating), 3, 3))
+    unsolved = np.zeros((len(rig_positions), len(rotating)), dtype=bool)
     world = {}
 
-    for name in RIG_JOINTS:
-        if name in RIG_END_SITES:
-            continue
+    # RIG_JOINTS lists parents first, so world[parent] is final when a child needs it
+    for r, name in enumerate(rotating):
+        parent = RIG_PARENTS[name]
         if name in FRAME_RULES:
             (pa, pv), (sa, sv) = FRAME_RULES[name]
             # fallback secondary for the rare frames where the two directions line up
-            fallback = body_forward if sa == "y" else body_up
-            world[name] = _frame_from_axes(pa, vec(pv), sa, vec(sv), fallback)
+            if name in FALLBACK_SECONDARY:
+                fallback = vec(FALLBACK_SECONDARY[name])
+            else:
+                fallback = body_forward if sa == "y" else body_up
+            measured, solved = _frame_from_axes(pa, vec(pv), sa, vec(sv), fallback)
         else:
-            world[name] = world[RIG_PARENTS[name]]
+            measured, solved = world[parent], np.ones(len(rig_positions), dtype=bool)
 
-    rotating = [n for n in RIG_JOINTS if n not in RIG_END_SITES]
-    local = np.empty((len(rig_positions), len(rotating), 3, 3))
+        if parent is None:
+            local[:, r] = _hold(measured, solved)
+            world[name] = local[:, r]
+        else:
+            local[:, r] = _hold(np.transpose(world[parent], (0, 2, 1)) @ measured, solved)
+            world[name] = world[parent] @ local[:, r]
+        unsolved[:, r] = ~solved
 
-    for r, name in enumerate(rotating):
-        parent = RIG_PARENTS[name]
-        local[:, r] = world[name] if parent is None else \
-            np.transpose(world[parent], (0, 2, 1)) @ world[name]
-
-    return rig_positions[:, index["Hip"]].copy(), local
+    return rig_positions[:, index["Hip"]].copy(), local, unsolved
 
 
 def to_euler_degrees(local_rotations, order: str = "ZXY"):
