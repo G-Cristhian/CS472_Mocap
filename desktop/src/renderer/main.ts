@@ -295,7 +295,8 @@ async function startRun(options: RunOptions): Promise<void> {
   $<HTMLButtonElement>('cancel').disabled = true
 
   if (!result.ok) {
-    showProgress({ ...currentProgress(), stage: 'failed', detail: result.error ?? 'Failed' })
+    // the first line only: the whole message is in the result box below
+    showProgress({ ...currentProgress(), stage: 'failed', detail: (result.error ?? 'Failed').split('\n')[0] })
     preview.hidden = false
     resultError.textContent = result.error ?? 'The pipeline failed. The log above has the details.'
     $<HTMLDetailsElement>('log-box').open = true

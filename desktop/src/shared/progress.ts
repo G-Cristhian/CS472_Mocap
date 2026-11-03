@@ -10,6 +10,9 @@
  */
 import type { Progress, RunResult, Stage, VideoProgress, VideoState } from './types'
 
+const MEMORY_ADVICE =
+  'Most likely cause: the computer ran out of memory. Close other programs, or set Videos detected at once to 1, and run again.'
+
 const WEIGHTS = { detect: 0.75, sync: 0.05, calibrate: 0.08, triangulate: 0.05, write: 0.07 }
 
 function baseName(path: string): string {
@@ -24,6 +27,8 @@ interface VideoTrack {
 
 export class ProgressTracker {
   private readonly cameras: string[]
+  private readonly videoPaths: string[]
+  private atOnce = 1 // videos detected at the same time, from "Detecting N videos at once, M processes"
   private readonly videos = new Map<string, VideoTrack>() // basename -> state
   private stage: Stage = 'starting'
   private detail = 'Starting'
@@ -31,9 +36,11 @@ export class ProgressTracker {
   readonly paths: { bvh?: string; json?: string; metrics?: string } = {}
   private message: string[] = [] // the pipeline's last message, one entry per line
   private inTraceback = false
+  private inCleanupError = false // an "Exception ignored in ..." block printed while Python shuts down
   private lastFromStderr = false
 
   constructor(videoPaths: string[]) {
+    this.videoPaths = videoPaths
     this.cameras = videoPaths.map(baseName)
     for (const c of this.cameras) this.videos.set(c, { fraction: 0, state: 'waiting', detail: '' })
   }
@@ -64,9 +71,17 @@ export class ProgressTracker {
     const ok = exitCode === 0 && this.stage !== 'failed'
     let error: string | undefined
     if (!ok) {
-      // a killed run's last stderr line is whatever it happened to print before, not the cause
-      if (exitCode === null && signal) error = `The pipeline was stopped by the system (${signal}); it may have run out of memory.`
-      else error = this.message.join('\n') || `The pipeline exited with code ${exitCode}`
+      const lines = [...this.message]
+      if (exitCode === null && signal) {
+        // keep what Python printed before it stopped: a native crash (SIGSEGV, SIGABRT) says why there
+        lines.unshift(`The pipeline was stopped by signal ${signal}.`)
+        if (signal === 'SIGKILL') lines.push(MEMORY_ADVICE)
+      } else if (lines.some((l) => /BrokenProcessPool|terminated abruptly/.test(l))) {
+        // a detection worker killed when memory runs out makes every video fail the same way, and the
+        // pipeline then blames the setup (run_pipeline.py); the abrupt stop points at memory instead
+        lines.push(MEMORY_ADVICE)
+      }
+      error = lines.join('\n') || `The pipeline exited with code ${exitCode}`
     }
     return {
       ok,
@@ -75,6 +90,36 @@ export class ProgressTracker {
       jsonPath: this.paths.json,
       metricsPath: this.paths.metrics,
       error,
+    }
+  }
+
+  /**
+   * The camera a line is about: the video path (as the app passed it) or file name that `rest` starts
+   * with, followed by `sep`. Matching the known names, rather than splitting the text, copes with paths
+   * holding brackets or colons ("Takes (Oct)/cam0 (1).mp4", "take 1: warmup.mp4"). Longest name wins.
+   */
+  private cameraAt(rest: string, sep: string): { cam: string; after: string } | undefined {
+    let best: { cam: string; after: string; length: number } | undefined
+    this.videoPaths.forEach((full, i) => {
+      for (const name of [full, this.cameras[i]]) {
+        if (rest.startsWith(name + sep) && (!best || name.length > best.length)) {
+          best = { cam: this.cameras[i], after: rest.slice(name.length + sep.length), length: name.length }
+        }
+      }
+    })
+    return best && { cam: best.cam, after: best.after }
+  }
+
+  /** Starts the next queued videos, up to the number detected at once. */
+  private startQueued(): void {
+    let running = [...this.videos.values()].filter((v) => v.state === 'detecting').length
+    for (const c of this.cameras) {
+      const v = this.videos.get(c)!
+      if (running >= this.atOnce) break
+      if (v.state === 'waiting' && v.detail === 'queued') {
+        Object.assign(v, { state: 'detecting', detail: 'starting' })
+        running++
+      }
     }
   }
 
@@ -97,13 +142,26 @@ export class ProgressTracker {
    */
   private noteStderr(line: string): void {
     if (!line.trim()) return
+    if (this.inCleanupError) {
+      // skip its traceback and the exception line that ends it: it is not why the run failed
+      if (line.startsWith('Traceback') || /^\s/.test(line)) return
+      this.inCleanupError = false
+      return
+    }
+    if (line.startsWith('Exception ignored')) {
+      this.inCleanupError = true
+      return
+    }
     if (line.startsWith('Traceback')) {
       this.message = []
       this.inTraceback = true
       return
     }
     if (/^\s/.test(line)) return // a traceback's File, code and ^^^ lines, or a warning's source line
-    if (/^\S.*:\d+: \w*Warning: /.test(line)) return // a Python warning, not the run's message
+    // library chatter, not the run's message: Python warnings, logging lines, glog/absl lines
+    // ("W0000 00:00:...", from MediaPipe and TensorFlow Lite) and progress bars
+    if (/^\S.*:\d+: \w*Warning: /.test(line)) return
+    if (/^(DEBUG|INFO|WARNING)[:\s]/.test(line) || /^[IWEF]\d{4} /.test(line) || /\d%\|/.test(line)) return
     if (this.inTraceback || !this.lastFromStderr) this.message = []
     this.inTraceback = false
     this.message.push(line.replace(/^FAILED:\s*/, ''))
@@ -142,35 +200,51 @@ export class ProgressTracker {
     // the path is everything before the last bracket, which holds the detector and its options
     // ("(mediapipe)", "(rtmpose, mode balanced)"); a path may itself hold " (" ("Takes (Oct)")
     if ((m = line.match(/^Detecting joints in (.+?)(?: \([^()]*\))?$/))) {
-      // several videos are detected at once, so one starting says nothing about the others
-      const cam = this.cameraOf(m[1])
-      this.setVideo(cam, { state: 'detecting', detail: 'starting' })
+      // printed for every video before any starts; the ones beyond "at once" wait their turn
+      const cam = this.cameraAt(line.slice('Detecting joints in '.length), ' (')?.cam ?? this.cameraOf(m[1])
+      const v = cam ? this.videos.get(cam) : undefined
+      if (v && v.state === 'waiting') {
+        v.detail = 'queued'
+        this.startQueued()
+      }
       this.stage = 'detecting'
       this.detail = `Detecting joints in ${cam ?? baseName(m[1])}`
       return
     }
-    if ((m = line.match(/^Detected joints in (.+?)(?: \(([^()]*)\))?$/))) {
-      const cam = this.cameraOf(m[1])
-      this.setVideo(cam, { fraction: 1, state: 'done', detail: m[2] ?? '' })
-      this.stage = 'detecting'
-      this.detail = `Detected joints in ${cam ?? baseName(m[1])}`
+    if ((m = line.match(/^Detecting \d+ videos at once, (\d+) process/))) {
+      this.atOnce = Number(m[1])
+      this.startQueued()
       return
     }
-    if ((m = line.match(/^Detection failed for (.+?): (.+)$/)) && !/^\d+ of \d+ video/.test(m[1])) {
-      // the per-file line from stage 1; the "N of M video(s)" summary is handled as an error below
-      const cam = this.cameraOf(m[1])
-      if (cam) {
-        this.setVideo(cam, { fraction: 1, state: 'failed', detail: m[2] })
+    if (line.startsWith('Detected joints in ')) {
+      const hit = this.cameraAt(line.slice('Detected joints in '.length), ' (')
+      const cam = hit?.cam ?? this.cameraOf(line.slice('Detected joints in '.length).replace(/ \([^()]*\)$/, ''))
+      const detail = hit ? hit.after.replace(/\)$/, '') : (line.match(/ \(([^()]*)\)$/)?.[1] ?? '')
+      this.setVideo(cam, { fraction: 1, state: 'done', detail })
+      this.startQueued()
+      this.stage = 'detecting'
+      this.detail = `Detected joints in ${cam ?? baseName(line.slice('Detected joints in '.length))}`
+      return
+    }
+    if (line.startsWith('Detection failed for ') && !/^Detection failed for \d+ of \d+ video/.test(line)) {
+      // the per-file line from stage 1 (the full path on stdout, the file name in the SystemExit text);
+      // the "N of M video(s)" summary is handled as an error below
+      const hit = this.cameraAt(line.slice('Detection failed for '.length), ': ')
+      if (hit) {
+        this.setVideo(hit.cam, { fraction: 1, state: 'failed', detail: hit.after })
+        this.startQueued()
         this.stage = 'detecting'
-        this.detail = `Detection failed for ${cam}`
+        this.detail = `Detection failed for ${hit.cam}`
         return
       }
     }
-    if ((m = line.match(/^Using saved joints for (.+) \([^()]*\)$/))) {
-      const cam = this.cameraOf(m[1])
+    if (line.startsWith('Using saved joints for ')) {
+      // the joints file named in the bracket repeats the file stem, so it may hold brackets too
+      const rest = line.slice('Using saved joints for '.length)
+      const cam = this.cameraAt(rest, ' (')?.cam ?? this.cameraOf(rest.replace(/ \([^()]*\)$/, ''))
       this.setVideo(cam, { fraction: 1, state: 'reused', detail: 'saved joints reused' })
       this.stage = 'detecting'
-      this.detail = `Reusing saved joints for ${cam ?? baseName(m[1])}`
+      this.detail = `Reusing saved joints for ${cam ?? baseName(rest)}`
       return
     }
     // run_pipeline.py prints "Chirp at" instead of "Clap at" when the chirp is the sync sound

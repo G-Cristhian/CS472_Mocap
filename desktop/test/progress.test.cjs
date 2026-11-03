@@ -157,26 +157,103 @@ test('a traceback gives its exception line; a stdout line or a new traceback sta
   assert.equal(second.t.result(1).error, 'new message')
 })
 
-test('a run stopped by the system says so instead of "exited with code null" (#124)', () => {
-  const { t } = run(['Detecting joints in C:\\takes\\t1\\cam0.mp4 (mediapipe)', 'some stray warning'], 1)
-  assert.equal(t.result(null, false, 'SIGKILL').error, 'The pipeline was stopped by the system (SIGKILL); it may have run out of memory.')
+test('a run stopped by a signal says which, keeps what Python printed, and points at memory only for SIGKILL (#124)', () => {
+  const { t } = run(['Detecting joints in C:\\takes\\t1\\cam0.mp4 (mediapipe)', 'Fatal Python error: Segmentation fault'], 1)
+  assert.equal(t.result(null, false, 'SIGSEGV').error, 'The pipeline was stopped by signal SIGSEGV.\nFatal Python error: Segmentation fault')
+  const killed = t.result(null, false, 'SIGKILL').error.split('\n')
+  assert.equal(killed[0], 'The pipeline was stopped by signal SIGKILL.')
+  assert.match(killed[killed.length - 1], /^Most likely cause: the computer ran out of memory/)
   // cancel still wins, and an exit code without a signal keeps the message
   assert.equal(t.result(null, true, 'SIGTERM').error, 'Cancelled')
-  assert.equal(t.result(1).error, 'some stray warning')
+  assert.equal(t.result(1).error, 'Fatal Python error: Segmentation fault')
 })
 
-test('paths holding " (" are still matched to their camera (#106)', () => {
-  const videos = ['C:\\Takes (Oct)\\cam0 (1).mp4', '/takes/Take (final)/cam1.mp4']
+test('a detection worker killed for memory gets the memory advice under the pipeline\'s own text', () => {
+  const abrupt = 'BrokenProcessPool: A process in the process pool was terminated abruptly while the future was running or pending.'
+  const { t } = run(
+    [
+      'Detecting joints in C:\\takes\\t1\\cam0.mp4 (mediapipe)',
+      'Detecting joints in C:\\takes\\t1\\cam1.mp4 (mediapipe)',
+      `Detection failed for cam0.mp4: ${abrupt}`,
+      `Detection failed for cam1.mp4: ${abrupt}`,
+      'Detection failed for 2 of 2 video(s): cam0.mp4, cam1.mp4. Every video failed the same way, so the cause is the setup (the pose model file or its Python packages), not the videos.',
+    ],
+    2,
+  )
+  const lines = t.result(1).error.split('\n')
+  assert.equal(lines.length, 4)
+  assert.match(lines[0], /^Detection failed for cam0\.mp4: BrokenProcessPool/)
+  assert.match(lines[3], /^Most likely cause: the computer ran out of memory/)
+})
+
+test('library chatter on stderr is not taken for the message', () => {
+  const { t } = run(
+    [
+      'Detected joints in C:\\takes\\t1\\cam0.mp4 (41 s)',
+      'INFO: Created TensorFlow Lite XNNPACK delegate for CPU.',
+      'W0000 00:00:1730000000.000000  1234 landmark_projection_calculator.cc:186] Using NORM_RECT without IMAGE_DIMENSIONS',
+      '100%|##########| 10/10 [00:01<00:00,  9.80it/s]',
+      'WARNING:root:something a library logged',
+      'C:\\takes\\t1\\cam1.mp4: no clear clap in the first 10 s.',
+      '--sync takes one clap time per video in seconds.',
+    ],
+    1,
+  )
+  assert.equal(t.result(1).error, 'C:\\takes\\t1\\cam1.mp4: no clear clap in the first 10 s.\n--sync takes one clap time per video in seconds.')
+  // a run that dies with only chatter on stderr falls back to the exit code
+  const quiet = run(['Clap at cam0 1.000 s, cam1 0.850 s', 'INFO: Created TensorFlow Lite XNNPACK delegate for CPU.'], 1)
+  assert.equal(quiet.t.result(3221225477).error, 'The pipeline exited with code 3221225477')
+})
+
+test('a cleanup error printed at shutdown does not replace the real message', () => {
+  const { t } = run(
+    [
+      'Clap at cam0 1.000 s, cam1 0.850 s',
+      'Traceback (most recent call last):',
+      '  File "/backend/x.py", line 1, in run',
+      'ValueError: no frame shows both ears and both ankles',
+      'Exception ignored in: <function Foo.__del__ at 0x7f>',
+      'Traceback (most recent call last):',
+      '  File "/lib/foo.py", line 9, in __del__',
+      "AttributeError: 'Foo' object has no attribute 'handle'",
+    ],
+    1,
+  )
+  assert.equal(t.result(1).error, 'ValueError: no frame shows both ears and both ankles')
+})
+
+test('paths holding " (" or ": " are still matched to their camera (#106)', () => {
+  const videos = ['C:\\Takes (Oct)\\cam0 (1).mp4', '/takes/Take (final)/cam1 (1).mp4', '/takes/take 1: warmup.mp4']
   const t = new ProgressTracker(videos)
   t.feed('Detecting joints in C:\\Takes (Oct)\\cam0 (1).mp4 (mediapipe)')
   assert.deepEqual(t.snapshot().videos[0], { name: 'cam0 (1).mp4', state: 'detecting', detail: 'starting' })
   t.feed('Detected joints in C:\\Takes (Oct)\\cam0 (1).mp4 (41 s)')
-  t.feed('Using saved joints for /takes/Take (final)/cam1.mp4 (out3d.keypoints.cam1.npz)')
+  // the joints file repeats the file stem, brackets and all
+  t.feed('Using saved joints for /takes/Take (final)/cam1 (1).mp4 (out3d.keypoints.cam1 (1).npz)')
+  t.feed('Detection failed for /takes/take 1: warmup.mp4: ValueError: No frames could be read from video')
   assert.deepEqual(t.snapshot().videos, [
     { name: 'cam0 (1).mp4', state: 'done', detail: '41 s' },
-    { name: 'cam1.mp4', state: 'reused', detail: 'saved joints reused' },
+    { name: 'cam1 (1).mp4', state: 'reused', detail: 'saved joints reused' },
+    { name: 'take 1: warmup.mp4', state: 'failed', detail: 'ValueError: No frames could be read from video' },
   ])
-  assert.match(t.snapshot().detail, /Reusing saved joints for cam1\.mp4/)
+})
+
+test('videos beyond "at once" wait their turn instead of all showing detecting', () => {
+  const three = ['/t/cam0.mp4', '/t/cam1.mp4', '/t/cam2.mp4']
+  const t = new ProgressTracker(three)
+  for (const v of three) t.feed(`Detecting joints in ${v} (mediapipe)`)
+  // one at a time (no "at once" line is printed then)
+  assert.deepEqual(t.snapshot().videos.map((v) => `${v.state} ${v.detail}`), ['detecting starting', 'waiting queued', 'waiting queued'])
+  t.feed('Detected joints in /t/cam0.mp4 (12 s)')
+  assert.deepEqual(t.snapshot().videos.map((v) => v.state), ['done', 'detecting', 'waiting'])
+
+  const u = new ProgressTracker(three)
+  for (const v of three) u.feed(`Detecting joints in ${v} (mediapipe)`)
+  u.feed('Detecting 3 videos at once, 2 processes')
+  assert.deepEqual(u.snapshot().videos.map((v) => v.state), ['detecting', 'detecting', 'waiting'])
+  // a progress line for a queued video starts it, whatever the count says
+  u.feed('progress: detect /t/cam2.mp4 30/90')
+  assert.equal(u.snapshot().videos[2].state, 'detecting')
 })
 
 test('RTMPose with its options starts the video at once, not at frame 30 (#124)', () => {

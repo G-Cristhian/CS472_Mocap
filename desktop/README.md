@@ -32,7 +32,7 @@ Use the folder you cloned into if it is not your home folder. `npm start` builds
 4. **Run the pipeline**. The bar follows detection frame by frame (the pipeline prints a progress line every 30 frames when `MOCAP_PROGRESS` is set, which this app sets), then the later stages. One line per video shows waiting, detecting, done, reused or failed with the reason; a failed file does not stop the others. The log is under the bar.
 5. The result plays with a time bar, then the numbers from `out3d.metrics.json` stage by stage (per camera, per joint, jitter before and after smoothing, gaps, timing), the glance numbers coloured by the thresholds in [processing-a-take.md](../docs/procedures/processing-a-take.md). "Rerun with the other smoother" repeats the run with Resume on and the smoother switched, and a table compares the runs of the take. "Open the output folder" shows the files.
 
-A failed run shows the pipeline's message and opens the log. For the two-line clap and calibration messages that is both lines: the message filming.md section 11 lists, then the advice. A crash shows the exception's last line, and a run the system stopped (out of memory, for example) says so.
+A failed run shows the pipeline's message and opens the log. For the two-line clap and calibration messages that is both lines: the message filming.md section 11 lists, then the advice. A crash shows the exception's last line; library log lines are left out. A run stopped by a signal says which, above what Python printed before it; when the system stopped it or a detection process died abruptly, the panel adds that the computer most likely ran out of memory.
 
 ## Working on it
 
