@@ -1,6 +1,10 @@
 """
-FastAPI WebSocket and REST server for live multi-camera MediaPipe mocap streaming.
+FastAPI WebSocket and REST server for live multi-camera mocap streaming.
+Supports MediaPipe and RTMPose (GPU DirectML / CUDA), Auto T-Pose Calibration,
+and Global Root Position Tracking.
 """
+from __future__ import annotations
+
 import argparse
 import asyncio
 import json
@@ -20,10 +24,12 @@ from pydantic import BaseModel
 import uvicorn
 
 from .camera_stream import CameraManager
-from .detector import resolve_model_path, POSE_CONNECTIONS, LANDMARK_NAMES
+from .detector import resolve_model_path, POSE_CONNECTIONS, LANDMARK_NAMES, get_best_onnx_device
 from .filter import PoseFilter
 from .triangulate_live import LiveTriangulator
 from .live_recorder import LiveRecorder
+from .auto_tpose import AutoTPoseCalibrator
+from .root_tracker import RootTracker
 
 logger = logging.getLogger("live_stream_server")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -33,8 +39,13 @@ live_recorder = LiveRecorder()
 camera_manager = CameraManager(recorder=live_recorder)
 pose_filter = PoseFilter(min_cutoff=1.2, beta=0.01)
 triangulator = LiveTriangulator()
+auto_tpose_calibrator = AutoTPoseCalibrator(hold_duration_s=1.2, target_height_m=1.75)
+root_tracker = RootTracker(default_performer_height_m=1.75)
+
 active_websockets: List[WebSocket] = []
+current_model_type = "mediapipe"  # "mediapipe" or "rtmpose"
 current_model_variant = "full"
+current_device = "auto"
 filter_enabled = True
 
 
@@ -46,7 +57,7 @@ async def lifespan(app: FastAPI):
     camera_manager.shutdown_all()
 
 
-app = FastAPI(title="Mocap Live Stream API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Mocap Live Stream API", version="1.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -61,7 +72,9 @@ class AddCameraRequest(BaseModel):
     cam_id: str
     source: Any  # int (e.g. 0) or str (e.g. "0" or "rtsp://...")
     name: Optional[str] = ""
+    model_type: Optional[str] = None
     model_variant: Optional[str] = None
+    device: Optional[str] = None
 
 
 class RemoveCameraRequest(BaseModel):
@@ -76,6 +89,16 @@ class FilterSettingsRequest(BaseModel):
     enabled: bool
     min_cutoff: Optional[float] = 1.2
     beta: Optional[float] = 0.01
+
+
+class ModelEngineRequest(BaseModel):
+    model_type: str  # "mediapipe" or "rtmpose"
+    model_variant: Optional[str] = "full"
+    device: Optional[str] = "auto"
+
+
+class RootMotionRequest(BaseModel):
+    mode: str  # "global" or "root_locked"
 
 
 class StartRecordingRequest(BaseModel):
@@ -112,34 +135,39 @@ async def broadcast_message(msg: dict):
 def health():
     return {
         "status": "ok",
-        "model": current_model_variant,
+        "model_type": current_model_type,
+        "model_variant": current_model_variant,
+        "device": current_device,
         "active_cameras": len(camera_manager.get_all_snapshots()),
         "calibrated": triangulator.is_calibrated,
+        "tpose_calibrated": auto_tpose_calibrator.calibration_data is not None,
         "recording": live_recorder.get_status(),
     }
 
 
 @app.get("/api/cameras")
 async def list_cameras():
-    """Returns detected physical webcam devices."""
     devices = await asyncio.to_thread(camera_manager.list_available_devices)
     return {"devices": devices}
 
 
 @app.get("/api/active")
 def get_active():
-    """Returns status of currently active camera streams."""
     return {"cameras": camera_manager.get_all_snapshots()}
 
 
 @app.post("/api/cameras/add")
 def add_camera_endpoint(req: AddCameraRequest):
-    model = req.model_variant or current_model_variant
+    m_type = req.model_type or current_model_type
+    m_variant = req.model_variant or current_model_variant
+    dev = req.device or current_device
     ok = camera_manager.add_camera(
         cam_id=req.cam_id,
         source=req.source,
         name=req.name or "",
-        model_variant=model,
+        model_type=m_type,
+        model_variant=m_variant,
+        device=dev,
     )
     return {"ok": ok, "cam_id": req.cam_id}
 
@@ -150,6 +178,34 @@ def remove_camera_endpoint(req: RemoveCameraRequest):
     return {"ok": ok, "cam_id": req.cam_id}
 
 
+@app.post("/api/model/engine")
+async def set_model_engine_endpoint(req: ModelEngineRequest):
+    global current_model_type, current_model_variant, current_device
+    current_model_type = req.model_type
+    current_model_variant = req.model_variant or ("balanced" if req.model_type == "rtmpose" else "full")
+    current_device = req.device or "auto"
+
+    # Reload active cameras with new engine
+    snapshots = camera_manager.get_all_snapshots()
+    for cid, s in snapshots.items():
+        camera_manager.add_camera(
+            cam_id=cid,
+            source=s["source"],
+            name=s["name"],
+            model_type=current_model_type,
+            model_variant=current_model_variant,
+            device=current_device,
+        )
+
+    await broadcast_message({
+        "type": "model_engine_updated",
+        "model_type": current_model_type,
+        "model_variant": current_model_variant,
+        "device": current_device,
+    })
+    return {"ok": True, "model_type": current_model_type, "variant": current_model_variant, "device": current_device}
+
+
 @app.post("/api/calibration/load")
 def load_calibration_endpoint(req: CalibrationRequest):
     ok = triangulator.load_calibration(req.path)
@@ -158,11 +214,33 @@ def load_calibration_endpoint(req: CalibrationRequest):
     return {"ok": True, "calibrated": True}
 
 
+@app.post("/api/tpose/reset")
+async def reset_tpose_endpoint():
+    auto_tpose_calibrator.reset()
+    root_tracker.reset_anchor()
+    await broadcast_message({"type": "tpose_reset"})
+    return {"ok": True}
+
+
+@app.post("/api/tpose/force")
+async def force_tpose_endpoint():
+    res = auto_tpose_calibrator.force_calibrate()
+    if res:
+        await broadcast_message({"type": "tpose_calibrated", "calibration": res})
+        return {"ok": True, "calibration": res}
+    return {"ok": False, "error": "No frames buffered"}
+
+
+@app.post("/api/root_motion")
+async def set_root_motion_endpoint(req: RootMotionRequest):
+    root_tracker.mode = req.mode
+    root_tracker.reset_anchor()
+    await broadcast_message({"type": "root_motion_updated", "mode": req.mode})
+    return {"ok": True, "mode": req.mode}
+
+
 @app.get("/api/stream/{cam_id}")
 def mjpeg_stream(cam_id: str):
-    """
-    MJPEG stream endpoint for direct browser/HTML embedding.
-    """
     worker = camera_manager.get_camera(cam_id)
     if not worker:
         raise HTTPException(status_code=404, detail=f"Camera {cam_id} not found")
@@ -182,7 +260,7 @@ def mjpeg_stream(cam_id: str):
 
 
 # ==============================================================================
-# Recording & BVH Processing Endpoints
+# Recording Endpoints
 # ==============================================================================
 
 @app.post("/api/recording/start")
@@ -272,29 +350,38 @@ def download_recording_file(take_id: str, filename: str):
     return FileResponse(str(file_path), media_type=media_type, filename=filename)
 
 
+# ==============================================================================
+# WebSocket Endpoint & Broadcast Loop
+# ==============================================================================
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    global current_model_type, current_model_variant, current_device, filter_enabled
     await websocket.accept()
     logger.info("WebSocket client connected. Preparing initial setup packet...")
 
-    # Send initial setup packet FIRST before entering broadcast loop
     devices = await asyncio.to_thread(camera_manager.list_available_devices)
+    best_dev = get_best_onnx_device()
+
     await websocket.send_json({
         "type": "init",
         "connections": POSE_CONNECTIONS,
         "landmark_names": LANDMARK_NAMES,
         "devices": devices,
-        "model": current_model_variant,
+        "model_type": current_model_type,
+        "model_variant": current_model_variant,
+        "device": current_device,
+        "best_gpu_device": best_dev,
         "calibrated": triangulator.is_calibrated,
+        "root_motion_mode": root_tracker.mode,
+        "tpose": auto_tpose_calibrator.get_status(),
     })
 
-    # Now register for broadcast updates
     active_websockets.append(websocket)
     logger.info(f"WebSocket client initialized and active. Total clients: {len(active_websockets)}")
 
     try:
         while True:
-            # Receive client commands
             data = await websocket.receive_text()
             msg = json.loads(data)
             action = msg.get("action")
@@ -311,7 +398,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     cam_id=cam_id,
                     source=source,
                     name=name,
+                    model_type=current_model_type,
                     model_variant=current_model_variant,
+                    device=current_device,
                 )
                 await websocket.send_json({"type": "camera_added", "cam_id": cam_id})
 
@@ -321,6 +410,42 @@ async def websocket_endpoint(websocket: WebSocket):
                     camera_manager.remove_camera(cam_id)
                     await websocket.send_json({"type": "camera_removed", "cam_id": cam_id})
 
+            elif action == "set_model_engine":
+                current_model_type = msg.get("model_type", "mediapipe")
+                current_model_variant = msg.get("variant", "full")
+                current_device = msg.get("device", "auto")
+                snapshots = camera_manager.get_all_snapshots()
+                for cid, s in snapshots.items():
+                    camera_manager.add_camera(
+                        cam_id=cid,
+                        source=s["source"],
+                        name=s["name"],
+                        model_type=current_model_type,
+                        model_variant=current_model_variant,
+                        device=current_device,
+                    )
+                await broadcast_message({
+                    "type": "model_engine_updated",
+                    "model_type": current_model_type,
+                    "variant": current_model_variant,
+                    "device": current_device,
+                })
+
+            elif action == "set_root_motion":
+                root_tracker.mode = msg.get("mode", "global")
+                root_tracker.reset_anchor()
+                await broadcast_message({"type": "root_motion_updated", "mode": root_tracker.mode})
+
+            elif action == "reset_tpose_calibration":
+                auto_tpose_calibrator.reset()
+                root_tracker.reset_anchor()
+                await broadcast_message({"type": "tpose_reset"})
+
+            elif action == "trigger_tpose_calibration":
+                res = auto_tpose_calibrator.force_calibrate()
+                if res:
+                    await broadcast_message({"type": "tpose_calibrated", "calibration": res})
+
             elif action == "load_calibration":
                 cal_path = msg.get("path")
                 if cal_path:
@@ -328,7 +453,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_json({"type": "calibration_loaded", "ok": ok})
 
             elif action == "set_filter":
-                global filter_enabled
                 filter_enabled = bool(msg.get("enabled", True))
                 mc = msg.get("min_cutoff")
                 beta = msg.get("beta")
@@ -374,24 +498,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 else:
                     await websocket.send_json({"type": "recording_error", "error": res.get("error")})
 
-            elif action == "process_take":
-                target_take = msg.get("take_id")
-                height = float(msg.get("performer_height_m", 1.75))
-                smoother = str(msg.get("smoother", "savgol"))
-                cal_path = msg.get("calibration_path") or triangulator.calibration_path
-                await broadcast_message({"type": "processing_started", "take_id": target_take})
-                proc_res = await asyncio.to_thread(
-                    live_recorder.process_take,
-                    take_id=target_take,
-                    calibration_path=cal_path,
-                    performer_height_m=height,
-                    smoother=smoother,
-                )
-                if proc_res.get("ok"):
-                    await broadcast_message({"type": "processing_completed", **proc_res})
-                else:
-                    await broadcast_message({"type": "processing_error", **proc_res})
-
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected")
     except Exception as e:
@@ -405,7 +511,7 @@ async def broadcast_loop():
     """
     Broadcasts camera frames and combined 3D skeleton updates to all connected clients.
     """
-    target_interval = 1.0 / 30.0  # 30 fps broadcast rate
+    target_interval = 1.0 / 30.0
 
     while True:
         t0 = time.time()
@@ -413,40 +519,56 @@ async def broadcast_loop():
             snapshots = camera_manager.get_all_snapshots()
             now = time.time()
 
-            # Attempt multi-camera triangulation if calibrated
             pose_3d = None
             source_type = "none"
 
             if triangulator.is_calibrated and len(snapshots) >= 2:
-                # Build dict of active keypoints
                 cam_kps = {cid: s["landmarks_2d"] for cid, s in snapshots.items() if s.get("landmarks_2d")}
                 triangulated_pts = triangulator.triangulate(cam_kps)
                 if triangulated_pts:
                     pose_3d = triangulated_pts
                     source_type = "triangulated"
 
-            # If not triangulated, use the first active camera with valid 3D world landmarks
             if pose_3d is None:
                 for cid, s in snapshots.items():
                     w3d = s.get("world_landmarks_3d")
                     if w3d:
                         pose_3d = w3d
-                        source_type = f"mediapipe_world ({s.get('name', cid)})"
+                        eng = s.get("engine", current_model_type)
+                        source_type = f"{eng} ({s.get('name', cid)})"
                         break
 
-            # Apply 1-Euro jitter filter if enabled
+            # 1. Apply 1-Euro jitter filter
             if pose_3d and filter_enabled:
                 pose_3d = pose_filter.filter_pose(pose_3d, now)
+
+            # 2. Update T-Pose Auto-Calibrator
+            tpose_status = auto_tpose_calibrator.update(pose_3d, now) if pose_3d else auto_tpose_calibrator.get_status()
+
+            # 3. Apply Global Root Translation
+            primary_snap = next((s for s in snapshots.values() if s.get("landmarks_2d")), None)
+            if pose_3d and primary_snap:
+                pose_3d = root_tracker.apply_root_translation(
+                    joints_3d=pose_3d,
+                    landmarks_2d=primary_snap.get("landmarks_2d"),
+                    img_width=primary_snap.get("width", 640),
+                    img_height=primary_snap.get("height", 480),
+                    is_triangulated=(source_type == "triangulated"),
+                )
 
             # Record live 3D pose trajectory if recording
             if pose_3d and live_recorder.is_recording:
                 live_recorder.record_live_pose_3d(pose_3d, now, source_type)
 
-            # Build broadcast payload
             payload = {
                 "type": "stream_update",
                 "timestamp": now,
                 "recording": live_recorder.get_status(),
+                "model_engine": current_model_type,
+                "model_variant": current_model_variant,
+                "device": current_device,
+                "root_motion_mode": root_tracker.mode,
+                "tpose": tpose_status,
                 "cameras": {
                     cid: {
                         "cam_id": s["cam_id"],
@@ -456,6 +578,7 @@ async def broadcast_loop():
                         "error": s["error"],
                         "fps": s["fps"],
                         "latency_ms": s["latency_ms"],
+                        "engine": s.get("engine", current_model_type),
                         "width": s["width"],
                         "height": s["height"],
                         "landmarks_2d": s["landmarks_2d"],
@@ -470,7 +593,6 @@ async def broadcast_loop():
                 "calibrated": triangulator.is_calibrated,
             }
 
-            # Send to all connected WebSockets
             dead_sockets = []
             for ws in list(active_websockets):
                 try:
@@ -488,28 +610,31 @@ async def broadcast_loop():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Live Stream MediaPipe Mocap Server")
+    parser = argparse.ArgumentParser(description="Live Stream Mocap Server (MediaPipe & RTMPose)")
     parser.add_argument("--host", default="127.0.0.1", help="Host address")
     parser.add_argument("--port", type=int, default=8000, help="Port to run on (default 8000)")
-    parser.add_argument("--camera", type=str, default=None, help="Initial camera index or URL to start automatically")
-    parser.add_argument("--model", choices=["lite", "full", "heavy"], default="full", help="MediaPipe model variant")
+    parser.add_argument("--camera", type=str, default=None, help="Initial camera index or URL")
+    parser.add_argument("--engine", choices=["mediapipe", "rtmpose"], default="mediapipe", help="Pose estimation engine")
+    parser.add_argument("--model", default="full", help="Model variant (lite, full, heavy, balanced, performance)")
+    parser.add_argument("--device", default="auto", help="Execution device (auto, dml, cuda, cpu)")
     parser.add_argument("--calibration", type=str, default=None, help="Path to calibration.json")
     parser.add_argument("--launch-gui", action="store_true", help="Launch Electron GUI automatically")
 
     args = parser.parse_args()
 
-    global current_model_variant
+    global current_model_type, current_model_variant, current_device
+    current_model_type = args.engine
     current_model_variant = args.model
+    current_device = args.device
 
     if args.calibration:
         triangulator.load_calibration(args.calibration)
 
     if args.camera is not None:
         src = int(args.camera) if args.camera.isdigit() else args.camera
-        camera_manager.add_camera("cam0", src, name=f"Camera {src}", model_variant=args.model)
+        camera_manager.add_camera("cam0", src, name=f"Camera {src}", model_type=args.engine, model_variant=args.model, device=args.device)
 
     if args.launch_gui:
-        # Launch Electron GUI in background
         gui_dir = Path(__file__).resolve().parent / "gui"
         try:
             if sys.platform.startswith("win"):
@@ -519,7 +644,7 @@ def main():
         except Exception as e:
             logger.warning(f"Could not auto-launch Electron GUI: {e}")
 
-    logger.info(f"Starting Live Stream Server on http://{args.host}:{args.port}")
+    logger.info(f"Starting Live Stream Server on http://{args.host}:{args.port} [Engine: {args.engine}, Device: {args.device}]")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 

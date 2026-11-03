@@ -29190,8 +29190,11 @@ void main() {
   var cameraCards = /* @__PURE__ */ new Map();
   var globalShowOverlays = true;
   var availableDevices = [];
+  var activeCalibration = null;
+  var lastTPoseState = "idle";
   var frameCounter = 0;
   var lastFpsTime = performance.now();
+  var brandEngineBadge = document.getElementById("brand-engine-badge");
   var statusDot = document.getElementById("status-dot");
   var statusText = document.getElementById("status-text");
   var activeCamsCount = document.getElementById("active-cams-count");
@@ -29200,6 +29203,10 @@ void main() {
   var viewportSourceBadge = document.getElementById("viewport-source-badge");
   var jointCountLabel = document.getElementById("joint-count-label");
   var filterStatusLabel = document.getElementById("filter-status-label");
+  var tposeWidget = document.getElementById("tpose-widget");
+  var tposeRingFill = document.getElementById("tpose-ring-fill");
+  var tposeStatusText = document.getElementById("tpose-status-text");
+  var btnResetTpose = document.getElementById("btn-reset-tpose");
   var cameraGrid = document.getElementById("camera-grid");
   var emptyState = document.getElementById("empty-state");
   var detectedQuickList = document.getElementById("detected-quick-list");
@@ -29233,6 +29240,7 @@ void main() {
   var btnViewSide = document.getElementById("btn-view-side");
   var btnViewTop = document.getElementById("btn-view-top");
   var btnViewReset = document.getElementById("btn-view-reset");
+  var chkGlobalRoot = document.getElementById("chk-global-root");
   var chkGrid = document.getElementById("chk-grid");
   var chkAxes = document.getElementById("chk-axes");
   var chkFilter = document.getElementById("chk-filter");
@@ -29251,10 +29259,30 @@ void main() {
   var btnBrowseCal = document.getElementById("btn-browse-cal");
   var btnLoadCal = document.getElementById("btn-load-cal");
   var calStatusMsg = document.getElementById("cal-status-msg");
-  var filterCutoffSlider = document.getElementById("filter-cutoff");
-  var cutoffValLabel = document.getElementById("cutoff-val");
-  var filterBetaSlider = document.getElementById("filter-beta");
-  var betaValLabel = document.getElementById("beta-val");
+  var selectModelEngine = document.getElementById("select-model-engine");
+  var selectEngineDevice = document.getElementById("select-engine-device");
+  var selectModelVariant = document.getElementById("select-model-variant");
+  var btnApplyEngine = document.getElementById("btn-apply-engine");
+  var btnForceTpose = document.getElementById("btn-force-tpose");
+  var btnResetTposeSettings = document.getElementById("btn-reset-tpose-settings");
+  var tposeCalInfo = document.getElementById("tpose-cal-info");
+  function playCalibrationChime() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(1e-3, ctx.currentTime + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.35);
+    } catch (e) {
+    }
+  }
   var threeContainer = document.getElementById("three-container");
   var scene = new Scene();
   scene.background = new Color(658708);
@@ -29338,29 +29366,64 @@ void main() {
       return;
     }
     const joints = pose3DData.joints;
-    const source = pose3DData.source || "MediaPipe";
+    const source = pose3DData.source || "Pose Tracker";
     viewportSourceBadge.textContent = source;
-    poseSourceLabel.textContent = source.includes("triangulated") ? "Triangulated" : "MediaPipe";
+    poseSourceLabel.textContent = source.includes("triangulated") ? "Triangulated" : source.includes("rtm") ? "RTMPose" : "MediaPipe";
     let visibleCount = 0;
     const positions = /* @__PURE__ */ new Map();
-    let minY = Infinity;
-    for (const j of joints) {
-      if (j.visibility >= 0.3) {
-        minY = Math.min(minY, j.y);
+    const isGlobalMode = chkGlobalRoot ? chkGlobalRoot.checked : true;
+    let groundOffset = 0;
+    if (isGlobalMode && activeCalibration && Number.isFinite(activeCalibration.floor_y)) {
+      groundOffset = -activeCalibration.floor_y;
+    } else if (!isGlobalMode) {
+      let hipX = 0, hipZ = 0, hipCount = 0;
+      for (const j of joints) {
+        if ((j.name === "LEFT_HIP" || j.name === "RIGHT_HIP") && j.visibility >= 0.3) {
+          hipX += j.x;
+          hipZ += j.z;
+          hipCount++;
+        }
       }
+      const centerOffsetX = hipCount > 0 ? -(hipX / hipCount) : 0;
+      const centerOffsetZ = hipCount > 0 ? -(hipZ / hipCount) : 0;
+      let minY = Infinity;
+      for (const j of joints) {
+        if (j.visibility >= 0.3) minY = Math.min(minY, j.y);
+      }
+      groundOffset = Number.isFinite(minY) ? -minY : 0;
+      for (let i = 0; i < joints.length && i < jointMeshes.length; i++) {
+        const j = joints[i];
+        const mesh = jointMeshes[i];
+        if (j.visibility >= 0.3) {
+          const pos = new Vector3(j.x + centerOffsetX, j.y + groundOffset, j.z + centerOffsetZ);
+          mesh.position.copy(pos);
+          mesh.visible = true;
+          positions.set(i, pos);
+          visibleCount++;
+        } else {
+          mesh.visible = false;
+        }
+      }
+    } else {
+      let minY = Infinity;
+      for (const j of joints) {
+        if (j.visibility >= 0.3) minY = Math.min(minY, j.y);
+      }
+      groundOffset = Number.isFinite(minY) ? -minY : 0;
     }
-    const groundOffset = Number.isFinite(minY) ? -minY : 0;
-    for (let i = 0; i < joints.length && i < jointMeshes.length; i++) {
-      const j = joints[i];
-      const mesh = jointMeshes[i];
-      if (j.visibility >= 0.3) {
-        const pos = new Vector3(j.x, j.y + groundOffset, j.z);
-        mesh.position.copy(pos);
-        mesh.visible = true;
-        positions.set(i, pos);
-        visibleCount++;
-      } else {
-        mesh.visible = false;
+    if (isGlobalMode) {
+      for (let i = 0; i < joints.length && i < jointMeshes.length; i++) {
+        const j = joints[i];
+        const mesh = jointMeshes[i];
+        if (j.visibility >= 0.3) {
+          const pos = new Vector3(j.x, j.y + groundOffset, j.z);
+          mesh.position.copy(pos);
+          mesh.visible = true;
+          positions.set(i, pos);
+          visibleCount++;
+        } else {
+          mesh.visible = false;
+        }
       }
     }
     jointCountLabel.textContent = `${visibleCount} Joints Tracked`;
@@ -29382,6 +29445,43 @@ void main() {
       }
       bone.visible = false;
     }
+  }
+  function updateTPoseWidget(tpose) {
+    if (!tpose || !tposeWidget) return;
+    const state = tpose.state || "idle";
+    const progress = tpose.progress || 0;
+    const strokeOffset = 50.265 * (1 - progress);
+    if (tposeRingFill) {
+      tposeRingFill.style.strokeDashoffset = strokeOffset;
+    }
+    tposeWidget.classList.remove("holding", "calibrated");
+    if (state === "holding") {
+      tposeWidget.classList.add("holding");
+      tposeStatusText.textContent = `Hold T-Pose (${Math.round(progress * 100)}%)`;
+    } else if (state === "calibrated") {
+      tposeWidget.classList.add("calibrated");
+      tposeStatusText.textContent = "Calibrated \u2713";
+      if (lastTPoseState !== "calibrated") {
+        showToast("T-Pose Calibrated! Rigid bone lengths & floor locked.", "success");
+        playCalibrationChime();
+      }
+    } else {
+      tposeStatusText.textContent = "T-Pose: Idle";
+    }
+    lastTPoseState = state;
+    if (tpose.calibration) {
+      activeCalibration = tpose.calibration;
+      updateCalibrationDetailsUI(tpose.calibration);
+    }
+  }
+  function updateCalibrationDetailsUI(cal) {
+    if (!tposeCalInfo || !cal) return;
+    const bones = cal.bone_lengths ? Object.keys(cal.bone_lengths).length : 0;
+    tposeCalInfo.innerHTML = `
+    <strong>Status:</strong> Calibrated (${cal.samples_count || 30} samples)<br/>
+    <strong>Floor Height:</strong> ${cal.floor_y || 0}m | <strong>Scale:</strong> ${cal.scale_factor || 1}x<br/>
+    <strong>Wingspan:</strong> ${cal.wingspan_m || 0}m | <strong>Rigid Bones:</strong> ${bones} segments locked
+  `;
   }
   function draw2DSkeleton(ctx, landmarks2d, width, height) {
     ctx.clearRect(0, 0, width, height);
@@ -29571,10 +29671,17 @@ void main() {
         if (msg.connections) poseConnections = msg.connections;
         ensureBoneMeshes(poseConnections.length);
         if (msg.devices) syncVerifiedDevices(msg.devices, false);
+        if (msg.model_type && selectModelEngine) selectModelEngine.value = msg.model_type;
+        if (msg.device && selectEngineDevice) selectEngineDevice.value = msg.device;
+        if (msg.model_variant && selectModelVariant) selectModelVariant.value = msg.model_variant;
+        if (msg.root_motion_mode && chkGlobalRoot) chkGlobalRoot.checked = msg.root_motion_mode === "global";
+        if (msg.tpose) updateTPoseWidget(msg.tpose);
+        if (msg.model_type && brandEngineBadge) {
+          brandEngineBadge.textContent = `${msg.model_type.toUpperCase()} (${msg.device || "auto"})`;
+        }
         break;
       case "devices":
         if (msg.devices) syncVerifiedDevices(msg.devices, true);
-        break;
         break;
       case "stream_update":
         handleStreamUpdate(msg);
@@ -29585,6 +29692,26 @@ void main() {
       case "camera_removed":
         removeCameraCard(msg.cam_id);
         showToast(`Camera removed: ${msg.cam_id}`, "info");
+        break;
+      case "tpose_reset":
+        activeCalibration = null;
+        if (tposeCalInfo) tposeCalInfo.innerHTML = "";
+        showToast("T-Pose calibration reset", "info");
+        break;
+      case "tpose_calibrated":
+        activeCalibration = msg.calibration;
+        updateCalibrationDetailsUI(msg.calibration);
+        showToast("T-Pose Calibrated!", "success");
+        playCalibrationChime();
+        break;
+      case "model_engine_updated":
+        showToast(`Engine updated: ${msg.model_type} (${msg.variant || ""})`, "success");
+        if (brandEngineBadge) {
+          brandEngineBadge.textContent = `${msg.model_type.toUpperCase()} (${msg.device || "auto"})`;
+        }
+        break;
+      case "root_motion_updated":
+        showToast(`Root tracking mode: ${msg.mode}`, "info");
         break;
       case "calibration_loaded":
         if (msg.ok) {
@@ -29602,21 +29729,16 @@ void main() {
         break;
       case "recording_stopped":
         setRecordingState(false, null);
-        showToast(`Recording saved! Duration: ${msg.duration_s || 0}s`, "success");
+        showToast(`Recording stopped: ${msg.take_id}`, "success");
         break;
       case "processing_started":
         showProcessingModal(msg.take_id);
         break;
       case "processing_completed":
         showProcessingSuccessModal(msg);
-        showToast("BVH exported successfully!", "success");
         break;
       case "processing_error":
         showProcessingErrorModal(msg);
-        showToast(`Processing error: ${msg.error || "Failed"}`, "error");
-        break;
-      case "recording_error":
-        showToast(msg.error || "Recording error", "error");
         break;
     }
   }
@@ -29627,6 +29749,12 @@ void main() {
       globalFpsLabel.textContent = Math.round(frameCounter * 1e3 / (now - lastFpsTime));
       frameCounter = 0;
       lastFpsTime = now;
+    }
+    if (msg.tpose) {
+      updateTPoseWidget(msg.tpose);
+    }
+    if (msg.model_engine && brandEngineBadge) {
+      brandEngineBadge.textContent = `${msg.model_engine.toUpperCase()} (${msg.device || "auto"})`;
     }
     if (msg.recording) {
       const rec = msg.recording;
@@ -29675,7 +29803,8 @@ void main() {
       }
       card.fpsBadge.textContent = `${data.fps || 0} FPS`;
       card.resLabel.textContent = `${data.width || 0}x${data.height || 0}`;
-      card.latLabel.textContent = `${data.latency_ms || 0} ms`;
+      const eng = data.engine ? ` (${data.engine})` : "";
+      card.latLabel.textContent = `${data.latency_ms || 0} ms${eng}`;
       if (card.showOverlay && data.landmarks_2d && card.img.clientWidth > 0 && data.image) {
         const rect = card.img.getBoundingClientRect();
         if (card.canvas.width !== rect.width || card.canvas.height !== rect.height) {
@@ -29690,25 +29819,9 @@ void main() {
     update3DSkeleton(msg.pose_3d);
   }
   var isScanningHardware = false;
-  var lastBrowserCameras = [];
   async function scanHardwareCameras(showToastNotification = false) {
     if (isScanningHardware) return;
     isScanningHardware = true;
-    localDeviceList.innerHTML = '<div class="loading-spinner" style="padding: 12px; color: var(--accent-cyan);">Scanning connected cameras...</div>';
-    try {
-      if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-        let devices = await navigator.mediaDevices.enumerateDevices();
-        let videoDevs = devices.filter((d) => d.kind === "videoinput");
-        lastBrowserCameras = videoDevs.map((d, i) => ({
-          index: i,
-          name: d.label || `Camera ${i}`,
-          deviceId: d.deviceId
-        }));
-      }
-    } catch (e) {
-      console.warn("Browser enumerateDevices error:", e);
-    }
-    sendWSCommand("list_devices");
     try {
       const res = await fetch(`http://127.0.0.1:${WS_PORT}/api/cameras`);
       if (res.ok) {
@@ -29728,11 +29841,9 @@ void main() {
     const verified = [];
     for (const sCam of serverDevices) {
       if (sCam.available) {
-        const bCam = lastBrowserCameras.find((b) => b.index === sCam.index);
-        const friendlyName = bCam && bCam.name ? bCam.name : sCam.name;
         verified.push({
           index: sCam.index,
-          name: friendlyName,
+          name: sCam.name,
           available: true,
           in_use: sCam.in_use || false
         });
@@ -29898,28 +30009,40 @@ void main() {
       showToast("Select or enter a calibration file path first", "error");
     }
   });
-  document.querySelectorAll('input[name="model-variant"]').forEach((radio) => {
-    radio.addEventListener("change", () => {
-      sendWSCommand("set_model", { model_variant: radio.value });
-      showToast(`Switched MediaPipe model to ${radio.value}`, "info");
+  if (btnApplyEngine) {
+    btnApplyEngine.addEventListener("click", () => {
+      const engine = selectModelEngine.value;
+      const device = selectEngineDevice.value;
+      const variant = selectModelVariant.value;
+      sendWSCommand("set_model_engine", {
+        model_type: engine,
+        device,
+        variant
+      });
+      showToast(`Switched engine to ${engine.toUpperCase()} (${device})`, "info");
     });
-  });
-  filterCutoffSlider.addEventListener("input", (e) => {
-    cutoffValLabel.textContent = e.target.value;
-    sendWSCommand("set_filter", {
-      enabled: chkFilter.checked,
-      min_cutoff: parseFloat(e.target.value),
-      beta: parseFloat(filterBetaSlider.value)
+  }
+  if (btnResetTpose) {
+    btnResetTpose.addEventListener("click", () => {
+      sendWSCommand("reset_tpose_calibration");
     });
-  });
-  filterBetaSlider.addEventListener("input", (e) => {
-    betaValLabel.textContent = e.target.value;
-    sendWSCommand("set_filter", {
-      enabled: chkFilter.checked,
-      min_cutoff: parseFloat(filterCutoffSlider.value),
-      beta: parseFloat(e.target.value)
+  }
+  if (btnResetTposeSettings) {
+    btnResetTposeSettings.addEventListener("click", () => {
+      sendWSCommand("reset_tpose_calibration");
     });
-  });
+  }
+  if (btnForceTpose) {
+    btnForceTpose.addEventListener("click", () => {
+      sendWSCommand("trigger_tpose_calibration");
+    });
+  }
+  if (chkGlobalRoot) {
+    chkGlobalRoot.addEventListener("change", () => {
+      const mode = chkGlobalRoot.checked ? "global" : "root_locked";
+      sendWSCommand("set_root_motion", { mode });
+    });
+  }
   btnToggleAllOverlays.addEventListener("click", () => {
     globalShowOverlays = !globalShowOverlays;
     btnToggleAllOverlays.textContent = globalShowOverlays ? "Hide 2D Overlays" : "Show 2D Overlays";
@@ -29957,13 +30080,12 @@ void main() {
     filterStatusLabel.textContent = `1\u20AC Filter: ${chkFilter.checked ? "ON" : "OFF"}`;
     filterStatusLabel.classList.toggle("pill-active", chkFilter.checked);
     sendWSCommand("set_filter", {
-      enabled: chkFilter.checked,
-      min_cutoff: parseFloat(filterCutoffSlider.value),
-      beta: parseFloat(filterBetaSlider.value)
+      enabled: chkFilter.checked
     });
   });
   function showToast(message, type = "info") {
     const container = document.getElementById("toast-container");
+    if (!container) return;
     const toast = document.createElement("div");
     toast.className = `toast toast-${type}`;
     toast.textContent = message;

@@ -32,6 +32,10 @@ const cameraCards = new Map(); // cam_id -> { element, img, canvas, ctx, showOve
 let globalShowOverlays = true;
 let availableDevices = [];
 
+// Calibration & T-Pose state
+let activeCalibration = null;
+let lastTPoseState = 'idle';
+
 // Telemetry
 let frameCounter = 0;
 let lastFpsTime = performance.now();
@@ -40,6 +44,7 @@ let lastFpsTime = performance.now();
    DOM References
    ========================================================================== */
 
+const brandEngineBadge = document.getElementById('brand-engine-badge');
 const statusDot = document.getElementById('status-dot');
 const statusText = document.getElementById('status-text');
 const activeCamsCount = document.getElementById('active-cams-count');
@@ -48,6 +53,12 @@ const globalFpsLabel = document.getElementById('global-fps');
 const viewportSourceBadge = document.getElementById('viewport-source-badge');
 const jointCountLabel = document.getElementById('joint-count-label');
 const filterStatusLabel = document.getElementById('filter-status-label');
+
+// T-Pose widget
+const tposeWidget = document.getElementById('tpose-widget');
+const tposeRingFill = document.getElementById('tpose-ring-fill');
+const tposeStatusText = document.getElementById('tpose-status-text');
+const btnResetTpose = document.getElementById('btn-reset-tpose');
 
 const cameraGrid = document.getElementById('camera-grid');
 const emptyState = document.getElementById('empty-state');
@@ -95,6 +106,7 @@ const btnViewTop = document.getElementById('btn-view-top');
 const btnViewReset = document.getElementById('btn-view-reset');
 
 // Viewport toggles
+const chkGlobalRoot = document.getElementById('chk-global-root');
 const chkGrid = document.getElementById('chk-grid');
 const chkAxes = document.getElementById('chk-axes');
 const chkFilter = document.getElementById('chk-filter');
@@ -116,10 +128,37 @@ const calPathInput = document.getElementById('cal-path-input');
 const btnBrowseCal = document.getElementById('btn-browse-cal');
 const btnLoadCal = document.getElementById('btn-load-cal');
 const calStatusMsg = document.getElementById('cal-status-msg');
-const filterCutoffSlider = document.getElementById('filter-cutoff');
-const cutoffValLabel = document.getElementById('cutoff-val');
-const filterBetaSlider = document.getElementById('filter-beta');
-const betaValLabel = document.getElementById('beta-val');
+
+const selectModelEngine = document.getElementById('select-model-engine');
+const selectEngineDevice = document.getElementById('select-engine-device');
+const selectModelVariant = document.getElementById('select-model-variant');
+const btnApplyEngine = document.getElementById('btn-apply-engine');
+const btnForceTpose = document.getElementById('btn-force-tpose');
+const btnResetTposeSettings = document.getElementById('btn-reset-tpose-settings');
+const tposeCalInfo = document.getElementById('tpose-cal-info');
+
+/* ==========================================================================
+   Audio Synthesizer Chime
+   ========================================================================== */
+
+function playCalibrationChime() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+    osc.frequency.exponentialRampToValueAtTime(880.0, ctx.currentTime + 0.15); // A5
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.35);
+  } catch (e) {
+    // Audio context may require user interaction
+  }
+}
 
 /* ==========================================================================
    Three.js 3D Viewport Setup
@@ -185,7 +224,7 @@ for (let i = 0; i < 33; i++) {
 
 // Create Bone Cylinders
 const boneGeo = new THREE.CylinderGeometry(0.01, 0.01, 1, 12);
-boneGeo.translate(0, 0.5, 0); // Origin at base for easy orientation
+boneGeo.translate(0, 0.5, 0);
 boneGeo.rotateX(Math.PI / 2);
 
 function ensureBoneMeshes(count) {
@@ -233,37 +272,75 @@ function update3DSkeleton(pose3DData) {
   }
 
   const joints = pose3DData.joints;
-  const source = pose3DData.source || 'MediaPipe';
+  const source = pose3DData.source || 'Pose Tracker';
   viewportSourceBadge.textContent = source;
-  poseSourceLabel.textContent = source.includes('triangulated') ? 'Triangulated' : 'MediaPipe';
+  poseSourceLabel.textContent = source.includes('triangulated') ? 'Triangulated' : (source.includes('rtm') ? 'RTMPose' : 'MediaPipe');
 
   let visibleCount = 0;
   const positions = new Map(); // index -> THREE.Vector3
 
-  // MediaPipe coordinates are in meters
-  // MediaPipe: X right, Y up (we inverted Y in backend), Z depth
-  // Offset Y so feet/ground is near Y=0
-  let minY = Infinity;
-  for (const j of joints) {
-    if (j.visibility >= 0.3) {
-      minY = Math.min(minY, j.y);
+  const isGlobalMode = chkGlobalRoot ? chkGlobalRoot.checked : true;
+  let groundOffset = 0;
+
+  if (isGlobalMode && activeCalibration && Number.isFinite(activeCalibration.floor_y)) {
+    // Use calibrated static floor height
+    groundOffset = -activeCalibration.floor_y;
+  } else if (!isGlobalMode) {
+    // Center pelvis at origin for in-place rotational inspection
+    let hipX = 0, hipZ = 0, hipCount = 0;
+    for (const j of joints) {
+      if ((j.name === 'LEFT_HIP' || j.name === 'RIGHT_HIP') && j.visibility >= 0.3) {
+        hipX += j.x;
+        hipZ += j.z;
+        hipCount++;
+      }
     }
+    const centerOffsetX = hipCount > 0 ? -(hipX / hipCount) : 0;
+    const centerOffsetZ = hipCount > 0 ? -(hipZ / hipCount) : 0;
+
+    let minY = Infinity;
+    for (const j of joints) {
+      if (j.visibility >= 0.3) minY = Math.min(minY, j.y);
+    }
+    groundOffset = Number.isFinite(minY) ? -minY : 0;
+
+    for (let i = 0; i < joints.length && i < jointMeshes.length; i++) {
+      const j = joints[i];
+      const mesh = jointMeshes[i];
+
+      if (j.visibility >= 0.3) {
+        const pos = new THREE.Vector3(j.x + centerOffsetX, j.y + groundOffset, j.z + centerOffsetZ);
+        mesh.position.copy(pos);
+        mesh.visible = true;
+        positions.set(i, pos);
+        visibleCount++;
+      } else {
+        mesh.visible = false;
+      }
+    }
+  } else {
+    // Dynamic floor offset before T-pose calibration
+    let minY = Infinity;
+    for (const j of joints) {
+      if (j.visibility >= 0.3) minY = Math.min(minY, j.y);
+    }
+    groundOffset = Number.isFinite(minY) ? -minY : 0;
   }
-  const groundOffset = Number.isFinite(minY) ? -minY : 0;
 
-  for (let i = 0; i < joints.length && i < jointMeshes.length; i++) {
-    const j = joints[i];
-    const mesh = jointMeshes[i];
+  if (isGlobalMode) {
+    for (let i = 0; i < joints.length && i < jointMeshes.length; i++) {
+      const j = joints[i];
+      const mesh = jointMeshes[i];
 
-    if (j.visibility >= 0.3) {
-      // Metric coordinates centered around origin
-      const pos = new THREE.Vector3(j.x, j.y + groundOffset, j.z);
-      mesh.position.copy(pos);
-      mesh.visible = true;
-      positions.set(i, pos);
-      visibleCount++;
-    } else {
-      mesh.visible = false;
+      if (j.visibility >= 0.3) {
+        const pos = new THREE.Vector3(j.x, j.y + groundOffset, j.z);
+        mesh.position.copy(pos);
+        mesh.visible = true;
+        positions.set(i, pos);
+        visibleCount++;
+      } else {
+        mesh.visible = false;
+      }
     }
   }
 
@@ -293,6 +370,55 @@ function update3DSkeleton(pose3DData) {
 }
 
 /* ==========================================================================
+   T-Pose Auto-Calibration Widget Update
+   ========================================================================== */
+
+function updateTPoseWidget(tpose) {
+  if (!tpose || !tposeWidget) return;
+  const state = tpose.state || 'idle';
+  const progress = tpose.progress || 0.0;
+
+  // Circumference of r=8 is 2 * PI * 8 = 50.265
+  const strokeOffset = 50.265 * (1.0 - progress);
+  if (tposeRingFill) {
+    tposeRingFill.style.strokeDashoffset = strokeOffset;
+  }
+
+  tposeWidget.classList.remove('holding', 'calibrated');
+
+  if (state === 'holding') {
+    tposeWidget.classList.add('holding');
+    tposeStatusText.textContent = `Hold T-Pose (${Math.round(progress * 100)}%)`;
+  } else if (state === 'calibrated') {
+    tposeWidget.classList.add('calibrated');
+    tposeStatusText.textContent = 'Calibrated ✓';
+    if (lastTPoseState !== 'calibrated') {
+      showToast('T-Pose Calibrated! Rigid bone lengths & floor locked.', 'success');
+      playCalibrationChime();
+    }
+  } else {
+    tposeStatusText.textContent = 'T-Pose: Idle';
+  }
+
+  lastTPoseState = state;
+
+  if (tpose.calibration) {
+    activeCalibration = tpose.calibration;
+    updateCalibrationDetailsUI(tpose.calibration);
+  }
+}
+
+function updateCalibrationDetailsUI(cal) {
+  if (!tposeCalInfo || !cal) return;
+  const bones = cal.bone_lengths ? Object.keys(cal.bone_lengths).length : 0;
+  tposeCalInfo.innerHTML = `
+    <strong>Status:</strong> Calibrated (${cal.samples_count || 30} samples)<br/>
+    <strong>Floor Height:</strong> ${cal.floor_y || 0}m | <strong>Scale:</strong> ${cal.scale_factor || 1.0}x<br/>
+    <strong>Wingspan:</strong> ${cal.wingspan_m || 0}m | <strong>Rigid Bones:</strong> ${bones} segments locked
+  `;
+}
+
+/* ==========================================================================
    2D Canvas Skeleton Rendering
    ========================================================================== */
 
@@ -315,14 +441,13 @@ function draw2DSkeleton(ctx, landmarks2d, width, height) {
       const p1 = points.get(startIdx);
       const p2 = points.get(endIdx);
 
-      // Color coding for body parts
-      let strokeStyle = '#00d2ff'; // Default cyan
+      let strokeStyle = '#00d2ff';
       if ([11, 13, 15, 23, 25, 27].includes(startIdx)) {
-        strokeStyle = '#8b5cf6'; // Left side: purple
+        strokeStyle = '#8b5cf6';
       } else if ([12, 14, 16, 24, 26, 28].includes(startIdx)) {
-        strokeStyle = '#f59e0b'; // Right side: orange/amber
+        strokeStyle = '#f59e0b';
       } else if ([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].includes(startIdx)) {
-        strokeStyle = '#10b981'; // Face: emerald
+        strokeStyle = '#10b981';
       }
 
       ctx.beginPath();
@@ -494,11 +619,9 @@ function connectWebSocket() {
     isConnected = false;
     statusText.textContent = 'Disconnected';
     statusDot.className = 'status-dot dot-offline';
-    // Clear camera cards on disconnect
     for (const camId of Array.from(cameraCards.keys())) {
       removeCameraCard(camId);
     }
-    // Schedule reconnect
     clearTimeout(reconnectTimer);
     reconnectTimer = setTimeout(connectWebSocket, 2000);
   };
@@ -522,12 +645,18 @@ function handleServerMessage(msg) {
       if (msg.connections) poseConnections = msg.connections;
       ensureBoneMeshes(poseConnections.length);
       if (msg.devices) syncVerifiedDevices(msg.devices, false);
+      if (msg.model_type && selectModelEngine) selectModelEngine.value = msg.model_type;
+      if (msg.device && selectEngineDevice) selectEngineDevice.value = msg.device;
+      if (msg.model_variant && selectModelVariant) selectModelVariant.value = msg.model_variant;
+      if (msg.root_motion_mode && chkGlobalRoot) chkGlobalRoot.checked = (msg.root_motion_mode === 'global');
+      if (msg.tpose) updateTPoseWidget(msg.tpose);
+      if (msg.model_type && brandEngineBadge) {
+        brandEngineBadge.textContent = `${msg.model_type.toUpperCase()} (${msg.device || 'auto'})`;
+      }
       break;
 
     case 'devices':
       if (msg.devices) syncVerifiedDevices(msg.devices, true);
-      break;
-
       break;
 
     case 'stream_update':
@@ -541,6 +670,30 @@ function handleServerMessage(msg) {
     case 'camera_removed':
       removeCameraCard(msg.cam_id);
       showToast(`Camera removed: ${msg.cam_id}`, 'info');
+      break;
+
+    case 'tpose_reset':
+      activeCalibration = null;
+      if (tposeCalInfo) tposeCalInfo.innerHTML = '';
+      showToast('T-Pose calibration reset', 'info');
+      break;
+
+    case 'tpose_calibrated':
+      activeCalibration = msg.calibration;
+      updateCalibrationDetailsUI(msg.calibration);
+      showToast('T-Pose Calibrated!', 'success');
+      playCalibrationChime();
+      break;
+
+    case 'model_engine_updated':
+      showToast(`Engine updated: ${msg.model_type} (${msg.variant || ''})`, 'success');
+      if (brandEngineBadge) {
+        brandEngineBadge.textContent = `${msg.model_type.toUpperCase()} (${msg.device || 'auto'})`;
+      }
+      break;
+
+    case 'root_motion_updated':
+      showToast(`Root tracking mode: ${msg.mode}`, 'info');
       break;
 
     case 'calibration_loaded':
@@ -561,7 +714,7 @@ function handleServerMessage(msg) {
 
     case 'recording_stopped':
       setRecordingState(false, null);
-      showToast(`Recording saved! Duration: ${msg.duration_s || 0}s`, 'success');
+      showToast(`Recording stopped: ${msg.take_id}`, 'success');
       break;
 
     case 'processing_started':
@@ -570,22 +723,15 @@ function handleServerMessage(msg) {
 
     case 'processing_completed':
       showProcessingSuccessModal(msg);
-      showToast('BVH exported successfully!', 'success');
       break;
 
     case 'processing_error':
       showProcessingErrorModal(msg);
-      showToast(`Processing error: ${msg.error || 'Failed'}`, 'error');
-      break;
-
-    case 'recording_error':
-      showToast(msg.error || 'Recording error', 'error');
       break;
   }
 }
 
 function handleStreamUpdate(msg) {
-  // Global stream FPS tracking
   frameCounter++;
   const now = performance.now();
   if (now - lastFpsTime >= 1000) {
@@ -594,7 +740,17 @@ function handleStreamUpdate(msg) {
     lastFpsTime = now;
   }
 
-  // Update recording pill telemetry
+  // Update T-Pose Auto-Calibration Widget
+  if (msg.tpose) {
+    updateTPoseWidget(msg.tpose);
+  }
+
+  // Update Brand Badge
+  if (msg.model_engine && brandEngineBadge) {
+    brandEngineBadge.textContent = `${msg.model_engine.toUpperCase()} (${msg.device || 'auto'})`;
+  }
+
+  // Update recording pill
   if (msg.recording) {
     const rec = msg.recording;
     if (rec.is_recording !== isRecording) {
@@ -649,7 +805,8 @@ function handleStreamUpdate(msg) {
 
     card.fpsBadge.textContent = `${data.fps || 0} FPS`;
     card.resLabel.textContent = `${data.width || 0}x${data.height || 0}`;
-    card.latLabel.textContent = `${data.latency_ms || 0} ms`;
+    const eng = data.engine ? ` (${data.engine})` : '';
+    card.latLabel.textContent = `${data.latency_ms || 0} ms${eng}`;
 
     // 2D Skeleton overlay
     if (card.showOverlay && data.landmarks_2d && card.img.clientWidth > 0 && data.image) {
@@ -669,34 +826,15 @@ function handleStreamUpdate(msg) {
 }
 
 /* ==========================================================================
-   Camera Discovery & Add UI
+   Camera Hardware Scanning
    ========================================================================== */
 
-let isScanningHardware = false;
 let lastBrowserCameras = [];
+let isScanningHardware = false;
 
 async function scanHardwareCameras(showToastNotification = false) {
   if (isScanningHardware) return;
   isScanningHardware = true;
-
-  localDeviceList.innerHTML = '<div class="loading-spinner" style="padding: 12px; color: var(--accent-cyan);">Scanning connected cameras...</div>';
-
-  try {
-    if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-      let devices = await navigator.mediaDevices.enumerateDevices();
-      let videoDevs = devices.filter(d => d.kind === 'videoinput');
-      lastBrowserCameras = videoDevs.map((d, i) => ({
-        index: i,
-        name: d.label || `Camera ${i}`,
-        deviceId: d.deviceId
-      }));
-    }
-  } catch (e) {
-    console.warn('Browser enumerateDevices error:', e);
-  }
-
-  // Request backend hardware verification
-  sendWSCommand('list_devices');
 
   try {
     const res = await fetch(`http://127.0.0.1:${WS_PORT}/api/cameras`);
@@ -709,7 +847,7 @@ async function scanHardwareCameras(showToastNotification = false) {
       }
     }
   } catch (e) {
-    // If backend fetch timed out, WebSocket message will deliver devices
+    // WebSocket message fallback
   }
 
   isScanningHardware = false;
@@ -718,15 +856,12 @@ async function scanHardwareCameras(showToastNotification = false) {
 function syncVerifiedDevices(serverDevices, showToastNotification = false) {
   if (!serverDevices) return;
 
-  // ONLY keep devices verified as physically connected and openable by OpenCV!
   const verified = [];
   for (const sCam of serverDevices) {
     if (sCam.available) {
-      const bCam = lastBrowserCameras.find(b => b.index === sCam.index);
-      const friendlyName = (bCam && bCam.name) ? bCam.name : sCam.name;
       verified.push({
         index: sCam.index,
-        name: friendlyName,
+        name: sCam.name,
         available: true,
         in_use: sCam.in_use || false
       });
@@ -734,7 +869,6 @@ function syncVerifiedDevices(serverDevices, showToastNotification = false) {
   }
 
   updateAvailableDevicesUI(verified);
-
   if (showToastNotification) {
     showToast(`Found ${verified.length} connected camera(s)`, verified.length > 0 ? 'success' : 'info');
   }
@@ -746,7 +880,6 @@ async function connectCamera(camId, source, name) {
   showToast(`Connecting to ${name}...`, 'info');
   sendWSCommand('add_camera', { cam_id: camId, source, name });
 
-  // REST dual-channel fallback
   try {
     await fetch(`http://127.0.0.1:${WS_PORT}/api/cameras/add`, {
       method: 'POST',
@@ -796,14 +929,12 @@ function updateAvailableDevicesUI(devices) {
       item.addEventListener('click', () => {
         selectedLocalDevice = dev;
         customCamIndex.value = dev.index;
-        // Highlight selection
         document.querySelectorAll('.device-item').forEach(el => el.style.borderColor = 'var(--border-subtle)');
         item.style.borderColor = 'var(--accent-cyan)';
       });
 
       localDeviceList.appendChild(item);
 
-      // Also add to quick-connect list in empty state
       const quickBtn = document.createElement('button');
       quickBtn.className = 'btn btn-secondary btn-sm';
       quickBtn.innerHTML = `+ Connect <strong>${dev.name}</strong>`;
@@ -811,7 +942,6 @@ function updateAvailableDevicesUI(devices) {
       detectedQuickList.appendChild(quickBtn);
     }
 
-    // Default manual index to first detected camera
     if (avail.length > 0 && customCamIndex.value === '') {
       selectedLocalDevice = avail[0];
       customCamIndex.value = avail[0].index;
@@ -823,7 +953,6 @@ function updateAvailableDevicesUI(devices) {
    UI Event Listeners
    ========================================================================== */
 
-// Add camera modal open/close
 function openAddCameraModal() {
   modalAddCamera.hidden = false;
   scanHardwareCameras(false);
@@ -831,11 +960,9 @@ function openAddCameraModal() {
 
 btnAddCamera.addEventListener('click', openAddCameraModal);
 btnEmptyAdd.addEventListener('click', openAddCameraModal);
-
 modalCloseAdd.addEventListener('click', () => modalAddCamera.hidden = true);
 btnCancelAdd.addEventListener('click', () => modalAddCamera.hidden = true);
 
-// Modal tabs
 document.querySelectorAll('.modal-tab').forEach(tab => {
   tab.addEventListener('click', () => {
     document.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
@@ -846,7 +973,6 @@ document.querySelectorAll('.modal-tab').forEach(tab => {
   });
 });
 
-// Confirm add camera
 btnConfirmAdd.addEventListener('click', () => {
   const activeTab = document.querySelector('.modal-tab.active')?.dataset.tab || 'local';
 
@@ -877,14 +1003,13 @@ btnConfirmAdd.addEventListener('click', () => {
   }
 });
 
-// Settings modal
 btnSettings.addEventListener('click', () => {
   modalSettings.hidden = false;
 });
 modalCloseSettings.addEventListener('click', () => modalSettings.hidden = true);
 btnCloseSettings.addEventListener('click', () => modalSettings.hidden = true);
 
-// Browse calibration file via Electron IPC
+// Browse calibration file
 btnBrowseCal.addEventListener('click', async () => {
   if (window.electronAPI?.selectCalibrationFile) {
     const filePath = await window.electronAPI.selectCalibrationFile();
@@ -897,7 +1022,7 @@ btnBrowseCal.addEventListener('click', async () => {
   }
 });
 
-// Browse video file for stream testing via Electron IPC
+// Browse video file
 const btnBrowseVideo = document.getElementById('btn-browse-video');
 if (btnBrowseVideo) {
   btnBrowseVideo.addEventListener('click', async () => {
@@ -932,32 +1057,45 @@ btnLoadCal.addEventListener('click', () => {
   }
 });
 
-// Model variant radio changes
-document.querySelectorAll('input[name="model-variant"]').forEach(radio => {
-  radio.addEventListener('change', () => {
-    sendWSCommand('set_model', { model_variant: radio.value });
-    showToast(`Switched MediaPipe model to ${radio.value}`, 'info');
+// Engine & Hardware Acceleration apply button
+if (btnApplyEngine) {
+  btnApplyEngine.addEventListener('click', () => {
+    const engine = selectModelEngine.value;
+    const device = selectEngineDevice.value;
+    const variant = selectModelVariant.value;
+    sendWSCommand('set_model_engine', {
+      model_type: engine,
+      device: device,
+      variant: variant,
+    });
+    showToast(`Switched engine to ${engine.toUpperCase()} (${device})`, 'info');
   });
-});
+}
 
-// Filter sensitivity sliders
-filterCutoffSlider.addEventListener('input', (e) => {
-  cutoffValLabel.textContent = e.target.value;
-  sendWSCommand('set_filter', {
-    enabled: chkFilter.checked,
-    min_cutoff: parseFloat(e.target.value),
-    beta: parseFloat(filterBetaSlider.value),
+// T-Pose calibration buttons
+if (btnResetTpose) {
+  btnResetTpose.addEventListener('click', () => {
+    sendWSCommand('reset_tpose_calibration');
   });
-});
+}
+if (btnResetTposeSettings) {
+  btnResetTposeSettings.addEventListener('click', () => {
+    sendWSCommand('reset_tpose_calibration');
+  });
+}
+if (btnForceTpose) {
+  btnForceTpose.addEventListener('click', () => {
+    sendWSCommand('trigger_tpose_calibration');
+  });
+}
 
-filterBetaSlider.addEventListener('input', (e) => {
-  betaValLabel.textContent = e.target.value;
-  sendWSCommand('set_filter', {
-    enabled: chkFilter.checked,
-    min_cutoff: parseFloat(filterCutoffSlider.value),
-    beta: parseFloat(e.target.value),
+// Root motion toggle
+if (chkGlobalRoot) {
+  chkGlobalRoot.addEventListener('change', () => {
+    const mode = chkGlobalRoot.checked ? 'global' : 'root_locked';
+    sendWSCommand('set_root_motion', { mode });
   });
-});
+}
 
 // 2D overlays global toggle
 btnToggleAllOverlays.addEventListener('click', () => {
@@ -1006,8 +1144,6 @@ chkFilter.addEventListener('change', () => {
   filterStatusLabel.classList.toggle('pill-active', chkFilter.checked);
   sendWSCommand('set_filter', {
     enabled: chkFilter.checked,
-    min_cutoff: parseFloat(filterCutoffSlider.value),
-    beta: parseFloat(filterBetaSlider.value),
   });
 });
 
@@ -1017,6 +1153,7 @@ chkFilter.addEventListener('change', () => {
 
 function showToast(message, type = 'info') {
   const container = document.getElementById('toast-container');
+  if (!container) return;
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
   toast.textContent = message;

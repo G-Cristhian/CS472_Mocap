@@ -1164,3 +1164,92 @@ body {
   border-bottom: none;
 }
 
+
+
+/* ==========================================================================
+   T-Pose Auto-Calibration & Root Position Widget Styles
+   ========================================================================== */
+
+.tpose-widget {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(15, 20, 29, 0.85);
+  backdrop-filter: blur(8px);
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border-subtle);
+  pointer-events: auto;
+  transition: all var(--transition-fast);
+}
+
+.tpose-widget.holding {
+  border-color: var(--accent-amber);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.25);
+}
+
+.tpose-widget.calibrated {
+  border-color: var(--accent-emerald);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.25);
+}
+
+.tpose-progress-ring {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tpose-progress-ring svg {
+  transform: rotate(-90deg);
+}
+
+.ring-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.1);
+  stroke-width: 2.5;
+}
+
+.ring-fill {
+  fill: none;
+  stroke: var(--accent-amber);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.1s linear, stroke 0.2s ease;
+}
+
+.tpose-widget.calibrated .ring-fill {
+  stroke: var(--accent-emerald);
+}
+
+.tpose-label {
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.tpose-widget.holding .tpose-label {
+  color: var(--accent-amber);
+}
+
+.tpose-widget.calibrated .tpose-label {
+  color: var(--accent-emerald);
+}
+
+.btn-micro {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.btn-micro:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.1);
+}
