@@ -74,7 +74,7 @@ The result panel shows the last line the pipeline wrote and opens the log. The m
 
 ## Working on the app
 
-`npm run preview` in `desktop/` serves the page at http://localhost:5174 in a browser with a mocked pipeline that replays a real run's printed lines, for changing the page without Electron.[^16] `npm test` runs the progress parser, the check-output parser and the metrics panel against those lines and a sample `metrics.json`, plus the command line the app builds and its folder listing. `npm run typecheck` checks both the page and the Electron side. The backend's own suite also drives the app's compiled runner and progress parser against the real pipeline (`backend/tests/test_desktop_tester.py`): [testing-the-backend.md](testing-the-backend.md).
+`npm run preview` in `desktop/` serves the page at http://localhost:5174 in a browser with a mocked pipeline that replays a real run's printed lines, for changing the page without Electron.[^16] `npm test` runs the progress parser, the check-output parser and the metrics panel against those lines and a sample `metrics.json`, plus the command line the app builds, its folder listing and how it reads the clap-times box. `npm run typecheck` checks both the page and the Electron side. The backend's own suite also drives the app's compiled runner and progress parser against the real pipeline (`backend/tests/test_desktop_tester.py`): [testing-the-backend.md](testing-the-backend.md).
 
 ---
 ## Sources

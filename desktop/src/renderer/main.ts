@@ -1,4 +1,5 @@
 /** The page: pick videos, check them, run, watch the bar, then play the result and read the numbers. */
+import { parseClapTimes } from '../shared/clapTimes'
 import { metricSections, summarise, type RunSummary } from '../shared/metrics'
 import type { Backend, CheckResult, Progress, RunOptions, Smoother, VideoFile } from '../shared/types'
 import { BvhViewer } from './viewer'
@@ -103,15 +104,26 @@ function renderVideos(): void {
 $('choose').addEventListener('click', async () => {
   const dir = await backend.chooseDirectory()
   if (!dir) return
+  // read the new folder before touching the page, so a folder that cannot be read leaves the last take as it was
+  let videos: VideoFile[]
+  let newOutDir: string
+  try {
+    videos = await backend.listVideos(dir)
+    newOutDir = await backend.defaultOutDir(dir)
+  } catch (e) {
+    setupError.textContent = `Could not read that folder: ${e instanceof Error ? e.message : String(e)}`
+    return
+  }
   videoDir = dir
   folderLabel.textContent = dir
-  const videos = await backend.listVideos(dir)
   picked = videos.map((v) => ({ ...v, use: true }))
-  outDir = await backend.defaultOutDir(dir)
+  outDir = newOutDir
   $<HTMLInputElement>('outdir').value = outDir
+  // clap times belong to one take; carried over, they would sync the next take with the old times
+  $<HTMLInputElement>('clap-times').value = ''
   checkBox.hidden = true
-  if (!videos.length) setupError.textContent = 'No .mov or .mp4 files in that folder.'
   renderVideos()
+  if (!videos.length) setupError.textContent = 'No .mov or .mp4 files in that folder.'
 })
 
 function updateHeightNote(): void {
@@ -123,16 +135,6 @@ updateHeightNote()
 function readClapThreshold(): number | string {
   const t = Number($<HTMLInputElement>('clap-threshold').value)
   return t > 0 && t <= 10 ? t : 'The clap threshold must be above 0 and at most 10.'
-}
-
-/** The clap-times box: blank is null; otherwise one number per chosen video. */
-function readClapTimes(videos: number): number[] | null | string {
-  const text = $<HTMLInputElement>('clap-times').value.trim()
-  if (!text) return null
-  const times = text.split(/[\s,;]+/).map(Number)
-  if (times.some((t) => !isFinite(t) || t < 0)) return 'Clap times must be numbers of seconds, e.g. 1.25 0.80 1.10'
-  if (times.length !== videos) return `Give ${videos} clap times, one per video in camera order (got ${times.length}).`
-  return times
 }
 
 function readOptions(): RunOptions | string {
@@ -147,7 +149,7 @@ function readOptions(): RunOptions | string {
   if (!(Number.isInteger(jobs) && jobs >= 0 && jobs <= 16)) return 'Videos detected at once must be a whole number from 0 (automatic) to 16.'
   const clapThreshold = readClapThreshold()
   if (typeof clapThreshold === 'string') return clapThreshold
-  const clapTimes = readClapTimes(videos.length)
+  const clapTimes = parseClapTimes($<HTMLInputElement>('clap-times').value, videos.length)
   if (typeof clapTimes === 'string') return clapTimes
   if (!outDir) return 'Give an output folder.'
   return {
