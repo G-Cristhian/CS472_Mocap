@@ -975,7 +975,7 @@ The one file that knows the order of the steps. Everything else calls `run()`.
   After each of the first four steps it checks whether to stop early.
 - **`export_bvh(pose, bvh_path)`**. Step 3 in six calls: skeleton positions,
   bone lengths, rest offsets, rotations, Euler angles, write. Records the
-  bone length summary.
+  bone length summary and the frames whose rotation was held.
 - **`per_camera(parser, name, values, n)`**. Command-line helper: a flag that
   takes one value for all cameras or one per camera.
 - **`main()`**. Defines every command-line flag with its help text, checks the
@@ -1267,6 +1267,8 @@ synthetic videos in which it finds nobody).
 - `test_desktop_tester.py`: drives the desktop tester's compiled code with Node
   against the real pipeline on synthetic videos (progress per video, the failure
   message, cancel). Skipped when Node or the tester's packages are missing.
+- `test_rotations.py`: step 3 on frames whose joint rotations cannot be
+  solved, held from the frame before and counted in the metrics.
 - `test_placement.py`: the placement metric and the annealer.
 - `test_check_videos.py`: step 0 on small generated videos, made by
   `synthetic_video.py`.

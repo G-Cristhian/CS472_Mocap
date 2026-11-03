@@ -23,7 +23,7 @@ Rig files store, per frame, how each joint is ROTATED relative to its parent
 plus the root's position. This is the hardest part of stage 3.
 
 Input : rig joint positions (F, R, 3) and the rest pose offsets.
-Output: root position (F, 3) and local rotations per joint per frame.
+Output: root position (F, 3), local rotations per joint per frame, and which were held.
 
 How (video2bvh's approach): every joint's orientation is built from two
 directions measured in the pose, e.g. the hips from the hip line (left/right)
