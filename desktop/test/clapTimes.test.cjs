@@ -36,3 +36,22 @@ test('words, negative and endless numbers are refused', () => {
 test('a list of the wrong length is refused', () => {
   assert.equal(parseClapTimes('1.25 0.80 1.10', 2), 'Give 2 clap times, one per video in camera order (got 3).')
 })
+
+test('only plain decimals with a point count as seconds', () => {
+  const message = 'Clap times must be numbers of seconds, e.g. 1.25 0.80 1.10'
+  assert.deepEqual(parseClapTimes('1 .5 2.', 3), [1, 0.5, 2])
+  assert.equal(parseClapTimes('0x10 1.5', 2), message)
+  assert.equal(parseClapTimes('1e2 1.5', 2), message)
+  assert.equal(parseClapTimes('+1 1.5', 2), message)
+})
+
+test('decimal commas are named instead of being split into extra times', () => {
+  const hint = 'Commas separate the times; use a point for decimals (1.25, not 1,25).'
+  // four videos: "1,5 2,5" would otherwise pass as 1, 5, 2, 5
+  assert.equal(parseClapTimes('1,5 2,5', 4), hint)
+  assert.deepEqual(parseClapTimes('1,25', 2), [1, 25]) // no space and no point: read as two whole seconds, then the count decides
+  assert.deepEqual(parseClapTimes('1,2,3', 3), [1, 2, 3]) // whole seconds with commas between them, no spaces
+  assert.deepEqual(parseClapTimes('1.25,0.80', 2), [1.25, 0.8])
+  assert.equal(parseClapTimes('1,25 0,80 1,10', 2), hint)
+  assert.equal(parseClapTimes('1,2,3', 2), `Give 2 clap times, one per video in camera order (got 3). ${hint}`)
+})

@@ -19,6 +19,7 @@
         <div class="row">
           <button id="choose" class="btn">Choose folder…</button>
           <span id="folder" class="mono muted">no folder chosen</span>
+          <span id="folder-error" class="error"></span>
         </div>
         <p class="muted small">The folder should hold one take: one video per camera, named so that sorting by name gives camera order (cam0 first). Tick the ones to use.</p>
         <ul id="videos" class="videos"></ul>
@@ -51,6 +52,7 @@
           </label>
           <label>Clap times (s), one per video, camera 0 first<input id="clap-times" type="text" class="mono" placeholder="blank = find them from the audio" />
             <span class="note">For when the search picks the wrong sound: read the times off a video player.</span>
+            <span id="clap-note" class="error"></span>
           </label>
           <label>Videos detected at once<input id="jobs" type="number" step="1" min="0" max="16" value="0" />
             <span class="note">0 picks automatically (one process per video, up to 4). 1 runs them one after another.</span>

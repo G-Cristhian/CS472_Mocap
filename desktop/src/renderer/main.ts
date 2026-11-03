@@ -17,6 +17,8 @@ const checkButton = $<HTMLButtonElement>('check')
 const checkBox = $('check-result')
 const runButton = $<HTMLButtonElement>('run')
 const setupError = $('setup-error')
+const folderError = $('folder-error')
+const clapNote = $('clap-note')
 const heightNote = $('height-note')
 const bar = $<HTMLProgressElement>('bar')
 const stageLabel = $('stage')
@@ -43,6 +45,10 @@ interface PastRun {
 }
 let videoDir: string | null = null
 let picked: Picked[] = []
+let chosenKey = '[]' // the chosen videos in camera order, as the clap times and the check result were made for
+let chooseSeq = 0 // the latest folder choice; an older one that finishes late is dropped
+let checkSeq = 0 // the latest check; a check whose selection has changed since is dropped
+let checking = false
 let outDir = ''
 let viewer: BvhViewer | null = null
 let lastOptions: RunOptions | null = null
@@ -97,33 +103,72 @@ function renderVideos(): void {
   })
   const chosen = picked.filter((p) => p.use).length
   runButton.disabled = chosen < 2
-  checkButton.disabled = chosen < 1
+  checkButton.disabled = chosen < 1 || checking
   setupError.textContent = picked.length && chosen < 2 ? 'Pick at least two videos.' : ''
+  selectionChanged()
+}
+
+/**
+ * Typed clap times and a check result belong to one set of videos in one order: the times go to the
+ * videos by position. When the ticks, the order or the folder's files change, both are cleared,
+ * the times with a note, so no time silently moves to another camera.
+ */
+function selectionChanged(): void {
+  const key = JSON.stringify(chosenVideos())
+  if (key === chosenKey) return
+  chosenKey = key
+  checkBox.hidden = true
+  const box = $<HTMLInputElement>('clap-times')
+  if (box.value.trim()) {
+    box.value = ''
+    clapNote.textContent = 'Clap times cleared: the videos or their order changed. Type them again, camera 0 first.'
+  }
 }
 
 $('choose').addEventListener('click', async () => {
   const dir = await backend.chooseDirectory()
   if (!dir) return
-  // read the new folder before touching the page, so a folder that cannot be read leaves the last take as it was
+  const seq = ++chooseSeq
+  folderError.textContent = ''
+  // read the new folder before touching the page, so a folder that cannot be read, or holds no
+  // videos (the folder above the take, say), leaves the last take as it was
   let videos: VideoFile[]
   let newOutDir: string
   try {
     videos = await backend.listVideos(dir)
     newOutDir = await backend.defaultOutDir(dir)
   } catch (e) {
-    setupError.textContent = `Could not read that folder: ${e instanceof Error ? e.message : String(e)}`
+    if (seq === chooseSeq) folderError.textContent = `Could not read ${dir}: ${e instanceof Error ? e.message : String(e)}`
     return
   }
-  videoDir = dir
-  folderLabel.textContent = dir
-  picked = videos.map((v) => ({ ...v, use: true }))
-  outDir = newOutDir
-  $<HTMLInputElement>('outdir').value = outDir
-  // clap times belong to one take; carried over, they would sync the next take with the old times
-  $<HTMLInputElement>('clap-times').value = ''
-  checkBox.hidden = true
+  if (seq !== chooseSeq) return
+  if (!videos.length) {
+    folderError.textContent = `No .mov or .mp4 files in ${dir}.${videoDir ? ' The take below is unchanged.' : ''}`
+    return
+  }
+  if (dir === videoDir) {
+    // choosing the same folder again refreshes the list: files still there keep their tick and place,
+    // new ones go at the end, and a typed output folder stays
+    const byPath = new Map(videos.map((v) => [v.path, v]))
+    const kept = picked.filter((p) => byPath.has(p.path)).map((p) => ({ ...byPath.get(p.path)!, use: p.use }))
+    const added = videos.filter((v) => !picked.some((p) => p.path === v.path)).map((v) => ({ ...v, use: true }))
+    picked = [...kept, ...added]
+  } else {
+    videoDir = dir
+    folderLabel.textContent = dir
+    picked = videos.map((v) => ({ ...v, use: true }))
+    outDir = newOutDir
+    $<HTMLInputElement>('outdir').value = outDir
+  }
   renderVideos()
-  if (!videos.length) setupError.textContent = 'No .mov or .mp4 files in that folder.'
+})
+
+$('clap-times').addEventListener('input', () => {
+  clapNote.textContent = ''
+})
+$('clap-threshold').addEventListener('input', () => {
+  // a check result was made with the old threshold
+  checkBox.hidden = true
 })
 
 function updateHeightNote(): void {
@@ -229,18 +274,25 @@ checkButton.addEventListener('click', async () => {
     return
   }
   setupError.textContent = ''
+  const seq = ++checkSeq
+  const key = chosenKey
+  checking = true
   checkButton.disabled = true
   checkButton.textContent = 'Checking…'
   const offLog = backend.onLog(appendLog)
+  let result: CheckResult
   try {
-    renderCheck(await backend.checkVideos(chosenVideos(), threshold))
+    result = await backend.checkVideos(chosenVideos(), threshold)
   } catch (e) {
-    renderCheck({ ok: false, videos: [], across: [], output: '', error: e instanceof Error ? e.message : String(e) })
+    result = { ok: false, videos: [], across: [], output: '', error: e instanceof Error ? e.message : String(e) }
   } finally {
     offLog()
+    checking = false
     checkButton.textContent = 'Check the videos'
     checkButton.disabled = chosenVideos().length < 1
   }
+  // a result for videos that are no longer the chosen ones would vouch for files nobody checked
+  if (seq === checkSeq && key === chosenKey) renderCheck(result)
 })
 
 // ---- 2. progress -------------------------------------------------------------------------
