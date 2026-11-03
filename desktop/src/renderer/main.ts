@@ -1,4 +1,5 @@
 /** The page: pick videos, check them, run, watch the bar, then play the result and read the numbers. */
+import { parseClapTimes } from '../shared/clapTimes'
 import { metricSections, summarise, type RunSummary } from '../shared/metrics'
 import type { Backend, CheckResult, Progress, RunOptions, Smoother, VideoFile } from '../shared/types'
 import { BvhViewer } from './viewer'
@@ -16,6 +17,8 @@ const checkButton = $<HTMLButtonElement>('check')
 const checkBox = $('check-result')
 const runButton = $<HTMLButtonElement>('run')
 const setupError = $('setup-error')
+const folderError = $('folder-error')
+const clapNote = $('clap-note')
 const heightNote = $('height-note')
 const bar = $<HTMLProgressElement>('bar')
 const stageLabel = $('stage')
@@ -42,6 +45,10 @@ interface PastRun {
 }
 let videoDir: string | null = null
 let picked: Picked[] = []
+let chosenKey = '[]' // the chosen videos in camera order, as the clap times and the check result were made for
+let chooseSeq = 0 // the latest folder choice; an older one that finishes late is dropped
+let checkSeq = 0 // the latest check; a check whose selection has changed since is dropped
+let checking = false
 let outDir = ''
 let viewer: BvhViewer | null = null
 let lastOptions: RunOptions | null = null
@@ -96,22 +103,84 @@ function renderVideos(): void {
   })
   const chosen = picked.filter((p) => p.use).length
   runButton.disabled = chosen < 2
-  checkButton.disabled = chosen < 1
+  checkButton.disabled = chosen < 1 || checking
   setupError.textContent = picked.length && chosen < 2 ? 'Pick at least two videos.' : ''
+  selectionChanged()
+}
+
+/**
+ * Typed clap times and a check result belong to one set of videos in one order: the times go to the
+ * videos by position. When the ticks, the order or the folder's files change, both are cleared,
+ * the times with a note, so no time silently moves to another camera.
+ */
+function selectionChanged(): void {
+  const key = JSON.stringify(chosenVideos())
+  if (key === chosenKey) return
+  chosenKey = key
+  checkBox.hidden = true
+  const box = $<HTMLInputElement>('clap-times')
+  // a note left from an earlier change would describe a clearing that did not happen now
+  clapNote.textContent = box.value.trim()
+    ? 'Clap times cleared: the videos or their order changed. Type them again, camera 0 first.'
+    : ''
+  box.value = ''
 }
 
 $('choose').addEventListener('click', async () => {
   const dir = await backend.chooseDirectory()
   if (!dir) return
-  videoDir = dir
-  folderLabel.textContent = dir
-  const videos = await backend.listVideos(dir)
-  picked = videos.map((v) => ({ ...v, use: true }))
-  outDir = await backend.defaultOutDir(dir)
-  $<HTMLInputElement>('outdir').value = outDir
-  checkBox.hidden = true
-  if (!videos.length) setupError.textContent = 'No .mov or .mp4 files in that folder.'
+  const seq = ++chooseSeq
+  folderError.textContent = ''
+  // read the new folder before touching the page, so a folder that cannot be read, or holds no
+  // videos (the folder above the take, say), leaves the last take as it was
+  let videos: VideoFile[]
+  let newOutDir: string
+  try {
+    videos = await backend.listVideos(dir)
+    newOutDir = await backend.defaultOutDir(dir)
+  } catch (e) {
+    if (seq === chooseSeq) folderError.textContent = `Could not read ${dir}: ${e instanceof Error ? e.message : String(e)}`
+    return
+  }
+  if (seq !== chooseSeq) return
+  if (!videos.length) {
+    folderError.textContent = `No .mov or .mp4 files in ${dir}.${videoDir ? ' The take below is unchanged.' : ''}`
+    return
+  }
+  if (dir === videoDir) {
+    // choosing the same folder again refreshes the list: files still there keep their tick and place,
+    // new ones go at the end, and a typed output folder stays
+    const byPath = new Map(videos.map((v) => [v.path, v]))
+    const kept = picked.filter((p) => byPath.has(p.path)).map((p) => ({ ...byPath.get(p.path)!, use: p.use }))
+    const added = videos.filter((v) => !picked.some((p) => p.path === v.path)).map((v) => ({ ...v, use: true }))
+    const nameOrder = (a: VideoFile, b: VideoFile) => a.name.localeCompare(b.name, undefined, { numeric: true })
+    const reordered = kept.some((p, i) => i > 0 && nameOrder(kept[i - 1], p) > 0)
+    if (!reordered) {
+      // name order is camera order (filming.md section 8): a file copied in late takes its place
+      picked = [...kept, ...added].sort(nameOrder)
+    } else {
+      // the user set the order by hand, so a new file cannot be placed for them: it goes last, said loudly
+      picked = [...kept, ...added]
+    }
+    if (added.length) {
+      folderError.textContent = `Added ${added.map((v) => v.name).join(', ')}${reordered ? ' at the end of the list: check the camera order.' : ' in name order.'}`
+    }
+  } else {
+    videoDir = dir
+    folderLabel.textContent = dir
+    picked = videos.map((v) => ({ ...v, use: true }))
+    outDir = newOutDir
+    $<HTMLInputElement>('outdir').value = outDir
+  }
   renderVideos()
+})
+
+$('clap-times').addEventListener('input', () => {
+  clapNote.textContent = ''
+})
+$('clap-threshold').addEventListener('input', () => {
+  // a check result was made with the old threshold
+  checkBox.hidden = true
 })
 
 function updateHeightNote(): void {
@@ -123,16 +192,6 @@ updateHeightNote()
 function readClapThreshold(): number | string {
   const t = Number($<HTMLInputElement>('clap-threshold').value)
   return t > 0 && t <= 10 ? t : 'The clap threshold must be above 0 and at most 10.'
-}
-
-/** The clap-times box: blank is null; otherwise one number per chosen video. */
-function readClapTimes(videos: number): number[] | null | string {
-  const text = $<HTMLInputElement>('clap-times').value.trim()
-  if (!text) return null
-  const times = text.split(/[\s,;]+/).map(Number)
-  if (times.some((t) => !isFinite(t) || t < 0)) return 'Clap times must be numbers of seconds, e.g. 1.25 0.80 1.10'
-  if (times.length !== videos) return `Give ${videos} clap times, one per video in camera order (got ${times.length}).`
-  return times
 }
 
 function readOptions(): RunOptions | string {
@@ -147,7 +206,7 @@ function readOptions(): RunOptions | string {
   if (!(Number.isInteger(jobs) && jobs >= 0 && jobs <= 16)) return 'Videos detected at once must be a whole number from 0 (automatic) to 16.'
   const clapThreshold = readClapThreshold()
   if (typeof clapThreshold === 'string') return clapThreshold
-  const clapTimes = readClapTimes(videos.length)
+  const clapTimes = parseClapTimes($<HTMLInputElement>('clap-times').value, videos.length)
   if (typeof clapTimes === 'string') return clapTimes
   if (!outDir) return 'Give an output folder.'
   return {
@@ -227,18 +286,27 @@ checkButton.addEventListener('click', async () => {
     return
   }
   setupError.textContent = ''
+  const seq = ++checkSeq
+  const key = chosenKey
+  const thresholdText = $<HTMLInputElement>('clap-threshold').value
+  checking = true
   checkButton.disabled = true
   checkButton.textContent = 'Checking…'
   const offLog = backend.onLog(appendLog)
+  let result: CheckResult
   try {
-    renderCheck(await backend.checkVideos(chosenVideos(), threshold))
+    result = await backend.checkVideos(chosenVideos(), threshold)
   } catch (e) {
-    renderCheck({ ok: false, videos: [], across: [], output: '', error: e instanceof Error ? e.message : String(e) })
+    result = { ok: false, videos: [], across: [], output: '', error: e instanceof Error ? e.message : String(e) }
   } finally {
     offLog()
+    checking = false
     checkButton.textContent = 'Check the videos'
     checkButton.disabled = chosenVideos().length < 1
   }
+  // a result for other videos, or another threshold, would vouch for a check nobody ran
+  if (seq === checkSeq && key === chosenKey && thresholdText === $<HTMLInputElement>('clap-threshold').value) renderCheck(result)
+  else setupError.textContent = 'The videos or the clap threshold changed during the check: check again.'
 })
 
 // ---- 2. progress -------------------------------------------------------------------------
@@ -273,6 +341,7 @@ function appendLog(line: string): void {
 
 async function startRun(options: RunOptions): Promise<void> {
   setupError.textContent = ''
+  clapNote.textContent = ''
   setup.hidden = true
   preview.hidden = true
   progressPanel.hidden = false
