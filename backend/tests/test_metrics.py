@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from mocap_pipeline import config, io, metrics, run_pipeline
-from mocap_pipeline.joints import JOINT_INDEX, RIG_JOINTS, RIG_PARENTS
+from mocap_pipeline.joints import JOINT_INDEX, MEDIAPIPE_JOINTS, RIG_JOINTS, RIG_PARENTS
 from mocap_pipeline.stage1_keypoints import detect
 from mocap_pipeline.stage3_rig import skeleton
 from tests.conftest import make_keypoints
@@ -137,3 +137,26 @@ def test_stop_after_records_the_stage(tmp_path, monkeypatch):
     m = metrics.load(str(out))
     assert m["run"]["status"] == "stopped after sync"
     assert "sync" in m and "calibrate" not in m
+
+
+def test_pose_summary_counts_only_the_joints_the_detector_finds():
+    from mocap_pipeline.schemas import Pose3D
+    from mocap_pipeline.stage1_keypoints.backends import joints_provided
+
+    rtm = joints_provided("rtmpose")
+    pts = np.zeros((10, len(MEDIAPIPE_JOINTS), 3))
+    for j, name in enumerate(MEDIAPIPE_JOINTS):
+        if name not in rtm:
+            pts[:, j] = np.nan                     # never detected, as with RTMPose
+    pts[:2, MEDIAPIPE_JOINTS.index("LEFT_WRIST")] = np.nan   # 2 of 10 frames really missed
+    pose = Pose3D(fps=30.0, points=pts, num_views=np.full(pts.shape[:2], 2))
+
+    s = metrics.pose_summary(pose, rtm)
+    assert s["missing_fraction"] == pytest.approx(2 / (10 * len(rtm)))
+    assert set(s["missing_fraction_per_joint"]) == set(rtm)
+    assert s["joints_not_detected"] == [n for n in MEDIAPIPE_JOINTS if n not in rtm]
+    assert len(rtm) == 21
+
+    every = metrics.pose_summary(pose)             # all 33 counted, as before
+    assert every["missing_fraction"] > 0.36 and "joints_not_detected" not in every
+    assert joints_provided("mediapipe") == list(MEDIAPIPE_JOINTS)

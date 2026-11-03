@@ -101,17 +101,32 @@ def keypoints_summary(kp) -> dict:
     }
 
 
-def pose_summary(pose) -> dict:
-    """Stage 2c coverage from a Pose3D: how much of the take has 3D for each joint."""
+def pose_summary(pose, joints: list[str] | None = None) -> dict:
+    """
+    Stage 2c coverage from a Pose3D: how much of the take has 3D for each joint.
+
+    joints are the joints the detector can find (backends.joints_provided);
+    the missing fractions count only those, and the rest are listed under
+    joints_not_detected. RTMPose has no eye corners, mouth corners or finger
+    points, so counting them would make it look 36% worse than it is.
+    None counts all 33.
+    """
     pts = np.asarray(pose.points)
     missing = np.isnan(pts).any(axis=2)                       # (F, J)
-    return {
+    names = list(MEDIAPIPE_JOINTS) if joints is None else list(joints)
+    cols = [MEDIAPIPE_JOINTS.index(n) for n in names]
+    counted = missing[:, cols]
+    summary = {
         "frames": int(len(pts)),
-        "missing_fraction": float(missing.mean()) if pts.size else None,
-        "missing_fraction_per_joint": {n: float(missing[:, j].mean()) for j, n in enumerate(MEDIAPIPE_JOINTS)},
+        "missing_fraction": float(counted.mean()) if counted.size else None,
+        "missing_fraction_per_joint": {n: float(missing[:, j].mean()) for n, j in zip(names, cols)},
         "mean_views_per_joint": float(np.asarray(pose.num_views)[~missing].mean()) if (~missing).any() else None,
         "jitter_mm": jitter_mm(pts),
     }
+    not_detected = [n for n in MEDIAPIPE_JOINTS if n not in names]
+    if not_detected:
+        summary["joints_not_detected"] = not_detected
+    return summary
 
 
 def jitter_mm(pts) -> float | None:

@@ -67,7 +67,7 @@ Rules:
 
 The detector is the GitHub workflow `.github/workflows/design-decisions.yml`. It runs after every push to `main`, whether a pull request merge or a direct push. (GitHub's `push` event cannot drive the Claude action directly, so `push-to-main.yml` runs on the push and the detector runs when it completes.) Each run:
 
-1. Checks out `main`, and merges in the branch `design-decisions/pending` if one exists, so rows found earlier and not yet reviewed are kept.
+1. Checks out `main`, and merges in the branch `design-decisions/pending` if one exists, so rows found earlier and not yet reviewed are kept. If that merge conflicts with an edit made on `main`, the run drops the branch's version and reviews again from the marker on `main`, so the rows are found again rather than lost.
 2. Takes the range from the commit recorded in `.last-reviewed` to the head of `main`. If every commit in that range touches only this folder, `.claude/` or `.github/`, there is nothing to review and the run stops here at no cost.
 3. Runs Claude over the range with the procedure below, using the rules in this file and the working rules in `.claude/agents/design-interrogator.md`.
 4. Writes the head of `main` into `.last-reviewed`, and if the sheet changed, pushes the sheet and the marker to `design-decisions/pending` and opens a pull request against `main` titled "[AI] Design decisions found since ...", labelled `design-decision`, with Giancarlo requested as reviewer. While that pull request is open, later runs update it instead of opening another. When nothing was found, nothing is pushed and the marker stays where it was, so the next run looks at the same range plus whatever is new.
@@ -100,4 +100,5 @@ A citation is a paper, book, standard, or the official documentation of the chos
 |---|---|
 | `DECISIONS.md` | The sheet. |
 | `README.md` | This file: what counts, the columns, statuses, lineage, how the detector works, citations. |
+| `EXPLAINED.md` | A companion for the reviewer: one plain-language section per row, grouped by what a user would notice, with what the decision affects, what reversing it would cost, and what the reviewer is being asked to confirm. Written against a named commit with an AI pass; not maintained by the detector. |
 | `.last-reviewed` | One commit SHA: the last commit on `main` the detector has reviewed. Advanced only by the detector, through the review pull request. Delete it to make the next run review everything since `0e1eea9`, the seed commit. |

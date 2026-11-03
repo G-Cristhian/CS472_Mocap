@@ -1,6 +1,5 @@
 """Round trips for every schemas dataclass through io.py, and the video fingerprint."""
 import os
-import time
 from pathlib import Path
 
 import numpy as np

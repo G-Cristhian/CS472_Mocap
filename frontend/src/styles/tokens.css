@@ -24,6 +24,8 @@
   --muted: #6b6b7b;
   --muted-2: #9a9aa8;
   --line: #e4e4ec;
+  /* Edges of form controls (inputs, selects, checkboxes). Meets WCAG 1.4.11 3:1. Use --line for decorative borders. */
+  --line-control: #858594;
   --line-soft: #f0f0f5;
   --surface: #ffffff;
   --surface-2: #f7f7fa;

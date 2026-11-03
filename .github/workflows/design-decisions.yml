@@ -9,6 +9,10 @@
 # machinery) are not reviewed; when the whole range is such commits the Claude
 # step is skipped, so merging the review PR itself costs nothing.
 #
+# If design-decisions/pending no longer merges into main (someone edited the
+# same rows), the run drops the branch's version and reviews again from the
+# marker on main, so the rows are found again rather than lost.
+#
 # Debugging: the full Claude transcript is printed in the job log
 # (show_full_output) and uploaded as the artifact claude-execution-output.
 # Run it by hand with dry_run to see the report without opening a PR.
@@ -67,7 +71,13 @@ jobs:
           git config user.email "workflow@users.noreply.github.com"
           if git ls-remote --exit-code --heads origin design-decisions/pending >/dev/null 2>&1; then
             git fetch origin design-decisions/pending
-            git merge --no-edit origin/design-decisions/pending
+            if ! git merge --no-edit origin/design-decisions/pending; then
+              # someone edited the same rows on main while the pull request was open. Rather than
+              # stop, drop the branch's version: main's marker is older than the branch's, so the
+              # range below covers the branch's commits again and its rows are found again.
+              git merge --abort
+              echo "design-decisions/pending conflicts with main; its rows will be found again from main's marker."
+            fi
           fi
 
       - name: Pick the commit range
@@ -102,6 +112,10 @@ jobs:
           else
             echo "empty=false" >> "$GITHUB_OUTPUT"
             echo "$reviewable commit(s) touch files outside the excluded paths."
+            # a backlog (after a failed stretch, or the conflict fallback) needs more turns than one push
+            if [ "$reviewable" -gt 10 ]; then turns=150; else turns=80; fi
+            echo "turns=$turns" >> "$GITHUB_OUTPUT"
+            echo "Claude gets $turns turns."
           fi
 
       - name: Interrogate the commits
@@ -126,7 +140,7 @@ jobs:
           show_full_output: true
           claude_args: >-
             --allowedTools "Read,Grep,Glob,Edit,Write,WebSearch,WebFetch,Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git rev-parse *)"
-            --max-turns 80
+            --max-turns ${{ steps.range.outputs.turns }}
 
       - name: Keep the Claude transcript
         if: always() && steps.range.outputs.empty == 'false'

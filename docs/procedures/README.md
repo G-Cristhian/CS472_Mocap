@@ -1,6 +1,6 @@
 # Procedures
 
-Step-by-step guides for things the team does more than once. Each one says who it is for and what has to be true before you start. Code reference lives in `backend/mocap_pipeline/README.md`; these are the orders of operations.
+Step-by-step guides for things the team does more than once. Each one says who it is for and what has to be true before you start. Code reference lives in `backend/mocap_pipeline/README.md`, and a plain-language walk through every file and function in [../backend-outline.md](../backend-outline.md); these are the orders of operations.
 
 | Procedure | When |
 |---|---|

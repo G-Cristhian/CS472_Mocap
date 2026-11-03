@@ -1,8 +1,8 @@
 # Testing the backend
 
-For developers changing anything under `backend/` or `desktop/`: what to run before opening a pull request, and after pulling someone else's. Two parts: the automated suite, which needs no footage and takes about two minutes, and one run on real footage through the desktop tester, which is how the backend is tested by hand.
+For developers changing anything under `backend/` or `desktop/`: what to run before opening a pull request, and after pulling someone else's. Two parts: the automated suite, which needs no footage and takes about a minute, and one run on real footage through the desktop tester, which is how the backend is tested by hand.
 
-Before this: the backend environment exists ([mac-setup.md](mac-setup.md), steps 1 to 3; on Windows the venv is `backend\.venv` and the command is `python`), Node is installed, and `npm install` has been run once in `desktop/` ([desktop-tester.md](desktop-tester.md), step 1).
+Before this: the backend environment exists ([mac-setup.md](mac-setup.md), steps 1 to 3; on Windows the venv is `backend\.venv` and every `python` below is `.venv\Scripts\python.exe`, run from `backend`), Node is installed, and `npm install` has been run once in `desktop/` ([desktop-tester.md](desktop-tester.md), step 1).
 
 ## 1. The automated suite
 
@@ -14,7 +14,7 @@ python -m pytest tests -q
 
 Everything runs on synthetic data: a performer with exactly known joints seen by virtual phones for stages 2 and 3, encoded videos with a clap for the clap search and `check_videos`, the API through FastAPI's test client with the pipeline stubbed, and the desktop tester's compiled code driven by Node.[^1] The desktop tests do two things. They replay the lines a real run prints through the tester's progress tracker, so a renamed `print` in `run_pipeline.py` that would freeze the progress bar fails here instead of at a session. And they let the tester's own runner spawn `python -m mocap_pipeline.run_pipeline` on two synthetic videos, in which MediaPipe finds nobody: the run ends at calibration with the message filming.md lists, the tester must show it, and Cancel must stop the detection workers.[^2]
 
-What you should see: all passed, about two minutes.[^3] If the desktop tests are reported as skipped, Node is not on the PATH or `npm install` was not run in `desktop/`. To leave them out on purpose:
+What you should see: all passed, in about a minute.[^3] If the desktop tests are reported as skipped, Node is not on the PATH or `npm install` was not run in `desktop/`. To leave them out on purpose:
 
 ```
 python -m pytest tests -q -m "not desktop"
@@ -32,7 +32,7 @@ npm run typecheck
 
 The suite never sees a person, so one real take goes through the tester before a pull request that touches a stage. Any take folder from a session will do; the shortest one is fine. Follow [desktop-tester.md](desktop-tester.md): check the videos, run with the defaults, then read the glance numbers before you watch.[^4]
 
-Compare them with the numbers written in the session log for that take ([processing-a-take.md](processing-a-take.md), step 4). A pull request that changes them says so and why. A failure on a take that passed before the change is a regression, whatever the message; the tester shows the pipeline's own message and opens the log, and the table in [filming.md](filming.md) section 11 says what each message means.
+Compare them with the numbers written in the session log for that take ([processing-a-take.md](processing-a-take.md), step 4). A pull request that changes them says so and why. A failure on a take that passed before the change is a regression, whatever the message; the tester shows the last line the pipeline wrote (for the two-line clap and calibration messages that is the advice line, footnote 2) and opens the log, where the table in [filming.md](filming.md) section 11 says what each message means.
 
 ## 3. What to put in the pull request
 

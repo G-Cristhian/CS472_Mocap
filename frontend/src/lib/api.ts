@@ -27,26 +27,6 @@ export class ApiUnreachableError extends Error {
   }
 }
 
-/** One take, or null if the API has no take with that id. */
-export async function getTake(id: string, signal?: AbortSignal): Promise<Take | null> {
-  let response: Response
-  try {
-    response = await fetch(`${API_URL}/takes/${encodeURIComponent(id)}`, { signal })
-  } catch (e) {
-    // fetch only rejects on network failure or abort
-    if (signal?.aborted) throw e
-    throw new ApiUnreachableError()
-  }
-  if (response.status === 404) return null
-  if (!response.ok) throw new Error(`The API answered HTTP ${response.status}`)
-  return (await response.json()) as Take
-}
-
-/** Where to download one of a finished take's result files. */
-export function takeFileUrl(id: string, file: 'out3d.bvh' | 'out3d.json' | 'metrics.json') {
-  return `${API_URL}/takes/${encodeURIComponent(id)}/${file}`
-}
-
 /** One camera of a take, as GET /takes/{id}/keypoints.json lists them. */
 export interface KeypointCamera {
   camera_id: string

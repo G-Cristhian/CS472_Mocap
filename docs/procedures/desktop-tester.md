@@ -50,27 +50,27 @@ Press **Run the pipeline**. The bar follows detection frame by frame, then jumps
 
 ## 4. Read the result
 
-The skeleton plays as soon as the run finishes. Drag to rotate, wheel to zoom, the slider scrubs, Play/Pause toggles. The figure is the BVH the pipeline wrote, in metres on a one-metre grid.[^13]
+The skeleton plays as soon as the run finishes. Drag to rotate, wheel to zoom, the slider scrubs, Play/Pause toggles. The figure is the BVH the pipeline wrote, in metres on a grid of half-metre squares.[^13]
 
 Under the viewer, the numbers from `out3d.metrics.json`, stage by stage, so a poor take can be traced to its cause.[^22] **At a glance** has the ones the processing guide asks for, coloured by its thresholds:[^14]
 
 | Number | Green | Red |
 |---|---|---|
-| Calibration error, worst camera | under 3 px | over 10 px |
-| Triangulation error, mean | under 3 px | over 10 px |
-| Bone length spread | under 10 mm | over 20 mm |
-| Joints missing | under 5 % | over 15 % |
-| Upright frames for height | 30 or more | under 10 |
+| Calibration error, worst camera | 3 px or under | 10 px or over |
+| Triangulation error, mean | 3 px or under | 10 px or over |
+| Bone length spread | 10 mm or under | 20 mm or over |
+| Joints missing | 5 % or under | 15 % or over |
+| Upright frames for height | 30 or more | 10 or under |
 
 Then, per stage: how well each camera saw the performer (frames with nobody detected, mean confidence, seconds taken); the clap times and where they came from; each camera's calibration error and whether an old calibration was reused (in which case the height was not applied); the triangulation error with the worst joints and the joints most often missing; what smoothing did (jitter before and after, gaps filled, gaps left); and the least rigid bones. Reading the error backwards like this answers "which camera, which joint, which stage" from one run.
 
 **Rerun with the other smoother** runs the take again with Resume on and the smoother switched: the joints, clap times, calibration and 3D points are reused, only the smoothing and the skeleton are redone, so it takes seconds. The **Runs of this take** table then shows the two runs side by side (jitter before and after smoothing, bone spread, calibration error, missing joints, time); lower jitter with the same bone spread is the better filter for that take ("Choosing the smoother" in `backend/mocap_pipeline/README.md`). The table lasts while the app is open and starts afresh for a new output folder.
 
-Write the glance numbers in the session log with a word on how the take looked. **Open the output folder** shows every file the run produced; **Run another take** goes back to section 2 with the same folder listed.
+Write the glance numbers in the session log with a word on how the take looked. **Open the output folder** reveals the run's folder in the file manager (open it to see the files); **Run another take** goes back to section 2 with the same folder listed.
 
 ## When it fails
 
-The result panel shows the pipeline's own message and opens the log. The messages and what to do about them are the table in [filming.md](filming.md), section 11; they are the same whether the run came from the app or the terminal.[^15] If the app says it could not start Python, the backend is not set up on this machine: [mac-setup.md](mac-setup.md). On Windows, check that `backend\.venv\Scripts\python.exe` exists.
+The result panel shows the last line the pipeline wrote and opens the log. The messages and what to do about them are the table in [filming.md](filming.md), section 11; for the clap and calibration failures the panel shows the advice line that follows the message, and the message itself is the line before it in the log.[^15] If the app says it could not start Python, the backend is not set up on this machine: [mac-setup.md](mac-setup.md). On Windows, check that `backend\.venv\Scripts\python.exe` exists.
 
 ## Working on the app
 
@@ -92,8 +92,8 @@ The result panel shows the pipeline's own message and opens the log. The message
 [^11]: `WEIGHTS` in `desktop/src/shared/progress.ts`: detection 0.75, sync 0.05, calibration 0.08, triangulation 0.05, writing 0.07. Team judgement from the README's "full run, minutes; `--resume` run, seconds"; no timing measurement yet. The `timing` block in `metrics.json` will give the real split once a few takes have run.
 [^12]: `desktop/src/main/pipeline.ts`, `cancel()` kills the pipeline's whole process tree (`killTree`: `taskkill /T` on Windows, the process group elsewhere), so the detection workers of `--jobs` stop too; a worker left alive would hold the output pipes open and the window would never get its result. Stage files are written as each stage finishes (`run_pipeline.py`), so a cancelled run keeps the stages before the one it was in.
 [^13]: The BVH is written in centimetres, Y up (`stage3_rig/bvh_writer.py`, D-018); the viewer scales any skeleton whose bone offsets exceed five units by 0.01 (`desktop/src/renderer/viewer.ts`).
-[^14]: The thresholds are processing-a-take.md step 4, with their own sources there: the synthetic benchmark for the pixel error, Karashchuk et al. 2021 (DOI 10.1016/j.celrep.2021.109730) for limb-length variability, `tests/test_metrics.py` for the missing fraction, `MIN_UPRIGHT_FRAMES` for the upright count. The red limits are the pipeline's own give-up points (`CALIB_MAX_ERROR_PX = 10`, `MIN_UPRIGHT_FRAMES = 10`) or team judgement (20 mm, 15 %).
-[^15]: The app shows the last line the pipeline wrote to stderr, which is the `SystemExit` message `run_pipeline.py` raises with the text in that table (`desktop/src/shared/progress.ts`, `result()`).
+[^14]: The thresholds are processing-a-take.md step 4, with their own sources there: the synthetic benchmark for the pixel error, Karashchuk et al. 2021 (DOI 10.1016/j.celrep.2021.109730) for limb-length variability, `tests/test_metrics.py` for the missing fraction, `MIN_UPRIGHT_FRAMES` for the upright count. The red limits match the pipeline's own give-up points (`CALIB_MAX_ERROR_PX = 10`, `MIN_UPRIGHT_FRAMES = 10`) or team judgement (20 mm, 15 %); the app colours a value exactly at a limit red, while the pipeline still accepts it.
+[^15]: The app keeps the last line the pipeline wrote to stderr (`desktop/src/shared/progress.ts`, `result()`). The clap and calibration `SystemExit` messages in `run_pipeline.py` are two lines, the table's text and then an advice line, so the advice line is what the panel shows; the scale and floor failures are `ValueError`s from `scale_floor.py`, shown as the traceback's last line.
 [^16]: `desktop/vite.config.ts` and `desktop/src/renderer/mock.ts`; the sample skeleton is `frontend/public/samples/sample_take.bvh`.
 [^17]: `desktop/src/main/pipeline.ts`, `runCheck`, runs `python -u -m mocap_pipeline.check_videos <videos> [--clap-threshold …]`; `desktop/src/shared/check.ts` reads what it prints. The check itself is `backend/mocap_pipeline/check_videos.py`, filming.md section 9.
 [^18]: The pipeline only reads `--height-m` inside calibration (`scale_floor.py`, called from `run_pipeline.py` when a calibration is computed); an existing `--calibration` file is loaded as is. The app shows the note whenever Recalibrate is unticked (`desktop/src/renderer/main.ts`, `updateHeightNote`), and the result panel's calibration section says "reused" when it happened (`metrics.json`, `calibrate.reused_file`).
