@@ -29,7 +29,9 @@ export class ProgressTracker {
   private detail = 'Starting'
   private after = 0 // fraction of the non-detect stages completed, in WEIGHTS units
   readonly paths: { bvh?: string; json?: string; metrics?: string } = {}
-  private lastError = ''
+  private message: string[] = [] // the pipeline's last message, one entry per line
+  private inTraceback = false
+  private lastFromStderr = false
 
   constructor(videoPaths: string[]) {
     this.cameras = videoPaths.map(baseName)
@@ -56,17 +58,23 @@ export class ProgressTracker {
     return { stage: this.stage, fraction, detail: this.detail, videos }
   }
 
-  /** The result for a finished process. */
-  result(exitCode: number | null, cancelled = false): RunResult {
+  /** The result for a finished process. `signal` is set when the system stopped it (Node's 'close' event). */
+  result(exitCode: number | null, cancelled = false, signal: string | null = null): RunResult {
     if (cancelled) return { ok: false, exitCode, error: 'Cancelled' }
     const ok = exitCode === 0 && this.stage !== 'failed'
+    let error: string | undefined
+    if (!ok) {
+      // a killed run's last stderr line is whatever it happened to print before, not the cause
+      if (exitCode === null && signal) error = `The pipeline was stopped by the system (${signal}); it may have run out of memory.`
+      else error = this.message.join('\n') || `The pipeline exited with code ${exitCode}`
+    }
     return {
       ok,
       exitCode,
       bvhPath: this.paths.bvh,
       jsonPath: this.paths.json,
       metricsPath: this.paths.metrics,
-      error: ok ? undefined : this.lastError || `The pipeline exited with code ${exitCode}`,
+      error,
     }
   }
 
@@ -81,10 +89,38 @@ export class ProgressTracker {
     if (v) Object.assign(v, patch)
   }
 
+  /**
+   * Collects the pipeline's message from stderr before any line is read as progress, so the first
+   * line of a message that looks like progress ("Calibration from the performer failed ...") is
+   * kept. Consecutive stderr lines stay together: a SystemExit text is usually the diagnosis, then
+   * the advice. A traceback keeps only its exception line; warnings and indented lines are skipped.
+   */
+  private noteStderr(line: string): void {
+    if (!line.trim()) return
+    if (line.startsWith('Traceback')) {
+      this.message = []
+      this.inTraceback = true
+      return
+    }
+    if (/^\s/.test(line)) return // a traceback's File, code and ^^^ lines, or a warning's source line
+    if (/^\S.*:\d+: \w*Warning: /.test(line)) return // a Python warning, not the run's message
+    if (this.inTraceback || !this.lastFromStderr) this.message = []
+    this.inTraceback = false
+    this.message.push(line.replace(/^FAILED:\s*/, ''))
+  }
+
   private apply(line: string, fromStderr: boolean): void {
+    if (fromStderr) this.noteStderr(line)
+    else this.inTraceback = false
+    this.lastFromStderr = fromStderr
+    this.read(line, fromStderr)
+  }
+
+  private read(line: string, fromStderr: boolean): void {
     let m: RegExpMatchArray | null
 
-    if ((m = line.match(/^progress: detect (.+) (\d+)\/(\d+)$/))) {
+    // a frame count OpenCV cannot read is printed as -1: the frame number still counts
+    if ((m = line.match(/^progress: detect (.+) (\d+)\/(-?\d+)$/))) {
       const cam = this.cameraOf(m[1])
       const done = Number(m[2])
       const total = Number(m[3])
@@ -95,15 +131,17 @@ export class ProgressTracker {
           this.setVideo(cam, {
             fraction: total > 0 ? Math.min(0.99, done / total) : 0.5,
             state: 'detecting',
-            detail: `frame ${done}${total ? ` of ${total}` : ''}`,
+            detail: `frame ${done}${total > 0 ? ` of ${total}` : ''}`,
           })
         }
         this.stage = 'detecting'
-        this.detail = `Detecting joints in ${cam}, frame ${done}${total ? ` of ${total}` : ''}`
+        this.detail = `Detecting joints in ${cam}, frame ${done}${total > 0 ? ` of ${total}` : ''}`
       }
       return
     }
-    if ((m = line.match(/^Detecting joints in (.+?)( \(\w+\))?$/))) {
+    // the path is everything before the last bracket, which holds the detector and its options
+    // ("(mediapipe)", "(rtmpose, mode balanced)"); a path may itself hold " (" ("Takes (Oct)")
+    if ((m = line.match(/^Detecting joints in (.+?)(?: \([^()]*\))?$/))) {
       // several videos are detected at once, so one starting says nothing about the others
       const cam = this.cameraOf(m[1])
       this.setVideo(cam, { state: 'detecting', detail: 'starting' })
@@ -111,9 +149,9 @@ export class ProgressTracker {
       this.detail = `Detecting joints in ${cam ?? baseName(m[1])}`
       return
     }
-    if ((m = line.match(/^Detected joints in (.+?)( \((.*)\))?$/))) {
+    if ((m = line.match(/^Detected joints in (.+?)(?: \(([^()]*)\))?$/))) {
       const cam = this.cameraOf(m[1])
-      this.setVideo(cam, { fraction: 1, state: 'done', detail: m[3] ?? '' })
+      this.setVideo(cam, { fraction: 1, state: 'done', detail: m[2] ?? '' })
       this.stage = 'detecting'
       this.detail = `Detected joints in ${cam ?? baseName(m[1])}`
       return
@@ -125,22 +163,22 @@ export class ProgressTracker {
         this.setVideo(cam, { fraction: 1, state: 'failed', detail: m[2] })
         this.stage = 'detecting'
         this.detail = `Detection failed for ${cam}`
-        if (fromStderr) this.lastError = line
         return
       }
     }
-    if ((m = line.match(/^Using saved joints for (.+?) \(/))) {
+    if ((m = line.match(/^Using saved joints for (.+) \([^()]*\)$/))) {
       const cam = this.cameraOf(m[1])
       this.setVideo(cam, { fraction: 1, state: 'reused', detail: 'saved joints reused' })
       this.stage = 'detecting'
       this.detail = `Reusing saved joints for ${cam ?? baseName(m[1])}`
       return
     }
-    if (line.startsWith('Clap at') || line.startsWith('Using saved clap times')) {
+    // run_pipeline.py prints "Chirp at" instead of "Clap at" when the chirp is the sync sound
+    if ((m = line.match(/^(?:Clap|Chirp) at (.*)$/)) || line.startsWith('Using saved clap times')) {
       this.finishDetect()
       this.after = WEIGHTS.sync
       this.stage = 'calibrating'
-      this.detail = line.startsWith('Clap at') ? `Synchronised: ${line.slice(8)}` : 'Synchronised from the saved clap times'
+      this.detail = m ? `Synchronised: ${m[1]}` : 'Synchronised from the saved clap times'
       return
     }
     if (line.startsWith('Calibration started from') || line.startsWith('Calibration from the performer')) {
@@ -192,15 +230,13 @@ export class ProgressTracker {
       this.detail = line
       return
     }
-    if (line.startsWith('FAILED') || line.startsWith('Traceback') || /Error:/.test(line) || fromStderr) {
-      // the last non-empty stderr line is usually the human message (SystemExit text)
-      if (line.trim() && !line.startsWith('Traceback') && !/^\s+File "/.test(line) && !/^\s+\^/.test(line)) {
-        this.lastError = line.replace(/^FAILED:\s*/, '')
-      }
-      if (line.startsWith('FAILED')) {
-        this.stage = 'failed'
-        this.detail = this.lastError
-      }
+    // stderr lines were collected by noteStderr; an error printed on stdout is a one-line message
+    if (!fromStderr && (line.startsWith('FAILED') || /Error:/.test(line)) && !/^\s/.test(line)) {
+      this.message = [line.replace(/^FAILED:\s*/, '')]
+    }
+    if (line.startsWith('FAILED')) {
+      this.stage = 'failed'
+      this.detail = this.message.join(' ')
     }
   }
 
