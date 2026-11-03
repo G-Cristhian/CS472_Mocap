@@ -8,6 +8,7 @@ Every stage writes its result next to --out (io.stage_paths). Re-running with
 --resume loads those files instead of recomputing, so a failed or tweaked run
 starts from the last good stage instead of running the pose model again.
 --detector picks the pose model for stage 1 (stage1_keypoints/backends.py).
+--rtmpose-mode, --rtmpose-device and --rtmpose-detect-every tune RTMPose.
 --smoother picks the stage 2c smoother (stage2_reconstruct/smooth.py).
 --stop-after writes one stage's file and exits, to hand data to a teammate.
 --jobs sets how many videos stage 1 detects at once, each in its own process
@@ -609,7 +610,7 @@ def _run_stages(
     if not sync_from_file:
         io.save_sync(sync_result, str(sync_path))
 
-    # api.py and the desktop tester take "Clap at" / "Chirp at" as the end of sync
+    # api.py takes "Clap at" / "Chirp at", the desktop tester "Clap at", as the end of sync
     print(
         ("Chirp at " if sync_signal == "chirp" else "Clap at ")
         + ", ".join(f"{cid} {t:.3f} s" for cid, t in sync_result.clap_time_s.items())

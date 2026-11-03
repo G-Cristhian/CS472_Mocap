@@ -22,7 +22,7 @@ class Performer(models.Model):
     full_name = models.CharField(max_length=150)
     email = models.EmailField(blank=True)
     phone = models.CharField(max_length=30, blank=True)
-    # Default height for new recordings of this performer
+    # Height used by every recording of this performer (see Recording.effective_height)
     height_m = models.FloatField(
         null=True,
         blank=True,
