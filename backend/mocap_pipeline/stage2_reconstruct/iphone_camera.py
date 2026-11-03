@@ -1,9 +1,8 @@
-# file only used for iPhone cameras, triggered by main.py run with --camera iphone
-# other cameras use --fov guess in calibrate_person.py instead
+# file only used for iPhone cameras, used by run_pipeline.py with --camera iphone (or auto)
+# other cameras use --fov guess in calibrate.py instead
 #
-# grabs lens data from iPhone videos (.MOV)'s metadata! 
+# grabs lens data from iPhone videos (.MOV)'s metadata!
 # so camera matrix is computed instead of guessed from fov
-# additionally, uses recorded variable frame rate to match videos bt frame
 
 import re
 import struct
@@ -78,7 +77,7 @@ def _read_moov(path):
                 raise IPhoneMetadataError(f"{path} has no QuickTime metadata (not a .MOV/.MP4?)")
             fp.seek(size - header_len, 1)
 
-# keys + values of one meta atom (s, e = its payload) into a dict
+# keys + values of one meta atom (meta_start, meta_end = its payload) into a dict
 def _read_meta(moov, meta_start, meta_end):
     keys_atom = _find(moov, meta_start, meta_end, "keys")
     ilst_atom = _find(moov, meta_start, meta_end, "ilst")

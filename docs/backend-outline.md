@@ -304,14 +304,19 @@ code 1 if anything failed.
 - **`video_info(path)`**. Opens the video with OpenCV and gives back width,
   height, frame rate and frame count, or a record saying it could not be
   opened.
-- **`iphone_info(path)`**. The phone model, lens and 35 mm equivalent focal
-  length if the file carries Apple's metadata, else None. Uses
-  `iphone_camera.read_metadata`.
+- **`iphone_info(path)`**. Apple's tags from the file: whether the make is
+  Apple, the phone model, iOS version, lens, 35 mm equivalent focal length and
+  whether Cinematic mode keys are there; None if the file cannot be read. Uses
+  `iphone_camera.read_metadata` and `iphone_camera.focal_35mm`.
+- **`lens_report(path)`**. The lens lines `check` prints for one video, with a
+  warning if the focal length is outside `MAIN_LENS_35MM` (20 to 35 mm, the 1x
+  lens), if an Apple file has no focal length, or if Cinematic mode keys are
+  there.
 - **`clap_time(path, threshold, signal)`**. The clap time in seconds (or the
   chirp's, when `signal` is "chirp") using the same functions step 2a uses,
   or None and the reason.
 - **`check(video_paths, threshold, signal)`**. For every video, prints the size, frame rate,
-  length, lens information and clap (or chirp) time, with a warning if the frame rate is
+  length, lens information (`lens_report`) and clap (or chirp) time, with a warning if the frame rate is
   under 50, if a `.MOV` file lacks iPhone metadata (it was probably
   re-exported), or if the clap sits near the end of the search window. Then
   across cameras: warns if frame rates or resolutions differ, if lengths
@@ -622,8 +627,9 @@ field-of-view guess. The metadata is read directly from the file's QuickTime
 "atoms" (the nested boxes a `.MOV` file is built from), without any video
 library.
 
-- **`FOCAL_35MM_KEY`**, **`MODEL_KEY`**, **`LENS_KEY`**: the metadata key
-  names Apple uses. **`FULL_FRAME_DIAGONAL_MM`**: 43.27, the diagonal of a
+- **`FOCAL_35MM_KEY`**, **`LENS_KEY`**, **`MAKE_KEY`**, **`MODEL_KEY`**,
+  **`SOFTWARE_KEY`**, **`CINEMATIC_KEY`**, **`CINEMATIC_INTENT_KEY`**: the
+  metadata key names Apple uses. **`FULL_FRAME_DIAGONAL_MM`**: 43.27, the diagonal of a
   35 mm film frame.
 - **`IPhoneMetadataError`** (class). Raised for files without the metadata.
 - **`_atoms(data, start, end)`**. Walk the atoms between two byte positions,
@@ -634,20 +640,27 @@ library.
 - **`_read_moov(path)`**. Read only the `moov` atom, which holds all the
   metadata, by walking the top level of the file and skipping over the large
   video data without loading it.
-- **`read_metadata(path)`**. Inside `moov`, find the `meta` atom, then its
-  `keys` list (the names) and `ilst` list (the values). Pair them up, decoding
-  text, whole numbers and floating-point values by their type code. Gives
-  back a dictionary from key name to value, or an empty one if the file has
-  no such metadata.
+- **`_read_meta(moov, meta_start, meta_end)`**. Inside one `meta` atom, find
+  its `keys` list (the names) and `ilst` list (the values). Pair them up,
+  decoding text, whole numbers and floating-point values by their type code.
+- **`_video_track_meta(moov)`**. The `meta` atom of the first video track
+  (handler type "vide"), or None.
+- **`read_metadata(path)`**. The movie's `meta` atom, plus the video track's
+  for keys the movie does not have (iOS 26.6.2 and 27.0 files keep the lens
+  keys in the video track). Gives back a dictionary from key name to value,
+  or an empty one if the file has no such metadata.
+- **`focal_35mm(metadata)`**. The 35 mm equivalent focal length as a number,
+  read from text such as "25" or "50.00mm", or None.
 - **`intrinsics_from_focal(size, focal_35mm)`**. Lens numbers from the 35 mm
   equivalent: the focal length in pixels is the 35 mm value times the image
   diagonal in pixels divided by the film diagonal in millimetres. Using the
   diagonal makes it work for portrait and landscape alike.
-- **`is_iphone_video(path)`**. True if the file carries the focal length key.
+- **`is_iphone_video(path)`**. True if the file carries a usable focal length.
 - **`iphone_intrinsics(path, size)`**. The lens numbers and the metadata for
-  one video, raising if the focal length is missing.
-- Run as a script, it prints the model, lens and focal length of each video
-  given.
+  one video, raising if the focal length is missing, with the model and iOS
+  version in the message when Apple's make tag is there.
+- Run as a script, it prints the model, lens, focal length and whether the
+  Cinematic mode key is there, for each video given.
 
 ### `mocap_pipeline/stage2_reconstruct/board_calibration.py`: the printed-board fallback
 
