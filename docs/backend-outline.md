@@ -1123,7 +1123,8 @@ The models: `accounts.User` (the email is the login), `projects.Project` and
 `MotionVersion` (one render: status, height, pose model, and the outputs
 stored in the row) and `MotionRecording` (a recording in a camera slot of a
 motion), `recordings.Performer` (name and height) and `Recording` (one
-uploaded video with its size, frame rate and duration).
+uploaded video with its size, frame rate and duration, and its own height
+for when it has no performer).
 
 The routes, all under `api/v1/`. Every one needs a logged-in user except the
 `auth/` ones other than `auth/me/`.
@@ -1136,13 +1137,13 @@ The routes, all under `api/v1/`. Every one needs a logged-in user except the
 | `auth/password/reset/`, `auth/password/reset/confirm/` | POST | password reset by emailed token |
 | `projects/` | GET, POST | the user's projects; make one |
 | `motions/` | GET, POST | the user's motions; make one |
-| `motions/<uuid>/` | GET | one motion with its recordings, performers and versions |
+| `motions/<uuid>/` | GET | one motion with its recordings, performers, the height a render would use, and versions |
 | `motions/<uuid>/recordings/` | PUT | set which recordings the motion uses, 2 to 4, in camera order |
 | `motions/<uuid>/projects/` | POST | add the motion to a project |
 | `motions/<uuid>/versions/` | POST | start a render; one at a time across the whole server |
 | `motions/<uuid>/versions/<n>/bvh/` | GET | the rendered skeleton file |
 | `recordings/` | GET, POST | the user's recordings; upload one video |
-| `recordings/<uuid>/` | GET, PATCH, DELETE | one recording; set its performer; delete it |
+| `recordings/<uuid>/` | GET, PATCH, DELETE | one recording; set its performer or its own height; delete it |
 | `recordings/<uuid>/video/`, `recordings/<uuid>/thumbnail/` | GET | the file and its thumbnail |
 | `performers/`, `performers/<id>/` | GET, POST; GET, PATCH | performers |
 
