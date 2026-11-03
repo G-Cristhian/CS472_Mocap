@@ -21,6 +21,22 @@ DETECT_MAX_AUTO_JOBS = 4
 # every extra camera adds detection time linearly and refinement time faster.
 MIN_CAMERAS = 2
 
+# RTMPose (stage1_keypoints/backends.py, --detector rtmpose). Mode picks rtmlib's
+# model pair: "lightweight" (YOLOX-tiny 416 + RTMPose-s 256x192), "balanced"
+# (YOLOX-m 640 + RTMPose-m 256x192) or "performance" (YOLOX-x 640 + RTMPose-x
+# 384x288). Balanced is rtmlib's default (design decision D-022).
+RTMPOSE_MODE = "balanced"
+# Run RTMPose's person detector only every this many frames (1 = every frame,
+# as before). In between, the performer's box comes from the joints found in
+# the previous frame: those scoring at least RTMPOSE_TRACK_MIN_SCORE (rtmlib's
+# raw score), at least RTMPOSE_TRACK_MIN_JOINTS of them, their bounding box
+# grown RTMPOSE_TRACK_BOX_SCALE times about its centre (rtmlib's PoseTracker
+# uses 1.25). Too few good joints and the detector runs on the next frame.
+RTMPOSE_DETECT_EVERY = 1
+RTMPOSE_TRACK_MIN_SCORE = 0.3
+RTMPOSE_TRACK_MIN_JOINTS = 6
+RTMPOSE_TRACK_BOX_SCALE = 1.25
+
 # ---- Stage 2a: sync --------------------------------------------------------
 # Only search this many seconds from the start of each video for the clap.
 CLAP_SEARCH_WINDOW_S = 10.0
@@ -52,6 +68,29 @@ CLAP_MAX_REFINE_S = 0.05
 # Resampling never interpolates across a hole longer than this many of the
 # camera's own frame intervals (a dropped frame is fine, a stall is a gap).
 SYNC_MAX_INTERP_GAP_FRAMES = 2.5
+# Chirp sync (stage2_reconstruct/chirp.py), the alternative to the clap: a
+# known sweep played from a speaker once every camera is recording, found by
+# correlating each video's audio with the same sweep (a matched filter). The
+# sweep stays inside what phone speakers play well and under the Nyquist
+# frequency of CLAP_AUDIO_RATE (8 kHz). Changing any of these four means the
+# chirp played on set must be regenerated (python -m mocap_pipeline.stage2_reconstruct.chirp,
+# and frontend/src/lib/chirp.ts uses the same numbers).
+CHIRP_F0_HZ = 1500.0
+CHIRP_F1_HZ = 6000.0
+CHIRP_DURATION_S = 0.5
+# The fades are long on purpose: a chirp that reaches full loudness more slowly
+# than CLAP_MAX_RISE_S is never taken for a clap, so a take can carry both
+# (clap and chirp in one take, to compare the two).
+CHIRP_FADE_S = 0.05
+# The chirp is accepted where the audio matches it at least this well
+# (normalised correlation, 0..1; room noise alone scores about 0.02). Scaled
+# by --clap-threshold like the clap thresholds.
+CHIRP_MIN_SCORE = 0.2
+# A second match at least this fraction as strong as the best, more than
+# CHIRP_ECHO_S away from it, makes the detection ambiguous (chirp played
+# twice, or two phones playing it); echoes off nearby walls arrive sooner.
+CHIRP_MAX_SECOND_PEAK = 0.7
+CHIRP_ECHO_S = 0.1
 
 # ---- Stage 2b: calibration -------------------------------------------------
 # Our calibration (calibrate.py) starts from the best-matched camera pair, adds
@@ -62,10 +101,6 @@ SYNC_MAX_INTERP_GAP_FRAMES = 2.5
 CALIB_MIN_CONFIDENCE = 0.8
 # RANSAC inlier threshold in pixels for the camera pose from the joints.
 RANSAC_REPROJ_THRESHOLD_PX = 3.0
-# Stop the alternate intrinsic/extrinsic loop when mean reprojection error
-# improves by less than this between iterations. (Liu et al. only, not used by ours.)
-CALIB_CONVERGENCE_PX = 0.01
-CALIB_MAX_ITERATIONS = 50
 # Initial guess for a phone main camera's horizontal field of view, used to
 # seed the focal length (the paper seeds from factory values we do not have).
 # iPhones read their real focal length from the video metadata instead.

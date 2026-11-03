@@ -1,8 +1,10 @@
 <!-- Copied from: legacy/multicam_3d/README.md, updated for the mocap_pipeline layout -->
 # mocap_pipeline
-The team's outline with stages 1 and 2 filled in from our first multi-camera pipeline (now `backend/legacy/multicam_3d`, kept for reference): same folders, function names and data shapes (`schemas.py`). Each file starts with a comment saying which `multicam_3d` file it was copied from.
+The team's outline with stages 1 and 2 filled in from our first multi-camera pipeline (now `backend/legacy/multicam_3d`, kept for reference): same folders, function names and data shapes (`schemas.py`). The `multicam_3d` README says how its files map onto this layout.
 
 Videos from 2 or more cameras (iPhones and webcams can be mixed), each starting with a clap, go in. 3D joints per frame come out, in metres, Y up, floor at Y = 0.
+
+New to the code? [docs/backend-outline.md](../../docs/backend-outline.md) walks through every step, file and function in plain language.
 
 ---
 # Running
@@ -11,6 +13,16 @@ $ cd backend
 $ python -m pip install -r mocap_pipeline/requirements.txt
 $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV cam2.mp4 --height-m 1.75
 ```
+
+On Windows, in PowerShell, from `backend` and without activating the venv:
+
+```
+cd $HOME\CS472_Mocap\backend
+.venv\Scripts\python.exe -m pip install -r mocap_pipeline\requirements.txt
+.venv\Scripts\python.exe -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV cam2.mp4 --height-m 1.75
+```
+
+The other examples in this README are written for a Mac. On Windows, put `.venv\Scripts\python.exe` in place of `python`, keep each command on one line, and list a take's videos with `Get-ChildItem` instead of `*`. [docs/procedures/windows-setup.md](../../docs/procedures/windows-setup.md) shows each of these.
 On Linux without a desktop, MediaPipe also needs the GL libraries: `sudo apt install libegl1 libgles2 libgl1`.
 
 The MediaPipe model defaults to the one in `backend/models/`. `MODEL_FILEPATH` in a `.env` file or `--model` overrides it.
@@ -64,13 +76,13 @@ Every stage saves its result next to the `--out` file, named after it. For the d
 $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --height-m 1.75            # full run, minutes
 $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --resume --no-smooth       # seconds
 $ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --resume --smoother butterworth   # the other filter
-$ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --resume --recalibrate     # redo calibration only
+$ python -m mocap_pipeline.run_pipeline cam0.MOV cam1.MOV --resume --recalibrate --height-m 1.75   # redo calibration, and the triangulation that depends on it
 ```
 `--sync` given by hand wins over the saved clap times; a changed `calibration.json` makes the pose file stale automatically.
 
 `--stop-after keypoints|sync|calibrate|triangulate` runs up to that stage, writes its file and stops, so one person can hand another the data for the next stage without sharing the videos. The files load with `mocap_pipeline.io` (`load_keypoints`, `load_sync`, `load_rig`, `load_pose3d`).
 
-Tests (no videos or model needed): `cd backend && python -m pytest tests`. Stages 2 and 3 are checked against a synthetic performer with exactly known joints, seen by virtual phones in the protocol's camera arc (`tests/synthetic_scene.py`); `python -m tests.evaluate_synthetic` prints the error of every stage for several camera layouts and noise levels, and `--bvh out.bvh` writes the result for the viewer.
+Tests (no videos or model needed): `cd backend && python -m pytest tests`. Stages 2 and 3 are checked against a synthetic performer with exactly known joints, seen by virtual phones in the protocol's camera arc (`tests/synthetic_scene.py`); `python -m tests.evaluate_synthetic` prints the error of every stage for several camera layouts and noise levels, and `--bvh out.bvh` writes the result for the viewer. `tests/test_desktop_tester.py` checks the desktop tester (`desktop/`) against the pipeline: the printed lines above through its progress bar, and its runner spawning a real run; it needs Node and skips without it (`-m "not desktop"` to leave it out). The whole routine, including a run on real footage through the tester, is in [`docs/procedures/testing-the-backend.md`](../../docs/procedures/testing-the-backend.md).
 
 ---
 # Metrics
@@ -79,10 +91,10 @@ Every run writes `out3d.metrics.json` (next to `--out`, also when the run fails 
 | Key | What it says |
 |---|---|
 | `stage1.<camera>` | frames, fraction with no person, mean confidence overall and per joint |
-| `sync` | clap time per camera, where the times came from, cross-check shift per camera in ms and whether it was applied |
-| `calibrate` | starting pair, distinct correspondences per pair (how much the performer moved), reprojection error per camera, camera types, board fallback |
-| `scale`, `floor` | upright frames, metres per unit, floor fit residual and spread, tilt from the body's up direction, whether the fitted plane was trusted |
-| `triangulate` | mean reprojection error overall and per joint, views dropped as outliers, joints failed, joints with fewer than 2 views |
+| `sync` | clap time per camera, where the times came from, the clap threshold; under `cross_check`, keyed by the video file name (a dot in the name splits the key), each camera's shift against camera 0 in ms and whether it was applied. Only when the claps were searched for, not with `--sync` or saved clap times |
+| `calibrate` | starting pair, distinct correspondences per pair (how much the performer moved), reprojection error per camera, camera types, board fallback. When a saved calibration is reused only `reused_file` is recorded |
+| `scale`, `floor` | upright frames, metres per unit, floor fit residual and spread, tilt from the body's up direction, whether the fitted plane was trusted. Absent when a saved calibration is reused |
+| `triangulate` | mean reprojection error overall and per joint, views dropped as outliers, joints failed, joints with fewer than 2 views. Absent when `--resume` reuses the saved 3D joints; after `--stop-after calibrate` it holds the rough pass used to set the scale |
 | `smooth.gaps` | gaps filled and gaps left missing |
 | `pose_raw`, `pose_final` | missing fraction overall and per joint, mean cameras per joint, before and after smoothing |
 | `rig.bone_lengths` | per bone: median length, standard deviation over the take and as a fraction; the cleanest precision number without ground truth |
@@ -108,7 +120,7 @@ It takes seconds and says which files the pipeline cannot use.
 | 2b | `stage2_reconstruct/board_calibration.py` | ChArUco board fallback if the above fails |
 | 2b | `stage2_reconstruct/iphone_camera.py` | iPhone lens focal length from the video metadata |
 | 2b | `stage2_reconstruct/scale_floor.py` | metres from the performer's height, floor at Y = 0, Y up |
-| 2c | `stage2_reconstruct/triangulate.py` | 3D joints from every camera that saw them, drops one bad view |
+| 2c | `stage2_reconstruct/triangulate.py` | 3D joints from every camera that saw them, drops the worst disagreeing view of a point, repeatedly, while more than two remain |
 | 2c | `stage2_reconstruct/smooth.py` | fills gaps up to 10 frames, light smoothing |
 | 3a | `stage3_rig/skeleton.py` | 33 MediaPipe joints to the 17-joint H36M skeleton, fixed bone lengths, T-pose |
 | 3b | `stage3_rig/rotations.py` | each joint's rotation per frame |

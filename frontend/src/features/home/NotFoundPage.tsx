@@ -5,7 +5,7 @@ export function NotFoundPage() {
     <div className="page">
       <h1 className="page-title">This screen does not exist yet</h1>
       <p className="page-sub">
-        The prototype covers Home, Record, Projects, a project workspace, the Motion Library and
+        The prototype covers Projects, a project workspace, Motions, Recordings, Streaming and
         Settings.
       </p>
       <p style={{ marginTop: 24 }}>

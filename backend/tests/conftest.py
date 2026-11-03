@@ -6,6 +6,12 @@ from mocap_pipeline.joints import NUM_JOINTS
 from mocap_pipeline.schemas import Camera, CameraRig, Keypoints2D, Pose3D, SyncResult
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "desktop: drives the desktop tester's compiled code with Node against the pipeline "
+                   "(tests/test_desktop_tester.py; skipped without Node or desktop/node_modules)")
+
+
 def make_keypoints(camera_id="cam0", video_path="cam0.mp4", frames=12, seed=0) -> Keypoints2D:
     rng = np.random.default_rng(seed)
     points = rng.uniform(0, 1000, size=(frames, NUM_JOINTS, 2))

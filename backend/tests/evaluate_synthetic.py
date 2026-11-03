@@ -119,7 +119,7 @@ def main() -> None:
 
     print("\nStage 2c (smoothing) on the realistic 3-camera result: error against the truth and frame-to-frame jitter\n")
     scene, _ = keep
-    raw, rig = run_stage2(scene, smoother=None)
+    raw, _ = run_stage2(scene, smoother=None)
     truth = scene.truth_in_pipeline_frame()
     for label, pose in [("raw (gaps filled, no filter)", raw)] + [
             (f"{m} ({', '.join(f'{k} {v}' for k, v in s.items())})", smooth.smooth(raw, m))
