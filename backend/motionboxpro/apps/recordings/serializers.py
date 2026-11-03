@@ -31,7 +31,7 @@ class PerformerSerializer(serializers.ModelSerializer):
 
 
 class RecordingSerializer(serializers.ModelSerializer):
-    """What the API returns for a recording. The name, lens settings and performer can be changed; the video cannot."""
+    """What the API returns for a recording. The name, lens settings, performer and height can be changed; the video cannot."""
 
     # The performer is chosen by id, and only from the logged-in user's own list (see __init__)
     has_thumbnail = serializers.SerializerMethodField()
@@ -42,6 +42,7 @@ class RecordingSerializer(serializers.ModelSerializer):
             "uuid",
             "name",
             "performer",
+            "performer_height",
             "lens_source",
             "field_of_view_deg",
             "width",

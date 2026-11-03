@@ -1,9 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { createPerformer, listPerformers, updatePerformer, type Performer } from '@/lib/performers'
-import { setRecordingPerformer } from '@/lib/recordings'
+import { updateRecordingPerformer } from '@/lib/recordings'
+import type { Recording } from '@/types'
 
 const NONE = ''
 const NEW = 'new'
+const HEIGHT_HINT_ID = 'performer-height-hint'
 
 /** The editable details of a performer. Height is text while typing; empty means no height. */
 interface Draft {
@@ -16,15 +18,21 @@ interface Draft {
 interface Props {
   recordingId: string
   performerId: number | null
-  /** The logged-in user's name, used as the default performer when none is chosen yet */
+  /** The recording's own height, used when it has no performer */
+  performerHeight: number | null
+  /** The logged-in user's name, used to pre-fill the name of a new performer */
   accountName: string
-  onSaved: (performerId: number | null) => void
+  onSaved: (recording: Recording) => void
 }
 
 /** Who is in this recording: pick someone from your list, or add a new performer, then save. */
-export function PerformerPanel({ recordingId, performerId, accountName, onSaved }: Props) {
+export function PerformerPanel({ recordingId, performerId, performerHeight, accountName, onSaved }: Props) {
   const [performers, setPerformers] = useState<Performer[] | null>(null)
-  const [choice, setChoice] = useState<string>(performerId != null ? String(performerId) : NEW)
+  const [choice, setChoice] = useState<string>(performerId != null ? String(performerId) : NONE)
+  const [savedId, setSavedId] = useState<number | null>(performerId)
+  // The recording's own height: text while typing, empty means no height
+  const [ownHeight, setOwnHeight] = useState(performerHeight != null ? String(performerHeight) : '')
+  const [savedHeight, setSavedHeight] = useState<number | null>(performerHeight)
   const [name, setName] = useState(accountName)
   const [height, setHeight] = useState('')
   const [email, setEmail] = useState('')
@@ -36,19 +44,16 @@ export function PerformerPanel({ recordingId, performerId, accountName, onSaved 
   const [detailsSaving, setDetailsSaving] = useState(false)
 
   const selected = performers?.find((p) => String(p.id) === choice) ?? null
+  const ownHeightValue = ownHeight !== '' ? Number(ownHeight) : null
+  const isSaved =
+    choice === (savedId != null ? String(savedId) : NONE) && (choice !== NONE || ownHeightValue === savedHeight)
+  const heightInvalid = choice === NONE && ownHeightValue != null && (ownHeightValue < 1 || ownHeightValue > 2.5)
 
   useEffect(() => {
     listPerformers()
-      .then((list) => {
-        setPerformers(list)
-        // Nothing chosen yet: default to the account holder if they are already in the list
-        if (!performerId) {
-          const sameName = list.find((p) => p.full_name === accountName)
-          if (sameName) setChoice(String(sameName.id))
-        }
-      })
+      .then(setPerformers)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not load performers.'))
-  }, [performerId, accountName])
+  }, [])
 
   async function onSave(e: FormEvent) {
     e.preventDefault()
@@ -68,10 +73,18 @@ export function PerformerPanel({ recordingId, performerId, accountName, onSaved 
         target = Number(choice)
       }
 
-      await setRecordingPerformer(recordingId, target)
+      // Refresh the list first, so a failure here can't report a save the server already made as unsaved
       setPerformers(await listPerformers())
+      // With a performer only the performer is sent, so the recording's own height stays as it is
+      const saved = await updateRecordingPerformer(
+        recordingId,
+        target == null ? { performer: null, performer_height: ownHeightValue } : { performer: target },
+      )
       setChoice(target == null ? NONE : String(target))
-      onSaved(target)
+      setSavedId(target)
+      setSavedHeight(saved.performerHeight ?? null)
+      setOwnHeight(saved.performerHeight != null ? String(saved.performerHeight) : '')
+      onSaved(saved)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save the performer.')
     } finally {
@@ -110,7 +123,8 @@ export function PerformerPanel({ recordingId, performerId, accountName, onSaved 
     }
   }
 
-  const canSave = !saving && performers !== null && (choice !== NEW || name.trim() !== '')
+  const canSave =
+    !saving && performers !== null && !isSaved && !heightInvalid && (choice !== NEW || name.trim() !== '')
   const canSaveDetails = !detailsSaving && draft.full_name.trim() !== ''
 
   return (
@@ -136,10 +150,54 @@ export function PerformerPanel({ recordingId, performerId, accountName, onSaved 
         </select>
       </label>
 
-      {selected && !editing && (
-        <button type="button" className="btn btn--ghost btn--sm" onClick={() => startEditing(selected)}>
-          Edit details
-        </button>
+      {/* Always mounted so screen readers announce the change; display: contents leaves no grid gap when empty */}
+      <div role="status" style={{ display: 'contents' }}>
+        {!isSaved && <p style={{ color: 'var(--muted)', fontSize: 13 }}>Unsaved</p>}
+      </div>
+
+      {(choice === NONE || selected) && (
+        <div className="performer-panel__height">
+          <label className="field">
+            <span className="field__label">Performer height (m)</span>
+            {selected ? (
+              <input
+                className="input"
+                type="number"
+                readOnly
+                placeholder="Not set"
+                value={selected.height_m ?? ''}
+                aria-describedby={HEIGHT_HINT_ID}
+              />
+            ) : (
+              <input
+                className="input"
+                type="number"
+                min="1"
+                max="2.5"
+                step="0.01"
+                placeholder="e.g. 1.75"
+                value={ownHeight}
+                aria-invalid={heightInvalid}
+                onChange={(e) => setOwnHeight(e.target.value)}
+              />
+            )}
+          </label>
+          {selected && (
+            <p id={HEIGHT_HINT_ID} style={{ color: 'var(--muted)', fontSize: 13 }}>
+              {selected.height_m != null ? `From ${selected.full_name}. ` : `${selected.full_name} has no height. `}
+              {!editing && (
+                <button type="button" className="linkbtn" onClick={() => startEditing(selected)}>
+                  {selected.height_m != null ? 'Edit details' : 'Add height'}
+                </button>
+              )}
+            </p>
+          )}
+          {heightInvalid && (
+            <p role="alert" style={{ color: 'var(--pink)', fontSize: 14 }}>
+              Height must be between 1.00 and 2.50 m.
+            </p>
+          )}
+        </div>
       )}
 
       {selected && editing && (

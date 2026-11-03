@@ -127,10 +127,12 @@ export function RecordingPage() {
 
           {fetched && (
             <PerformerPanel
+              key={fetched.id}
               recordingId={fetched.id}
               performerId={fetched.performerId ?? null}
+              performerHeight={fetched.performerHeight ?? null}
               accountName={accountName}
-              onSaved={(performerId) => setFetched((r) => (r ? { ...r, performerId } : r))}
+              onSaved={setFetched}
             />
           )}
 

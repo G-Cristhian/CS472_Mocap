@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useSettings } from '@/app/SettingsProvider'
 import {
+  AlertIcon,
   ExportIcon,
   InfoIcon,
   PauseIcon,
@@ -67,8 +68,12 @@ export function MotionPage() {
   const current = versions.find((v) => v.uuid === selectedVersion) ?? versions[versions.length - 1] ?? null
   // a render is running while any version is queued or running; the server runs one at a time
   const busy = versions.some((v) => v.status === 'queued' || v.status === 'running')
-  // a render needs at least two cameras, and no other render going
-  const canRender = !busy && !rendering && (detail?.recordings.length ?? 0) >= 2
+  const renderHeight = detail?.render_height ?? null
+  // a render needs at least two cameras, a height, and no other render going
+  const canRender = !busy && !rendering && (detail?.recordings.length ?? 0) >= 2 && renderHeight !== null
+  // recordings without a height don't count as a different one
+  const heightsDiffer =
+    new Set(detail?.recordings.map((r) => r.performer_height).filter((h) => h !== null)).size > 1
   const motionName = detail?.name ?? ''
   // the transport's clock: the motion's length until a file loads
   const take = { name: motionName, duration: '0:24' }
@@ -301,20 +306,33 @@ export function MotionPage() {
           </section>
 
           <section className="ws__performers">
-            <p className="eyebrow">Performers</p>
-            {detail.performers.length === 0 && (
+            <p className="eyebrow">Performer height</p>
+            {renderHeight === null && (
               <p style={{ color: 'var(--muted-2)', fontSize: 13, marginTop: 10 }}>
-                No performer yet. Set one on a recording and add it here.
+                No height yet. Set a performer or a height on a recording.
               </p>
             )}
             <div className="takelist">
-              {detail.performers.map((p) => (
-                <div key={p.id} className="takelist__row">
-                  <p className="takelist__name">{p.full_name}</p>
-                  <p className="takelist__specs">{p.height_m ? `${p.height_m.toFixed(2)} m` : 'height not set'}</p>
+              {detail.recordings.map((r) => (
+                <div key={r.uuid} className="takelist__row">
+                  <p className="takelist__name">
+                    Cam {r.camera_slot + 1} · {r.performer?.full_name ?? 'No performer'}
+                  </p>
+                  <p className="takelist__specs">
+                    {r.performer_height !== null ? `${r.performer_height.toFixed(2)} m` : 'height not set'}
+                  </p>
                 </div>
               ))}
             </div>
+            {heightsDiffer && renderHeight && (
+              <div className="alert" style={{ alignItems: 'flex-start', fontSize: 13, marginTop: 10 }}>
+                <AlertIcon />
+                <span>
+                  <b>Heights don't match.</b> Rendering uses {renderHeight.height_m.toFixed(2)} m from Cam{' '}
+                  {renderHeight.camera_slot + 1}. Set the same height on every recording if that's wrong.
+                </span>
+              </div>
+            )}
           </section>
 
           <section id="processing">
@@ -351,6 +369,11 @@ export function MotionPage() {
                   </button>
                   {(detail.recordings.length < 2) && (
                     <p style={{ color: 'var(--muted-2)', fontSize: 13 }}>Add at least 2 recordings to render.</p>
+                  )}
+                  {renderHeight === null && (
+                    <p style={{ color: 'var(--muted-2)', fontSize: 13 }}>
+                      Set a height on one of the recordings to render.
+                    </p>
                   )}
                   {busy && <p style={{ color: 'var(--muted-2)', fontSize: 13 }}>A render is running.</p>}
                   {renderError && (

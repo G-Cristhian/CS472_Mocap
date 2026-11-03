@@ -67,6 +67,12 @@ class Recording(models.Model):
         blank=True,
         related_name="recordings",
     )
+    # In metres. Used only when the recording has no performer; kept while one is set (see effective_height)
+    performer_height = models.FloatField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1.0), MaxValueValidator(2.5)],
+    )
 
     name = models.CharField(max_length=100, blank=True)
     video = models.FileField(upload_to=file_path)
@@ -89,3 +95,11 @@ class Recording(models.Model):
 
     def __str__(self):
         return self.name or f"Recording {self.pk}"
+
+    @property
+    def effective_height(self):
+        """The height this recording counts with: its performer's, which may be empty, or its own if it has no performer."""
+        if self.performer is not None:
+            return self.performer.height_m
+
+        return self.performer_height
