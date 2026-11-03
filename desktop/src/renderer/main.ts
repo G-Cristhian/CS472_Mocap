@@ -119,10 +119,11 @@ function selectionChanged(): void {
   chosenKey = key
   checkBox.hidden = true
   const box = $<HTMLInputElement>('clap-times')
-  if (box.value.trim()) {
-    box.value = ''
-    clapNote.textContent = 'Clap times cleared: the videos or their order changed. Type them again, camera 0 first.'
-  }
+  // a note left from an earlier change would describe a clearing that did not happen now
+  clapNote.textContent = box.value.trim()
+    ? 'Clap times cleared: the videos or their order changed. Type them again, camera 0 first.'
+    : ''
+  box.value = ''
 }
 
 $('choose').addEventListener('click', async () => {
@@ -152,7 +153,18 @@ $('choose').addEventListener('click', async () => {
     const byPath = new Map(videos.map((v) => [v.path, v]))
     const kept = picked.filter((p) => byPath.has(p.path)).map((p) => ({ ...byPath.get(p.path)!, use: p.use }))
     const added = videos.filter((v) => !picked.some((p) => p.path === v.path)).map((v) => ({ ...v, use: true }))
-    picked = [...kept, ...added]
+    const nameOrder = (a: VideoFile, b: VideoFile) => a.name.localeCompare(b.name, undefined, { numeric: true })
+    const reordered = kept.some((p, i) => i > 0 && nameOrder(kept[i - 1], p) > 0)
+    if (!reordered) {
+      // name order is camera order (filming.md section 8): a file copied in late takes its place
+      picked = [...kept, ...added].sort(nameOrder)
+    } else {
+      // the user set the order by hand, so a new file cannot be placed for them: it goes last, said loudly
+      picked = [...kept, ...added]
+    }
+    if (added.length) {
+      folderError.textContent = `Added ${added.map((v) => v.name).join(', ')}${reordered ? ' at the end of the list: check the camera order.' : ' in name order.'}`
+    }
   } else {
     videoDir = dir
     folderLabel.textContent = dir
@@ -276,6 +288,7 @@ checkButton.addEventListener('click', async () => {
   setupError.textContent = ''
   const seq = ++checkSeq
   const key = chosenKey
+  const thresholdText = $<HTMLInputElement>('clap-threshold').value
   checking = true
   checkButton.disabled = true
   checkButton.textContent = 'Checking…'
@@ -291,8 +304,9 @@ checkButton.addEventListener('click', async () => {
     checkButton.textContent = 'Check the videos'
     checkButton.disabled = chosenVideos().length < 1
   }
-  // a result for videos that are no longer the chosen ones would vouch for files nobody checked
-  if (seq === checkSeq && key === chosenKey) renderCheck(result)
+  // a result for other videos, or another threshold, would vouch for a check nobody ran
+  if (seq === checkSeq && key === chosenKey && thresholdText === $<HTMLInputElement>('clap-threshold').value) renderCheck(result)
+  else setupError.textContent = 'The videos or the clap threshold changed during the check: check again.'
 })
 
 // ---- 2. progress -------------------------------------------------------------------------
@@ -327,6 +341,7 @@ function appendLog(line: string): void {
 
 async function startRun(options: RunOptions): Promise<void> {
   setupError.textContent = ''
+  clapNote.textContent = ''
   setup.hidden = true
   preview.hidden = true
   progressPanel.hidden = false
