@@ -70,7 +70,7 @@ Write the glance numbers in the session log with a word on how the take looked. 
 
 ## When it fails
 
-The result panel shows the pipeline's message and opens the log. The messages and what to do about them are the table in [filming.md](filming.md), section 11; for the clap and calibration failures the panel shows the message and then the advice line that follows it.[^15] If it says the computer most likely ran out of memory, close other programs, or set **Videos detected at once** (step 10) to 1, and run again. If the app says it could not start Python, the backend is not set up on this machine: [mac-setup.md](mac-setup.md). On Windows, check that `backend\.venv\Scripts\python.exe` exists.
+The result panel shows the pipeline's message and opens the log. The messages and what to do about them are the table in [filming.md](filming.md), section 11; for the clap and calibration failures the panel shows the message and then the advice line that follows it.[^15] If it says a process was stopped abruptly, the computer most likely ran out of memory: close other programs, or set **Videos detected at once** (step 10) to 1, and run again. If the app says it could not start Python, the backend is not set up on this machine: [mac-setup.md](mac-setup.md). On Windows, check that `backend\.venv\Scripts\python.exe` exists.
 
 ## Working on the app
 

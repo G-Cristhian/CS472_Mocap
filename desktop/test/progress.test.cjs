@@ -162,7 +162,7 @@ test('a run stopped by a signal says which, keeps what Python printed, and point
   assert.equal(t.result(null, false, 'SIGSEGV').error, 'The pipeline was stopped by signal SIGSEGV.\nFatal Python error: Segmentation fault')
   const killed = t.result(null, false, 'SIGKILL').error.split('\n')
   assert.equal(killed[0], 'The pipeline was stopped by signal SIGKILL.')
-  assert.match(killed[killed.length - 1], /^Most likely cause: the computer ran out of memory/)
+  assert.match(killed[killed.length - 1], /usually means the computer ran out of memory/)
   // cancel still wins, and an exit code without a signal keeps the message
   assert.equal(t.result(null, true, 'SIGTERM').error, 'Cancelled')
   assert.equal(t.result(1).error, 'Fatal Python error: Segmentation fault')
@@ -183,7 +183,7 @@ test('a detection worker killed for memory gets the memory advice under the pipe
   const lines = t.result(1).error.split('\n')
   assert.equal(lines.length, 4)
   assert.match(lines[0], /^Detection failed for cam0\.mp4: BrokenProcessPool/)
-  assert.match(lines[3], /^Most likely cause: the computer ran out of memory/)
+  assert.match(lines[3], /usually means the computer ran out of memory/)
 })
 
 test('library chatter on stderr is not taken for the message', () => {
@@ -314,5 +314,21 @@ test('reused joints show as reused, with a waiting video still waiting', () => {
   assert.deepEqual(
     last.videos.map((v) => v.state),
     ['reused', 'waiting'],
+  )
+})
+
+test('a fatal glog line before a native crash is kept; info and warning lines are not', () => {
+  const { t } = run(
+    [
+      'Clap at cam0 1.000 s, cam1 0.850 s',
+      'I0000 00:00:1730000000.000000  1234 gl_context.cc:357] GL version: 3.2',
+      'F0000 00:00:1730000000.000000  1234 calculator_graph.cc:123] Check failed: !has_error_',
+      '*** Check failure stack trace: ***',
+    ],
+    1,
+  )
+  assert.equal(
+    t.result(null, false, 'SIGABRT').error,
+    'The pipeline was stopped by signal SIGABRT.\nF0000 00:00:1730000000.000000  1234 calculator_graph.cc:123] Check failed: !has_error_\n*** Check failure stack trace: ***',
   )
 })

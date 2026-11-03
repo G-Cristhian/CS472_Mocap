@@ -296,7 +296,11 @@ async function startRun(options: RunOptions): Promise<void> {
 
   if (!result.ok) {
     // the first line only: the whole message is in the result box below
-    showProgress({ ...currentProgress(), stage: 'failed', detail: (result.error ?? 'Failed').split('\n')[0] })
+    // videos still detecting or queued when the run died did not finish
+    const videos = currentProgress().videos.map((v) =>
+      v.state === 'detecting' || v.state === 'waiting' ? { ...v, state: 'failed' as const, detail: 'stopped' } : v,
+    )
+    showProgress({ ...currentProgress(), videos, stage: 'failed', detail: (result.error ?? 'Failed').split('\n')[0] })
     preview.hidden = false
     resultError.textContent = result.error ?? 'The pipeline failed. The log above has the details.'
     $<HTMLDetailsElement>('log-box').open = true

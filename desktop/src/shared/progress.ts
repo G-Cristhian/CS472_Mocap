@@ -11,7 +11,7 @@
 import type { Progress, RunResult, Stage, VideoProgress, VideoState } from './types'
 
 const MEMORY_ADVICE =
-  'Most likely cause: the computer ran out of memory. Close other programs, or set Videos detected at once to 1, and run again.'
+  'A process was stopped abruptly, which usually means the computer ran out of memory (if other takes run on this computer, the setup is not the cause): close other programs, or set Videos detected at once to 1, and run again.'
 
 const WEIGHTS = { detect: 0.75, sync: 0.05, calibrate: 0.08, triangulate: 0.05, write: 0.07 }
 
@@ -158,10 +158,11 @@ export class ProgressTracker {
       return
     }
     if (/^\s/.test(line)) return // a traceback's File, code and ^^^ lines, or a warning's source line
-    // library chatter, not the run's message: Python warnings, logging lines, glog/absl lines
-    // ("W0000 00:00:...", from MediaPipe and TensorFlow Lite) and progress bars
+    // library chatter, not the run's message: Python warnings, logging lines, glog/absl info and
+    // warning lines ("W0000 00:00:...", from MediaPipe and TensorFlow Lite) and progress bars. Error
+    // and fatal glog lines ("F0000 ... Check failed: ...") stay: a native crash says why in them.
     if (/^\S.*:\d+: \w*Warning: /.test(line)) return
-    if (/^(DEBUG|INFO|WARNING)[:\s]/.test(line) || /^[IWEF]\d{4} /.test(line) || /\d%\|/.test(line)) return
+    if (/^(DEBUG|INFO|WARNING)[:\s]/.test(line) || /^[IW]\d{4} /.test(line) || /\d%\|/.test(line)) return
     if (this.inTraceback || !this.lastFromStderr) this.message = []
     this.inTraceback = false
     this.message.push(line.replace(/^FAILED:\s*/, ''))
