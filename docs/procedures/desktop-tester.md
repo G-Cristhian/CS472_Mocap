@@ -29,7 +29,7 @@ If the window does not open, the terminal says why:
 
 ## 2. Pick the take
 
-1. **Choose folder…** and pick the take's folder. Every `.mov` and `.mp4` in it is listed, sorted by name with numbers in natural order, so `cam2` comes before `cam10`.[^4] The list order is the camera order the pipeline gets, camera 0 first; the arrows move a file up or down, the tick leaves it out.
+1. **Choose folder…** and pick the take's folder. Every `.mov` and `.mp4` in it is listed, sorted by name with numbers in natural order, so `cam2` comes before `cam10`.[^4] The list order is the camera order the pipeline gets, camera 0 first; the arrows move a file up or down, the tick leaves it out. Choosing the same folder again refreshes the list and keeps the ticks, the order and the output folder (a file copied in since takes its place in name order, or goes last, with a note, if you reordered the list by hand); a folder that cannot be read, or holds no videos, leaves the take as it was and says so next to the folder name.
 2. At least two videos must be ticked.[^5]
 3. **Check the videos** before a long run. It runs the pre-flight check from [filming.md](filming.md) section 9 on the ticked files, in seconds, without the pose model: resolution, frame rate, length, lens metadata and the clap time of each file, then the cross-camera warnings (frame rates or lengths that differ) and the verdict.[^17] A file whose clap it cannot find says what the sharpest sound measured; lower the clap threshold (step 8) and check again, or give the clap times by hand (step 9).
 4. **Performer height** in metres, from the take log; the app accepts 1 to 2.5.[^6] It is only used while calibrating: with Recalibrate off and a `calibration.json` already in the output folder, the height is ignored, and the app says so under the box.[^18]
@@ -37,7 +37,7 @@ If the window does not open, the terminal says why:
 6. **Smoother**: Savitzky-Golay unless you are comparing filters. Butterworth is the other; after a run, **Rerun with the other smoother** in the result panel does the comparison for you (section 4).
 7. **Field of view**: only used for cameras without iPhone lens metadata; 65 is the pipeline's default, the Fold is about 75.[^7]
 8. **Clap loudness threshold**: 1 is the pipeline's normal setting. 0.5 accepts a clap half as strong against the room, for a faint clap or a noisy venue; it is the `--clap-threshold` option.[^19]
-9. **Clap times**: blank, and the pipeline finds the clap in each file's audio. When the search locks onto the wrong sound, type one time per video in seconds, camera 0 first, read off a video player; the app refuses a list of the wrong length. It is the `--sync` option.[^19]
+9. **Clap times**: blank, and the pipeline finds the clap in each file's audio. When the search locks onto the wrong sound, type one time per video in seconds, camera 0 first, read off a video player, with a point for decimals (1.25); the app refuses a list of the wrong length. The times go to the videos by position, so changing the ticks or the order afterwards empties the box and says so: type them again in the new order. It is the `--sync` option.[^19]
 10. **Videos detected at once**: 0 lets the pipeline pick (one process per video, up to 4 and the number of processor cores); 1 detects the videos one after another, for a laptop that struggles. It is the `--jobs` option.[^20]
 11. **Output folder**: defaults to `backend/output/<folder name>-<date and time>`, one folder per take.[^8] Change it to reprocess into a folder you already have.
 12. **Recalibrate** is on by default so a stale `calibration.json` in the output folder is never reused by accident; **Resume** reuses the stage files already in that folder, which turns a rerun into seconds.[^9]
@@ -74,7 +74,7 @@ The result panel shows the pipeline's message and opens the log. The messages an
 
 ## Working on the app
 
-`npm run preview` in `desktop/` serves the page at http://localhost:5174 in a browser with a mocked pipeline that replays a real run's printed lines, for changing the page without Electron.[^16] `npm test` runs the progress parser, the check-output parser and the metrics panel against those lines and a sample `metrics.json`, plus the command line the app builds and its folder listing. `npm run typecheck` checks both the page and the Electron side. The backend's own suite also drives the app's compiled runner and progress parser against the real pipeline (`backend/tests/test_desktop_tester.py`): [testing-the-backend.md](testing-the-backend.md).
+`npm run preview` in `desktop/` serves the page at http://localhost:5174 in a browser with a mocked pipeline that replays a real run's printed lines, for changing the page without Electron.[^16] `npm test` runs the progress parser, the check-output parser and the metrics panel against those lines and a sample `metrics.json`, plus the command line the app builds, its folder listing and how it reads the clap-times box. `npm run typecheck` checks both the page and the Electron side. The backend's own suite also drives the app's compiled runner and progress parser against the real pipeline (`backend/tests/test_desktop_tester.py`): [testing-the-backend.md](testing-the-backend.md).
 
 ---
 ## Sources
