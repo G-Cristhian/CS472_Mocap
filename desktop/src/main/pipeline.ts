@@ -103,7 +103,7 @@ export function runPipeline(
     }
     if (child.stdout) createInterface({ input: child.stdout }).on('line', feed(false))
     if (child.stderr) createInterface({ input: child.stderr }).on('line', feed(true))
-    child.on('close', (code) => resolve(tracker.result(code, cancelled)))
+    child.on('close', (code, signal) => resolve(tracker.result(code, cancelled, signal)))
   })
 
   return {
