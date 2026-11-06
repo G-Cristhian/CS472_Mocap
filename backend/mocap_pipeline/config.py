@@ -130,8 +130,8 @@ FLOOR_LOWEST_FRACTION = 0.2
 # ---- Stage 2c: triangulation ----------------------------------------------
 # Per-camera observations below this confidence are ignored for that joint.
 TRIANGULATION_MIN_CONFIDENCE = 0.5
-# A joint needs at least this many cameras in a frame, otherwise it is a gap.
-MIN_CAMERAS_PER_JOINT = 2
+# A joint needs at least 2 cameras in a frame, otherwise it is a gap. That is
+# the floor for triangulation (D-002), so it is fixed in triangulate.py, not set here.
 # Gaps up to this many frames are interpolated; longer gaps stay missing.
 MAX_GAP_FILL_FRAMES = 10
 # (ours) a camera whose reprojection is further off than this (px) is dropped
