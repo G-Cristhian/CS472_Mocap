@@ -108,6 +108,9 @@ export const mock: Backend = {
   async chooseDirectory() {
     return '/mock/take01'
   },
+  async chooseOutputDirectory() {
+    return '/mock/output/chosen-by-hand'
+  },
   async listVideos() {
     return VIDEOS
   },

@@ -39,7 +39,7 @@ If the window does not open, the terminal says why:
 8. **Clap loudness threshold**: 1 is the pipeline's normal setting. 0.5 accepts a clap half as strong against the room, for a faint clap or a noisy venue; it is the `--clap-threshold` option.[^19]
 9. **Clap times**: blank, and the pipeline finds the clap in each file's audio. When the search locks onto the wrong sound, type one time per video in seconds, camera 0 first, read off a video player, with a point for decimals (1.25); the app refuses a list of the wrong length. The times go to the videos by position, so changing the ticks or the order afterwards empties the box and says so: type them again in the new order. It is the `--sync` option.[^19]
 10. **Videos detected at once**: 0 lets the pipeline pick (one process per video, up to 4 and the number of processor cores); 1 detects the videos one after another, for a laptop that struggles. It is the `--jobs` option.[^20]
-11. **Output folder**: defaults to `backend/output/<folder name>-<date and time>`, one folder per take.[^8] Change it to reprocess into a folder you already have.
+11. **Output folder**: defaults to `backend/output/<folder name>-<date and time>`, one folder per take.[^8] Change it to reprocess into a folder you already have: type the path, or press **Choose folder…** next to it, which opens at the current path and can make a new folder.
 12. **Recalibrate** is on by default so a stale `calibration.json` in the output folder is never reused by accident; **Resume** reuses the stage files already in that folder, which turns a rerun into seconds.[^9]
 
 ## 3. Run

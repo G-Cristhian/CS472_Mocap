@@ -38,6 +38,19 @@ ipcMain.handle('choose-directory', async (event) => {
   return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
 })
 
+ipcMain.handle('choose-output-directory', async (event, current: string) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const result = await dialog.showOpenDialog(win!, {
+    title: 'Choose the folder for this run’s results',
+    // the default output folder does not exist until the run makes it: open where it will go
+    defaultPath: current || BACKEND_DIR,
+    buttonLabel: 'Use this folder',
+    // createDirectory: the New Folder button on macOS; promptToCreate: a typed new name on Windows
+    properties: ['openDirectory', 'createDirectory', 'promptToCreate'],
+  })
+  return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
+})
+
 ipcMain.handle('list-videos', (_event, dir: string): Promise<VideoFile[]> => listVideos(dir))
 
 ipcMain.handle('default-out-dir', async (_event, videoDir: string): Promise<string> => defaultOutDir(BACKEND_DIR, videoDir))

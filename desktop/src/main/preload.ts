@@ -11,6 +11,7 @@ function subscribe<T>(channel: string, callback: (payload: T) => void): () => vo
 
 const backend: Backend = {
   chooseDirectory: () => ipcRenderer.invoke('choose-directory'),
+  chooseOutputDirectory: (current) => ipcRenderer.invoke('choose-output-directory', current),
   listVideos: (dir) => ipcRenderer.invoke('list-videos', dir),
   defaultOutDir: (videoDir) => ipcRenderer.invoke('default-out-dir', videoDir),
   checkVideos: (videos, clapThreshold) => ipcRenderer.invoke('check-videos', videos, clapThreshold),

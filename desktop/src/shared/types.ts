@@ -95,6 +95,8 @@ export interface CheckResult {
 /** What the preload script exposes to the page as window.backend. */
 export interface Backend {
   chooseDirectory(): Promise<string | null>
+  /** a folder to write the results into, starting at `current`; may be a new folder */
+  chooseOutputDirectory(current: string): Promise<string | null>
   listVideos(dir: string): Promise<VideoFile[]>
   defaultOutDir(videoDir: string): Promise<string>
   /** the pre-flight check (mocap_pipeline.check_videos): seconds per take, no pose model */

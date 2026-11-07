@@ -57,7 +57,13 @@
           <label>Videos detected at once<input id="jobs" type="number" step="1" min="0" max="16" value="0" />
             <span class="note">0 picks automatically (one process per video, up to 4). 1 runs them one after another.</span>
           </label>
-          <label class="wide">Output folder<input id="outdir" type="text" class="mono" /></label>
+          <div class="wide field">
+            <label for="outdir">Output folder</label>
+            <div class="pick">
+              <input id="outdir" type="text" class="mono" />
+              <button id="choose-outdir" type="button" class="btn">Choose folder…</button>
+            </div>
+          </div>
           <label class="check"><input id="recalibrate" type="checkbox" checked /> Recalibrate (ignore an existing calibration.json)</label>
           <label class="check"><input id="resume" type="checkbox" /> Resume (reuse saved stage files in the output folder)</label>
         </div>

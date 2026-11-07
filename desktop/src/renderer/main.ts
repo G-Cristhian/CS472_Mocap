@@ -175,6 +175,12 @@ $('choose').addEventListener('click', async () => {
   renderVideos()
 })
 
+$('choose-outdir').addEventListener('click', async () => {
+  const box = $<HTMLInputElement>('outdir')
+  const dir = await backend.chooseOutputDirectory(box.value.trim())
+  if (dir) box.value = dir
+})
+
 $('clap-times').addEventListener('input', () => {
   clapNote.textContent = ''
 })
