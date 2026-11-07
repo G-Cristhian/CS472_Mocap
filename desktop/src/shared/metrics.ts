@@ -55,7 +55,8 @@ function numbers(m: Json, path: string): Record<string, number> {
   return out
 }
 
-function grade(value: number | null, good: number, bad: number): Grade {
+/** green at or past `good`, red at or past `bad`; the thresholds are processing-a-take.md step 4 */
+export function grade(value: number | null, good: number, bad: number): Grade {
   if (value === null) return ''
   if (good < bad) return value <= good ? 'good' : value >= bad ? 'bad' : ''
   return value >= good ? 'good' : value <= bad ? 'bad' : ''

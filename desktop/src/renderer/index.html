@@ -40,6 +40,16 @@
               <option value="rtmpose">RTMPose</option>
             </select>
           </label>
+          <label id="rtmpose-mode-field" hidden>RTMPose mode
+            <select id="rtmpose-mode">
+              <option value="lightweight">Lightweight (fastest)</option>
+              <option value="balanced" selected>Balanced (default)</option>
+              <option value="performance">Performance (slowest)</option>
+            </select>
+          </label>
+          <label id="rtmpose-every-field" hidden>RTMPose person detector every N frames<input id="rtmpose-every" type="number" step="1" min="1" max="100" value="1" />
+            <span class="note">1 runs it on every frame. 5 was about 3× faster on Chair Spin, with joints within 2–3 px of every frame.</span>
+          </label>
           <label>Smoother
             <select id="smoother">
               <option value="savgol">Savitzky-Golay (default)</option>
@@ -71,16 +81,57 @@
           <button id="run" class="btn primary" disabled>Run the pipeline</button>
           <span id="setup-error" class="error"></span>
         </div>
+
+        <details id="compare" class="compare">
+          <summary>Compare settings on this take</summary>
+          <p class="muted small">Queues one run per combination, with the rest of the form as above. Each detector setting gets its own output folder (the one above plus a suffix such as <span class="mono">-rtmpose-balanced-every5</span>); the second smoother of each reuses that folder's detection with Resume, so it takes seconds. The runs go one after another: one run already keeps every core busy.</p>
+          <div class="compare-grid">
+            <fieldset>
+              <legend>Detectors</legend>
+              <label><input type="checkbox" name="c-detector" value="mediapipe" checked /> MediaPipe</label>
+              <label><input type="checkbox" name="c-detector" value="rtmpose" checked /> RTMPose</label>
+            </fieldset>
+            <fieldset>
+              <legend>Smoothers</legend>
+              <label><input type="checkbox" name="c-smoother" value="savgol" checked /> Savitzky-Golay</label>
+              <label><input type="checkbox" name="c-smoother" value="butterworth" /> Butterworth</label>
+            </fieldset>
+            <fieldset>
+              <legend>RTMPose modes</legend>
+              <label><input type="checkbox" name="c-mode" value="lightweight" /> Lightweight</label>
+              <label><input type="checkbox" name="c-mode" value="balanced" checked /> Balanced</label>
+              <label><input type="checkbox" name="c-mode" value="performance" /> Performance</label>
+            </fieldset>
+            <fieldset>
+              <legend>RTMPose detector every N frames</legend>
+              <input id="c-every" type="text" class="mono" value="1, 5" />
+              <span class="note">Several values with commas: 1, 5</span>
+            </fieldset>
+          </div>
+          <div class="row">
+            <button id="queue-matrix" class="btn" disabled>Queue these runs</button>
+            <span id="matrix-count" class="muted small"></span>
+            <span id="matrix-error" class="error"></span>
+          </div>
+        </details>
       </section>
 
       <section id="progress" class="panel" hidden>
-        <h2>2. Processing</h2>
+        <div class="row">
+          <h2>2. Queue</h2>
+          <span id="queue-count" class="muted small"></span>
+          <span class="spacer"></span>
+          <button id="clear-done" class="btn">Clear finished</button>
+          <button id="stop-queue" class="btn">Stop the queue</button>
+        </div>
+        <ul id="queue" class="queue"></ul>
+        <h3 id="current-title" class="muted small"></h3>
         <progress id="bar" max="1000" value="0"></progress>
         <div class="row">
           <span id="stage" class="pill">starting</span>
           <span id="detail" class="detail">Starting the pipeline</span>
           <span class="spacer"></span>
-          <button id="cancel" class="btn">Cancel</button>
+          <button id="cancel" class="btn">Cancel this run</button>
         </div>
         <ul id="video-progress" class="videos video-progress"></ul>
         <details id="log-box">
@@ -91,6 +142,7 @@
 
       <section id="preview" class="panel" hidden>
         <h2>3. Result</h2>
+        <div id="result-title" class="muted small"></div>
         <div id="result-error" class="error"></div>
         <div id="viewer" class="viewer" aria-label="Skeleton preview; drag to rotate, wheel to zoom"></div>
         <div class="transport">
@@ -99,16 +151,25 @@
           <span id="clock" class="mono">0.00 / 0.00 s</span>
         </div>
         <div id="metrics" class="sections"></div>
-        <div id="runs-box" hidden>
-          <h3>Runs of this take</h3>
-          <p class="muted small">One row per run since the app was opened. "Rerun with the other smoother" keeps the detected joints, clap times, calibration and 3D points, and only redoes the smoothing, so two rows differ by the smoother alone.</p>
-          <table id="runs" class="runs"></table>
-        </div>
         <div class="row">
-          <button id="rerun-smoother" class="btn">Rerun with the other smoother</button>
+          <button id="rerun-smoother" class="btn" title="Queues the same run with the other smoother and Resume on: only smoothing and the skeleton are redone, in seconds">Rerun with the other smoother</button>
           <button id="open-folder" class="btn">Open the output folder</button>
           <button id="again" class="btn">Run another take</button>
         </div>
+      </section>
+
+      <section id="library" class="panel">
+        <div class="row">
+          <h2>4. Library</h2>
+          <span id="lib-count" class="muted small"></span>
+          <span class="spacer"></span>
+          <label class="inline">Take <select id="lib-take"><option value="">All takes</option></select></label>
+          <label class="inline"><input id="lib-done" type="checkbox" /> Finished runs only</label>
+          <button id="lib-refresh" class="btn">Refresh</button>
+        </div>
+        <p class="muted small">Every run in <span class="mono">backend/output</span> and in the folders this app wrote to, read from each run's metrics, so terminal runs and earlier runs are here too. Click a heading to sort. Green and red are the processing guide's thresholds. A resumed run reused an earlier detection, so its time is not comparable.</p>
+        <div class="table-wrap"><table id="lib-table" class="runs lib"></table></div>
+        <p id="lib-empty" class="muted small" hidden>No runs yet.</p>
       </section>
     </main>
     <script type="module" src="./main.ts"></script>

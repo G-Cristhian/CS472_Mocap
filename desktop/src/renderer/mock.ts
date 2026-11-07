@@ -5,7 +5,7 @@
  */
 import { parseCheckOutput } from '../shared/check'
 import { ProgressTracker } from '../shared/progress'
-import type { Backend, Progress, RunOptions, VideoFile } from '../shared/types'
+import type { Backend, LibraryRun, Progress, RunOptions, VideoFile } from '../shared/types'
 
 const VIDEOS: VideoFile[] = [
   { path: '/mock/take01/take01_cam0_iphone16pro.MOV', name: 'take01_cam0_iphone16pro.MOV', sizeMb: 412.3 },
@@ -99,6 +99,40 @@ const METRICS = {
   timing: { total_s: 184.2, detect: { cam0_s: 40, cam1_s: 43, cam2_s: 46 } },
 }
 
+/** A library row as library.ts would read it from the mock's metrics. */
+function libraryRow(over: Partial<LibraryRun> & { started: string }, summary: Partial<LibraryRun['summary']> = {}): LibraryRun {
+  return {
+    metricsPath: `/mock/output/${over.started}/out3d.metrics.json`,
+    bvhPath: `/mock/output/${over.started}/out3d.bvh`,
+    folder: `/mock/output/${over.started}`,
+    take: 'take01',
+    finished: over.started,
+    status: 'done',
+    detector: 'mediapipe',
+    rtmposeMode: null,
+    rtmposeDetectEvery: null,
+    cameras: 3,
+    resumed: false,
+    frames: 360,
+    videoFrames: 4500,
+    detectS: 46,
+    ...over,
+    summary: {
+      detector: over.detector ?? 'mediapipe', smoother: 'savgol', clapSource: 'audio', calibrationWorstPx: 1.44,
+      reprojectionPx: 2.1, jitterRawMm: 15.5, jitterFinalMm: 5.7, boneSpreadMm: 4, missingPercent: 0.3, totalS: 58, ...summary,
+    },
+  }
+}
+
+const library: LibraryRun[] = [
+  libraryRow({ started: '2026-11-07T14:10:35-08:00', take: 'Live Video Recordings 2', detector: 'rtmpose', rtmposeMode: 'balanced', rtmposeDetectEvery: 1, videoFrames: 9690, detectS: 547 },
+    { calibrationWorstPx: 10.2, reprojectionPx: 4.7, boneSpreadMm: 22.1, missingPercent: 4.1, totalS: 560 }),
+  libraryRow({ started: '2026-11-07T14:25:17-08:00', take: 'Live Video Recordings 2', videoFrames: 9690, detectS: 199 },
+    { calibrationWorstPx: 10.6, reprojectionPx: 4.98, boneSpreadMm: 25.4, missingPercent: 6.4, jitterFinalMm: 6.2, totalS: 211 }),
+  libraryRow({ started: '2026-10-20T00:28:49-07:00', take: 'Chair Spin HC CS Lab', status: 'failed', bvhPath: null },
+    { calibrationWorstPx: null, reprojectionPx: null, boneSpreadMm: null, missingPercent: null, totalS: 338 }),
+]
+
 const logListeners = new Set<(line: string) => void>()
 const progressListeners = new Set<(p: Progress) => void>()
 let cancelled = false
@@ -134,6 +168,21 @@ export const mock: Backend = {
       const p = tracker.feed(line)
       if (p) progressListeners.forEach((cb) => cb(p))
     }
+    const started = new Date().toISOString().slice(0, 19)
+    const rtm = options.detector === 'rtmpose'
+    library.push(
+      libraryRow(
+        {
+          started,
+          detector: options.detector,
+          rtmposeMode: rtm ? options.rtmposeMode ?? 'balanced' : null,
+          rtmposeDetectEvery: rtm ? options.rtmposeDetectEvery ?? 1 : null,
+          resumed: options.resume,
+          detectS: rtm ? 46 * 2.7 / (options.rtmposeDetectEvery ?? 1) ** 0.5 : 46,
+        },
+        { smoother: options.smoother, totalS: options.resume ? 9.4 : rtm ? 130 : 58, jitterFinalMm: options.smoother === 'butterworth' ? 6.3 : 5.7 },
+      ),
+    )
     return tracker.result(0)
   },
   async cancel() {
@@ -165,5 +214,8 @@ export const mock: Backend = {
   },
   async openFolder() {
     alert('In Electron this opens the output folder.')
+  },
+  async listRuns() {
+    return [...library].sort((a, b) => (b.started ?? '').localeCompare(a.started ?? ''))
   },
 }

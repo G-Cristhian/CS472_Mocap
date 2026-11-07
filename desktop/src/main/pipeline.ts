@@ -52,6 +52,10 @@ export function pipelineArgs(options: RunOptions): string[] {
   // the pipeline's own default is 1.0; only pass a changed value so the command stays readable
   if (options.clapThreshold !== 1) args.push('--clap-threshold', String(options.clapThreshold))
   if (options.clapTimes) args.push('--sync', ...options.clapTimes.map(String))
+  if (options.detector === 'rtmpose') {
+    if (options.rtmposeMode) args.push('--rtmpose-mode', options.rtmposeMode)
+    if (options.rtmposeDetectEvery) args.push('--rtmpose-detect-every', String(options.rtmposeDetectEvery))
+  }
   if (options.recalibrate) args.push('--recalibrate')
   if (options.resume) args.push('--resume')
   return args

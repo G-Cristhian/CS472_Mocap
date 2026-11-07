@@ -8,6 +8,9 @@ export interface VideoFile {
 
 export type Detector = 'mediapipe' | 'rtmpose'
 export type Smoother = 'savgol' | 'butterworth'
+/** rtmlib's model sizes, fastest first (backends.RTMPOSE_MODES) */
+export type RtmposeMode = 'lightweight' | 'balanced' | 'performance'
+export const RTMPOSE_MODES: RtmposeMode[] = ['lightweight', 'balanced', 'performance']
 
 export interface RunOptions {
   /** absolute paths, camera 0 first */
@@ -26,6 +29,10 @@ export interface RunOptions {
   clapTimes: number[] | null
   /** how many videos stage 1 detects at once, each in its own process; 0 = pick automatically */
   jobs: number
+  /** RTMPose only (--rtmpose-mode); left out, the pipeline's default, balanced */
+  rtmposeMode?: RtmposeMode
+  /** RTMPose only (--rtmpose-detect-every): run the person detector every N frames; left out, 1 */
+  rtmposeDetectEvery?: number
   recalibrate: boolean
   resume: boolean
 }
@@ -92,6 +99,33 @@ export interface CheckResult {
   error?: string
 }
 
+/** One run in the results library, read from its <out>.metrics.json (src/main/library.ts). */
+export interface LibraryRun {
+  metricsPath: string
+  /** the skeleton that run wrote, when it is still there */
+  bvhPath: string | null
+  /** the output folder */
+  folder: string
+  /** the name of the folder the videos came from */
+  take: string
+  started: string | null
+  finished: string | null
+  /** "done", "failed"… as metrics.json's run.status says */
+  status: string
+  detector: string
+  rtmposeMode: string | null
+  rtmposeDetectEvery: number | null
+  cameras: number
+  /** a --resume run: its time does not include detection */
+  resumed: boolean
+  /** frames of the synced take (pose_final.frames) */
+  frames: number | null
+  /** video frames stage 1 read, every camera added up (stage1.<camera>.frames) */
+  videoFrames: number | null
+  detectS: number | null
+  summary: import('./metrics').RunSummary
+}
+
 /** What the preload script exposes to the page as window.backend. */
 export interface Backend {
   chooseDirectory(): Promise<string | null>
@@ -107,4 +141,6 @@ export interface Backend {
   onProgress(callback: (progress: Progress) => void): () => void
   readText(path: string): Promise<string>
   openFolder(path: string): Promise<void>
+  /** every run in backend/output and in the folders this session wrote to, newest first */
+  listRuns(): Promise<LibraryRun[]>
 }

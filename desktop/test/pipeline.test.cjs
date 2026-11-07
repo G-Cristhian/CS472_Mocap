@@ -20,6 +20,13 @@ const OPTIONS = {
   resume: true,
 }
 
+test('RTMPose mode and detect-every reach the command, for RTMPose only', () => {
+  const rtm = pipelineArgs({ ...OPTIONS, rtmposeMode: 'lightweight', rtmposeDetectEvery: 5 })
+  assert.deepEqual(rtm.slice(rtm.indexOf('--rtmpose-mode'), rtm.indexOf('--rtmpose-mode') + 4), ['--rtmpose-mode', 'lightweight', '--rtmpose-detect-every', '5'])
+  const mp = pipelineArgs({ ...OPTIONS, detector: 'mediapipe', rtmposeMode: 'lightweight', rtmposeDetectEvery: 5 })
+  assert.ok(!mp.includes('--rtmpose-mode') && !mp.includes('--rtmpose-detect-every'))
+})
+
 test('the repo root and backend folder are found from the compiled file', () => {
   assert.ok(fs.existsSync(path.join(REPO_ROOT, 'desktop', 'package.json')), REPO_ROOT)
   assert.equal(BACKEND_DIR, path.join(REPO_ROOT, 'backend'))

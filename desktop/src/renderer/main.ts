@@ -1,7 +1,12 @@
-/** The page: pick videos, check them, run, watch the bar, then play the result and read the numbers. */
+/**
+ * The page: pick videos, check them, queue runs (one, or a matrix of settings), watch the bar,
+ * play a result and read its numbers, and compare every run in the library.
+ */
 import { parseClapTimes } from '../shared/clapTimes'
-import { metricSections, summarise, type RunSummary } from '../shared/metrics'
-import type { Backend, CheckResult, Progress, RunOptions, Smoother, VideoFile } from '../shared/types'
+import { COLUMNS, DEFAULT_VIEW, takes, viewRows, type LibraryView } from '../shared/library'
+import { metricSections } from '../shared/metrics'
+import { expandMatrix, parseDetectEvery, settingsLabel, type Matrix } from '../shared/queue'
+import type { Backend, CheckResult, LibraryRun, Progress, RunOptions, RunResult, Smoother, VideoFile } from '../shared/types'
 import { BvhViewer } from './viewer'
 
 const backend: Backend = (window as unknown as { backend?: Backend }).backend ?? (await import('./mock')).mock
@@ -30,20 +35,26 @@ const timeSlider = $<HTMLInputElement>('time')
 const clockLabel = $('clock')
 const playButton = $<HTMLButtonElement>('play')
 const metricsBox = $('metrics')
-const runsBox = $('runs-box')
-const runsTable = $<HTMLTableElement>('runs')
 const rerunButton = $<HTMLButtonElement>('rerun-smoother')
+const matrixButton = $<HTMLButtonElement>('queue-matrix')
+const matrixCount = $('matrix-count')
+const matrixError = $('matrix-error')
+const queueList = $<HTMLUListElement>('queue')
+const queueCount = $('queue-count')
+const currentTitle = $('current-title')
+const resultTitle = $('result-title')
+const libTable = $<HTMLTableElement>('lib-table')
+const libTake = $<HTMLSelectElement>('lib-take')
+const libDone = $<HTMLInputElement>('lib-done')
 
 if (!inElectron) $('python-note').textContent = 'browser preview with a mocked pipeline'
 
 interface Picked extends VideoFile {
   use: boolean
 }
-interface PastRun {
-  summary: RunSummary
-  outDir: string
-}
 let videoDir: string | null = null
+/** the output folder made up when the take was chosen; while the box still holds it, it is renewed at queue time */
+let autoOutDir = ''
 let picked: Picked[] = []
 let chosenKey = '[]' // the chosen videos in camera order, as the clap times and the check result were made for
 let chooseSeq = 0 // the latest folder choice; an older one that finishes late is dropped
@@ -51,8 +62,6 @@ let checkSeq = 0 // the latest check; a check whose selection has changed since 
 let checking = false
 let outDir = ''
 let viewer: BvhViewer | null = null
-let lastOptions: RunOptions | null = null
-let runs: PastRun[] = []
 
 // ---- 1. setup --------------------------------------------------------------------------
 
@@ -103,6 +112,7 @@ function renderVideos(): void {
   })
   const chosen = picked.filter((p) => p.use).length
   runButton.disabled = chosen < 2
+  matrixButton.disabled = chosen < 2
   checkButton.disabled = chosen < 1 || checking
   setupError.textContent = picked.length && chosen < 2 ? 'Pick at least two videos.' : ''
   selectionChanged()
@@ -170,6 +180,7 @@ $('choose').addEventListener('click', async () => {
     folderLabel.textContent = dir
     picked = videos.map((v) => ({ ...v, use: true }))
     outDir = newOutDir
+    autoOutDir = newOutDir
     $<HTMLInputElement>('outdir').value = outDir
   }
   renderVideos()
@@ -188,6 +199,14 @@ $('clap-threshold').addEventListener('input', () => {
   // a check result was made with the old threshold
   checkBox.hidden = true
 })
+
+function updateRtmposeFields(): void {
+  const rtm = $<HTMLSelectElement>('detector').value === 'rtmpose'
+  $('rtmpose-mode-field').hidden = !rtm
+  $('rtmpose-every-field').hidden = !rtm
+}
+$('detector').addEventListener('change', updateRtmposeFields)
+updateRtmposeFields()
 
 function updateHeightNote(): void {
   heightNote.hidden = $<HTMLInputElement>('recalibrate').checked
@@ -215,20 +234,97 @@ function readOptions(): RunOptions | string {
   const clapTimes = parseClapTimes($<HTMLInputElement>('clap-times').value, videos.length)
   if (typeof clapTimes === 'string') return clapTimes
   if (!outDir) return 'Give an output folder.'
+  const detector = $<HTMLSelectElement>('detector').value as RunOptions['detector']
+  const every = Number($<HTMLInputElement>('rtmpose-every').value)
+  if (detector === 'rtmpose' && !(Number.isInteger(every) && every >= 1 && every <= 100)) {
+    return 'RTMPose detector every N frames must be a whole number from 1 to 100.'
+  }
   return {
     videos,
     heightM,
     fov,
     outDir,
-    detector: $<HTMLSelectElement>('detector').value as RunOptions['detector'],
+    detector,
     smoother: $<HTMLSelectElement>('smoother').value as RunOptions['smoother'],
     clapThreshold,
     clapTimes,
     jobs,
+    ...(detector === 'rtmpose'
+      ? { rtmposeMode: $<HTMLSelectElement>('rtmpose-mode').value as RunOptions['rtmposeMode'], rtmposeDetectEvery: every }
+      : {}),
     recalibrate: $<HTMLInputElement>('recalibrate').checked,
     resume: $<HTMLInputElement>('resume').checked,
   }
 }
+
+/**
+ * The form's run, with a fresh default output folder: the default is stamped with the minute the
+ * take was chosen, so a second run queued later would otherwise land in the first one's folder.
+ * A folder typed or chosen by hand is kept as it is.
+ */
+async function readFreshOptions(): Promise<RunOptions | string> {
+  const box = $<HTMLInputElement>('outdir')
+  if (videoDir && autoOutDir && box.value.trim() === autoOutDir) {
+    const fresh = await backend.defaultOutDir(videoDir)
+    // two runs queued in the same minute get -2, -3… rather than one folder
+    let dir = fresh
+    for (let n = 2; jobs.some((j) => j.options.outDir === dir); n++) dir = `${fresh}-${n}`
+    autoOutDir = dir
+    box.value = dir
+  }
+  return readOptions()
+}
+
+// ---- 1c. the comparison matrix -------------------------------------------------------------
+
+function ticked(name: string): string[] {
+  return [...document.querySelectorAll<HTMLInputElement>(`input[name="${name}"]:checked`)].map((i) => i.value)
+}
+
+function readMatrix(): Matrix | string {
+  const every = parseDetectEvery($<HTMLInputElement>('c-every').value)
+  const detectors = ticked('c-detector') as Matrix['detectors']
+  if (typeof every === 'string' && detectors.includes('rtmpose')) return every
+  return {
+    detectors,
+    smoothers: ticked('c-smoother') as Matrix['smoothers'],
+    rtmposeModes: ticked('c-mode') as Matrix['rtmposeModes'],
+    rtmposeDetectEvery: typeof every === 'string' ? [] : every,
+  }
+}
+
+/** "6 runs: 3 detect, 3 reuse a detection" under the button, or why the ticks make no runs. */
+function updateMatrixCount(): void {
+  const matrix = readMatrix()
+  const base = { detector: 'mediapipe', smoother: 'savgol', resume: false } as RunOptions
+  const runs = typeof matrix === 'string' ? matrix : expandMatrix(base, matrix, 'x')
+  matrixError.textContent = typeof runs === 'string' ? runs : ''
+  if (typeof runs === 'string') {
+    matrixCount.textContent = ''
+    return
+  }
+  const detect = new Set(runs.map((r) => r.outDir)).size
+  matrixCount.textContent = `${runs.length} run${runs.length === 1 ? '' : 's'}: ${detect} detect${runs.length > detect ? `, ${runs.length - detect} reuse a detection` : ''}`
+}
+$('compare').addEventListener('input', updateMatrixCount)
+updateMatrixCount()
+
+matrixButton.addEventListener('click', async () => {
+  const matrix = readMatrix()
+  const base = await readFreshOptions()
+  if (typeof base === 'string' || typeof matrix === 'string') {
+    matrixError.textContent = typeof base === 'string' ? base : (matrix as string)
+    return
+  }
+  const taken = new Set(jobs.map((j) => j.options.outDir))
+  const runs = expandMatrix(base, matrix, base.outDir, taken)
+  if (typeof runs === 'string') {
+    matrixError.textContent = runs
+    return
+  }
+  matrixError.textContent = ''
+  enqueue(runs)
+})
 
 // ---- 1b. the pre-flight check ----------------------------------------------------------------
 
@@ -345,22 +441,103 @@ function appendLog(line: string): void {
   log.scrollTop = log.scrollHeight
 }
 
-async function startRun(options: RunOptions): Promise<void> {
-  setupError.textContent = ''
-  clapNote.textContent = ''
-  setup.hidden = true
-  preview.hidden = true
+// ---- 2b. the queue: runs go one after another --------------------------------------------------
+
+type JobState = 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
+interface Job {
+  id: number
+  options: RunOptions
+  label: string
+  take: string
+  state: JobState
+  /** "540 s", or the first line of the failure */
+  detail: string
+}
+let jobs: Job[] = []
+let current: Job | null = null
+let nextJobId = 1
+let cancelRequested = false
+
+function takeOf(options: RunOptions): string {
+  return options.videos[0]?.split(/[\\/]/).slice(-2, -1)[0] ?? ''
+}
+
+function enqueue(list: RunOptions[]): void {
+  for (const options of list) {
+    jobs.push({ id: nextJobId++, options, label: settingsLabel(options), take: takeOf(options), state: 'queued', detail: '' })
+  }
   progressPanel.hidden = false
+  renderQueue()
+  void pump()
+}
+
+function renderQueue(): void {
+  queueList.replaceChildren()
+  for (const job of jobs) {
+    const li = document.createElement('li')
+    const state = document.createElement('span')
+    state.className = `qstate ${job.state}`
+    state.textContent = job.state
+    const take = document.createElement('span')
+    take.textContent = job.take
+    take.title = job.options.videos.join('\n')
+    const what = document.createElement('span')
+    what.className = 'qdetail'
+    what.textContent = [job.label, job.options.resume ? 'resume' : '', job.detail].filter(Boolean).join(' · ')
+    what.title = `${job.options.outDir}${job.detail ? `\n${job.detail}` : ''}`
+    const remove = document.createElement('button')
+    remove.className = 'btn'
+    remove.textContent = '×'
+    remove.title = 'Take this run off the queue'
+    remove.hidden = job.state !== 'queued'
+    remove.addEventListener('click', () => {
+      jobs = jobs.filter((j) => j !== job)
+      renderQueue()
+    })
+    li.append(state, take, what, remove)
+    queueList.append(li)
+  }
+  const waiting = jobs.filter((j) => j.state === 'queued').length
+  const done = jobs.filter((j) => j.state === 'done').length
+  queueCount.textContent = jobs.length ? `${done} of ${jobs.length} done${waiting ? `, ${waiting} waiting` : ''}` : ''
+  runButton.textContent = current ? 'Add to queue' : 'Run the pipeline'
+  $<HTMLButtonElement>('stop-queue').disabled = !current && !waiting
+  $<HTMLButtonElement>('clear-done').disabled = !jobs.some((j) => j.state !== 'queued' && j.state !== 'running')
+}
+
+/** Starts the next queued run when nothing is running; each finished run starts the next. */
+async function pump(): Promise<void> {
+  if (current) return
+  const job = jobs.find((j) => j.state === 'queued')
+  if (!job) return
+  current = job
+  job.state = 'running'
+  renderQueue()
+  const started = Date.now()
+  const result = await runOne(job)
+  const seconds = Math.round((Date.now() - started) / 1000)
+  job.state = result.ok ? 'done' : cancelRequested ? 'cancelled' : 'failed'
+  job.detail = result.ok ? `${seconds} s` : (result.error ?? 'Failed').split('\n')[0]
+  current = null
+  cancelRequested = false
+  renderQueue()
+  void refreshLibrary()
+  if (result.ok) await showResult(result.bvhPath, result.metricsPath, job.options, `${job.take}, ${job.label}`)
+  else if (!jobs.some((j) => j.state === 'queued')) showFailure(result, job)
+  void pump()
+}
+
+async function runOne(job: Job): Promise<RunResult> {
+  const index = jobs.indexOf(job) + 1
+  currentTitle.textContent = `Run ${index} of ${jobs.length}: ${job.take}, ${job.label}`
   log.textContent = ''
   showProgress({ stage: 'starting', fraction: 0, detail: 'Starting the pipeline', videos: [] })
   $<HTMLButtonElement>('cancel').disabled = false
-  lastOptions = options
-
   const offLog = backend.onLog(appendLog)
   const offProgress = backend.onProgress(showProgress)
-  let result
+  let result: RunResult
   try {
-    result = await backend.run(options)
+    result = await backend.run(job.options)
   } catch (e) {
     result = { ok: false, exitCode: null, error: e instanceof Error ? e.message : String(e) }
   } finally {
@@ -368,23 +545,17 @@ async function startRun(options: RunOptions): Promise<void> {
     offProgress()
   }
   $<HTMLButtonElement>('cancel').disabled = true
-
-  if (!result.ok) {
-    // the first line only: the whole message is in the result box below
+  if (result.ok) {
+    showProgress({ ...currentProgress(), stage: 'done', fraction: 1, detail: 'Finished' })
+  } else {
+    // the first line only: the whole message is in the result box
     // videos still detecting or queued when the run died did not finish
     const videos = currentProgress().videos.map((v) =>
       v.state === 'detecting' || v.state === 'waiting' ? { ...v, state: 'failed' as const, detail: 'stopped' } : v,
     )
     showProgress({ ...currentProgress(), videos, stage: 'failed', detail: (result.error ?? 'Failed').split('\n')[0] })
-    preview.hidden = false
-    resultError.textContent = result.error ?? 'The pipeline failed. The log above has the details.'
-    $<HTMLDetailsElement>('log-box').open = true
-    metricsBox.replaceChildren()
-    rerunButton.disabled = true
-    return
   }
-  showProgress({ ...currentProgress(), stage: 'done', fraction: 1, detail: 'Finished' })
-  await showResult(result.bvhPath, result.metricsPath)
+  return result
 }
 
 let latestProgress: Progress = { stage: 'starting', fraction: 0, detail: '', videos: [] }
@@ -395,16 +566,35 @@ backend.onProgress((p) => {
   latestProgress = p
 })
 
-runButton.addEventListener('click', () => {
-  const options = readOptions()
+runButton.addEventListener('click', async () => {
+  const options = await readFreshOptions()
   if (typeof options === 'string') {
     setupError.textContent = options
     return
   }
-  void startRun(options)
+  setupError.textContent = ''
+  clapNote.textContent = ''
+  enqueue([options])
 })
 
-$('cancel').addEventListener('click', () => void backend.cancel())
+$('cancel').addEventListener('click', () => {
+  cancelRequested = true
+  void backend.cancel()
+})
+
+$('stop-queue').addEventListener('click', () => {
+  for (const j of jobs) if (j.state === 'queued') j.state = 'cancelled'
+  if (current) {
+    cancelRequested = true
+    void backend.cancel()
+  }
+  renderQueue()
+})
+
+$('clear-done').addEventListener('click', () => {
+  jobs = jobs.filter((j) => j.state === 'queued' || j.state === 'running')
+  renderQueue()
+})
 
 // ---- 3. preview -----------------------------------------------------------------------------
 
@@ -412,10 +602,37 @@ function fmt(t: number): string {
   return t.toFixed(2)
 }
 
-async function showResult(bvhPath?: string, metricsPath?: string): Promise<void> {
+/** the run in the result panel: its options when it ran this session, for "Rerun with the other smoother" */
+let shownOptions: RunOptions | null = null
+let shownFolder: string | null = null
+let shownMetrics: string | null = null
+
+function showFailure(result: RunResult, job: Job): void {
+  preview.hidden = false
+  resultTitle.textContent = `${job.take}, ${job.label}`
+  resultError.textContent = result.error ?? 'The pipeline failed. The log above has the details.'
+  $<HTMLDetailsElement>('log-box').open = true
+  metricsBox.replaceChildren()
+  shownOptions = null
+  shownFolder = job.options.outDir
+  shownMetrics = null
+  rerunButton.disabled = true
+}
+
+async function showResult(
+  bvhPath: string | null | undefined,
+  metricsPath: string | null | undefined,
+  options: RunOptions | null,
+  title: string,
+): Promise<void> {
   preview.hidden = false
   resultError.textContent = ''
-  rerunButton.disabled = false
+  resultTitle.textContent = title
+  shownOptions = options
+  shownFolder = options?.outDir ?? metricsPath ?? null
+  shownMetrics = metricsPath ?? null
+  rerunButton.disabled = !options
+  renderLibrary()
   if (!viewer) {
     viewer = new BvhViewer($('viewer'))
     if (!inElectron) (window as unknown as { viewer?: BvhViewer }).viewer = viewer   // for poking at it in the browser preview
@@ -424,8 +641,9 @@ async function showResult(bvhPath?: string, metricsPath?: string): Promise<void>
       clockLabel.textContent = `${fmt(t)} / ${fmt(viewer!.duration)} s`
     }
   }
+  await showMetrics(metricsPath ?? undefined)
   if (!bvhPath) {
-    resultError.textContent = 'The run finished but printed no BVH path (was --no-bvh used?).'
+    resultError.textContent = 'This run left no BVH (was --no-bvh used, or did it fail before the skeleton?).'
     return
   }
   try {
@@ -438,7 +656,6 @@ async function showResult(bvhPath?: string, metricsPath?: string): Promise<void>
   timeSlider.value = '0'
   playButton.textContent = 'Pause'
   viewer.play()
-  await showMetrics(metricsPath)
 }
 
 async function showMetrics(metricsPath?: string): Promise<void> {
@@ -469,58 +686,15 @@ async function showMetrics(metricsPath?: string): Promise<void> {
     wrap.append(h, dl)
     metricsBox.append(wrap)
   }
-  if (lastOptions) {
-    // a new take (another output folder) starts the comparison afresh
-    if (runs.length && runs[0].outDir !== lastOptions.outDir) runs = []
-    runs.push({ summary: summarise(m), outDir: lastOptions.outDir })
-  }
-  renderRuns()
-}
-
-function renderRuns(): void {
-  runsBox.hidden = runs.length < 2
-  runsTable.replaceChildren()
-  if (runs.length < 2) return
-  const columns: [string, (s: RunSummary) => string][] = [
-    ['Run', () => ''],
-    ['Smoother', (s) => s.smoother],
-    ['Detector', (s) => s.detector],
-    ['Jitter raw → smoothed (mm/frame²)', (s) => `${s.jitterRawMm?.toFixed(1) ?? '–'} → ${s.jitterFinalMm?.toFixed(1) ?? '–'}`],
-    ['Bone spread (mm)', (s) => s.boneSpreadMm?.toFixed(1) ?? '–'],
-    ['Calibration worst (px)', (s) => s.calibrationWorstPx?.toFixed(2) ?? '–'],
-    ['Missing (%)', (s) => s.missingPercent?.toFixed(1) ?? '–'],
-    ['Time (s)', (s) => s.totalS?.toFixed(0) ?? '–'],
-  ]
-  const head = document.createElement('tr')
-  for (const [title] of columns) {
-    const th = document.createElement('th')
-    th.textContent = title
-    head.append(th)
-  }
-  runsTable.append(head)
-  runs.forEach((r, i) => {
-    const tr = document.createElement('tr')
-    if (i === runs.length - 1) tr.className = 'current'
-    columns.forEach(([, cell], c) => {
-      const td = document.createElement('td')
-      td.textContent = c === 0 ? String(i + 1) : cell(r.summary)
-      tr.append(td)
-    })
-    runsTable.append(tr)
-  })
 }
 
 rerunButton.addEventListener('click', () => {
-  if (!lastOptions) return
-  const other: Smoother = lastOptions.smoother === 'savgol' ? 'butterworth' : 'savgol'
+  if (!shownOptions) return
+  const other: Smoother = shownOptions.smoother === 'savgol' ? 'butterworth' : 'savgol'
   // resume reuses the joints, clap times, calibration and 3D points; only smoothing and the rig rerun
-  const options: RunOptions = { ...lastOptions, smoother: other, resume: true, recalibrate: false }
-  $<HTMLSelectElement>('smoother').value = other
-  $<HTMLInputElement>('resume').checked = true
-  $<HTMLInputElement>('recalibrate').checked = false
-  updateHeightNote()
   viewer?.pause()
-  void startRun(options)
+  playButton.textContent = 'Play'
+  enqueue([{ ...shownOptions, smoother: other, resume: true, recalibrate: false }])
 })
 
 playButton.addEventListener('click', () => {
@@ -544,13 +718,102 @@ timeSlider.addEventListener('input', () => {
 })
 
 $('open-folder').addEventListener('click', () => {
-  if (lastOptions) void backend.openFolder(lastOptions.outDir)
+  if (shownFolder) void backend.openFolder(shownFolder)
 })
 
 $('again').addEventListener('click', () => {
   viewer?.pause()
-  preview.hidden = true
-  progressPanel.hidden = true
-  setup.hidden = false
-  if (videoDir) renderVideos()
+  playButton.textContent = 'Play'
+  setup.scrollIntoView({ behavior: 'smooth' })
 })
+
+// ---- 4. the library -------------------------------------------------------------------------
+
+let library: LibraryRun[] = []
+let libView: LibraryView = { ...DEFAULT_VIEW }
+let libSeq = 0
+
+async function refreshLibrary(): Promise<void> {
+  const seq = ++libSeq
+  try {
+    const runs = await backend.listRuns()
+    if (seq !== libSeq) return
+    library = runs
+  } catch (e) {
+    $('lib-count').textContent = `Could not read the runs: ${e instanceof Error ? e.message : String(e)}`
+    return
+  }
+  // the take filter offers the takes there are; a take that is gone falls back to all
+  const names = takes(library)
+  if (libView.take && !names.includes(libView.take)) libView = { ...libView, take: '' }
+  libTake.replaceChildren(new Option('All takes', ''), ...names.map((t) => new Option(t, t)))
+  libTake.value = libView.take
+  renderLibrary()
+}
+
+function renderLibrary(): void {
+  const rows = viewRows(library, libView)
+  $('lib-count').textContent = library.length ? `${rows.length} of ${library.length} runs` : ''
+  $('lib-empty').hidden = library.length > 0
+  libTable.replaceChildren()
+  if (!library.length) return
+  const head = document.createElement('tr')
+  for (const c of COLUMNS) {
+    const th = document.createElement('th')
+    const sorted = c.key === libView.sortKey
+    th.textContent = c.title + (sorted ? (libView.descending ? ' ↓' : ' ↑') : '')
+    th.className = sorted ? 'sorted' : ''
+    if (c.note) th.title = c.note
+    th.addEventListener('click', () => {
+      // a new column starts with its most useful order: newest first, or smallest error and time first
+      libView = sorted ? { ...libView, descending: !libView.descending } : { ...libView, sortKey: c.key, descending: c.key === 'started' || c.key === 'fps' }
+      renderLibrary()
+    })
+    head.append(th)
+  }
+  head.append(document.createElement('th'))
+  libTable.append(head)
+  const column = (key: string) => COLUMNS.find((c) => c.key === key)!
+  for (const r of rows) {
+    const tr = document.createElement('tr')
+    if (r.metricsPath === shownMetrics) tr.className = 'shown'
+    for (const c of COLUMNS) {
+      const td = document.createElement('td')
+      td.textContent = c.text(r)
+      td.className = c.grade?.(r) || (c.key === 'status' && r.status !== 'done' ? 'status-failed' : '')
+      if (c.key === 'take') td.title = r.folder
+      tr.append(td)
+    }
+    const actions = document.createElement('td')
+    const view = document.createElement('button')
+    view.className = 'btn'
+    view.textContent = 'View'
+    view.disabled = !r.bvhPath
+    view.title = r.bvhPath ? 'Play this run and show its numbers' : 'This run left no skeleton'
+    view.addEventListener('click', () => {
+      const title = [r.take, column('detector').text(r), column('smoother').text(r), column('started').text(r)].join(', ')
+      void showResult(r.bvhPath, r.metricsPath, null, title)
+      preview.scrollIntoView({ behavior: 'smooth' })
+    })
+    const folder = document.createElement('button')
+    folder.className = 'btn'
+    folder.textContent = 'Folder'
+    folder.title = r.folder
+    folder.addEventListener('click', () => void backend.openFolder(r.metricsPath))
+    actions.append(view, folder)
+    tr.append(actions)
+    libTable.append(tr)
+  }
+}
+
+libTake.addEventListener('change', () => {
+  libView = { ...libView, take: libTake.value }
+  renderLibrary()
+})
+libDone.addEventListener('change', () => {
+  libView = { ...libView, doneOnly: libDone.checked }
+  renderLibrary()
+})
+$('lib-refresh').addEventListener('click', () => void refreshLibrary())
+void refreshLibrary()
+renderQueue()

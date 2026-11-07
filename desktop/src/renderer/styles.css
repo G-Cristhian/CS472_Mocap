@@ -82,3 +82,29 @@ h3 { font-size: 14px; margin: 0; }
 .runs th, .runs td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-weight: normal; }
 .runs th { color: var(--muted); font-family: var(--font); }
 .runs tr.current td { background: #181c21; }
+.grid [hidden] { display: none; }
+.compare { background: #181c21; border-radius: 6px; padding: 8px 10px; }
+.compare summary { cursor: pointer; font-weight: 600; }
+.compare[open] { display: grid; gap: 8px; }
+.compare-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.compare fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 0; padding: 6px 10px 8px; display: grid; gap: 4px; font-size: 12.5px; }
+.compare legend { color: var(--muted); padding: 0 4px; }
+.compare fieldset label { display: flex; align-items: center; gap: 6px; }
+.queue { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.queue li { display: grid; grid-template-columns: 80px minmax(120px, 1fr) minmax(160px, 2fr) auto; align-items: center; gap: 10px; padding: 4px 6px; border-radius: 4px; background: #181c21; font-size: 12.5px; }
+.queue li .qstate { text-transform: capitalize; color: var(--muted); }
+.queue li .qstate.running { color: var(--accent); }
+.queue li .qstate.done { color: var(--ok); }
+.queue li .qstate.failed { color: var(--bad); }
+.queue li .qdetail { color: var(--muted); font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue li button { padding: 0 8px; line-height: 1.5; }
+label.inline { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.table-wrap { overflow-x: auto; }
+.lib th { cursor: pointer; white-space: nowrap; user-select: none; }
+.lib th.sorted { color: var(--fg); }
+.lib td { white-space: nowrap; }
+.lib td.good { color: var(--ok); }
+.lib td.bad { color: var(--bad); }
+.lib td.status-failed { color: var(--bad); }
+.lib td button { padding: 0 8px; line-height: 1.5; font-family: var(--font); }
+.lib tr.shown td { background: #1f2630; }

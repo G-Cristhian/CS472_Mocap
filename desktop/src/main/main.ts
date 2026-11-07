@@ -7,10 +7,13 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 
 import { defaultOutDir, isResultFile, listVideos } from './files'
+import { listRuns, snapshotRun } from './library'
 import { BACKEND_DIR, runCheck, runPipeline, type RunHandle } from './pipeline'
 import type { RunOptions, VideoFile } from '../shared/types'
 
 let running: RunHandle | null = null
+/** output folders written this session, so the library lists them even outside backend/output */
+const sessionFolders = new Set<string>()
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -69,6 +72,10 @@ ipcMain.handle('run', async (event, options: RunOptions) => {
   const send = (channel: string, payload: unknown) => {
     if (!event.sender.isDestroyed()) event.sender.send(channel, payload)
   }
+  // a run from before snapshots existed (or from the terminal) is about to be overwritten: keep it
+  await snapshotRun(options.outDir).catch(() => undefined)
+  if (running) throw new Error('A run is already in progress')
+  sessionFolders.add(options.outDir)
   running = runPipeline(
     options,
     (line) => send('log', line),
@@ -78,8 +85,12 @@ ipcMain.handle('run', async (event, options: RunOptions) => {
     return await running.done
   } finally {
     running = null
+    // keep this run's numbers and skeleton even if a later run reuses the folder (library.ts)
+    await snapshotRun(options.outDir).catch((e) => send('log', `Could not keep a copy of the results: ${e}`))
   }
 })
+
+ipcMain.handle('list-runs', () => listRuns([path.join(BACKEND_DIR, 'output')], [...sessionFolders]))
 
 ipcMain.handle('cancel', async () => {
   running?.cancel()
