@@ -6,7 +6,7 @@ tripods come down (docs/procedures/filming.md, section 9):
     python -m mocap_pipeline.check_videos take01/*
 
 For every video: resolution, frame rate, length, audio, iPhone lens metadata
-and the clap time. Then the claps are cross-checked between cameras the same
+and the clap time (or the chirp's, with --sync-signal chirp). Then the claps are cross-checked between cameras the same
 way the pipeline does. Problems are printed as WARNING (worth a retake) or
 FAIL (the pipeline cannot use the file). Exit code 1 if anything FAILed.
 
@@ -22,13 +22,19 @@ import cv2
 
 from . import config
 from .stage2_reconstruct import sync
-from .stage2_reconstruct.iphone_camera import (FOCAL_35MM_KEY, LENS_KEY, MODEL_KEY, IPhoneMetadataError,
-                                               read_metadata)
+from .stage2_reconstruct.iphone_camera import (CINEMATIC_INTENT_KEY, CINEMATIC_KEY, LENS_KEY, MAKE_KEY, MODEL_KEY,
+                                               SOFTWARE_KEY, focal_35mm, read_metadata)
 
 # frame rates below this get a warning: the protocol asks for 60 or 120
 MIN_RECOMMENDED_FPS = 50.0
 # videos in one take should be about the same length
 MAX_DURATION_SPREAD_S = 5.0
+# 35 mm equivalent focal lengths of the 1x lens. Apple's tech specs (support.apple.com/121032, /125089,
+# /125090, /125091) list the main camera at 24 mm (16 Pro Max, 17 Pro, 17 Pro Max) or 26 mm (17), the
+# 0.5x ultra wide at 13 mm f/2.2, and 2x and telephoto at 48 mm and up. Video files checked: a 16 Pro Max
+# whose lens_model names a 6.765mm f/1.78 lens read 25; a 17, 17 Pro Max and 18 Pro naming a 2.22mm
+# f/2.2 lens read 14. The 18 Pro's specs were not checked. The bounds are our choice between those
+MAIN_LENS_35MM = (20.0, 35.0)
 
 
 def video_info(path: str) -> dict:
@@ -48,26 +54,53 @@ def video_info(path: str) -> dict:
 
 
 def iphone_info(path: str) -> dict | None:
-    """Model, lens and 35 mm focal length if the file carries Apple's metadata, else None."""
+    """Apple's tags from the file (make, model, iOS version, lens, 35 mm focal length, Cinematic mode), None if unreadable."""
     try:
         md = read_metadata(path)
-    except (IPhoneMetadataError, OSError, Exception):
+    except Exception:
         return None
-    if not md.get(FOCAL_35MM_KEY):
-        return None
-    return {"model": md.get(MODEL_KEY), "lens": md.get(LENS_KEY), "focal_35mm": md.get(FOCAL_35MM_KEY)}
+    return {"apple": md.get(MAKE_KEY) == "Apple", "model": md.get(MODEL_KEY), "software": md.get(SOFTWARE_KEY),
+            "lens": md.get(LENS_KEY), "focal_35mm": focal_35mm(md),
+            "cinematic": CINEMATIC_KEY in md or md.get(CINEMATIC_INTENT_KEY) == 1}
 
 
-def clap_time(path: str, threshold: float = 1.0) -> tuple[float | None, str | None]:
-    """Clap time in seconds, or (None, reason). threshold as in sync.find_clap_time."""
+def lens_report(path: str) -> list[str]:
+    """The lens lines check() prints for one video."""
+    apple = iphone_info(path) or {}
+    focal = apple.get("focal_35mm")
+    lines = []
+    if focal:
+        lines.append(f"  lens    {apple['model']}, {apple['lens']}, {focal:g} mm (35 mm equiv.) from metadata")
+        if focal < MAIN_LENS_35MM[0]:
+            lines.append("  WARNING the lens metadata says the 0.5x ultra wide lens; the protocol asks for 1x")
+        elif focal > MAIN_LENS_35MM[1]:
+            lines.append("  WARNING the lens metadata says a telephoto lens or zoom; the protocol asks for 1x")
+    elif apple.get("apple"):
+        lines.append(f"  WARNING {apple['model']} (iOS {apple['software']}) file without a focal length in its metadata: "
+                     f"the pipeline will use --fov, default {config.DEFAULT_HFOV_DEG:.0f}; pass the measured value")
+    elif Path(path).suffix.lower() == ".mov":
+        lines.append("  WARNING .MOV without iPhone lens metadata: re-exported? Copy the original again, "
+                     "or run with --camera webcam --fov")
+    else:
+        lines.append(f"  lens    no lens metadata (not an iPhone file): needs --fov, default {config.DEFAULT_HFOV_DEG:.0f}")
+    if apple.get("cinematic"):
+        # whether Cinematic mode changes the picture is not known (filming.md footnote 28)
+        lines.append("  WARNING Cinematic mode keys in the metadata; the protocol asks for Video mode")
+    return lines
+
+
+def clap_time(path: str, threshold: float = 1.0, signal: str = "clap") -> tuple[float | None, str | None]:
+    """Clap (or chirp) time in seconds, or (None, reason). threshold as in sync.find_clap_time."""
     try:
+        if signal == "chirp":
+            return sync.find_chirp_time(path, threshold), None
         audio = sync._read_audio(path, config.CLAP_SEARCH_WINDOW_S)
         return sync._clap_from_loudness(sync._loudness(audio), path, threshold), None
     except sync.ClapNotFoundError as e:
         return None, str(e)
 
 
-def check(video_paths: list[str], threshold: float = 1.0) -> int:
+def check(video_paths: list[str], threshold: float = 1.0, signal: str = "clap") -> int:
     problems = 0
     results = []
 
@@ -87,24 +120,18 @@ def check(video_paths: list[str], threshold: float = 1.0) -> int:
         if info["fps"] and info["fps"] < MIN_RECOMMENDED_FPS:
             print(f"  WARNING frame rate under {MIN_RECOMMENDED_FPS:.0f}; the protocol asks for 60 (or 120 for set C)")
 
-        apple = iphone_info(path)
-        is_mov = Path(path).suffix.lower() == ".mov"
-        if apple:
-            print(f"  lens    {apple['model']}, {apple['lens']}, {apple['focal_35mm']} mm (35 mm equiv.) from metadata")
-        elif is_mov:
-            print("  WARNING .MOV without iPhone lens metadata: re-exported? Copy the original again, "
-                  "or run with --camera webcam --fov")
-        else:
-            print(f"  lens    no lens metadata (not an iPhone file): needs --fov, default {config.DEFAULT_HFOV_DEG:.0f}")
+        for line in lens_report(path):
+            print(line)
 
-        t, reason = clap_time(path, threshold)
+        t, reason = clap_time(path, threshold, signal)
         if t is None:
-            print(f"  FAIL    no clap: {reason}")
+            print(f"  FAIL    no {signal}: {reason}")
             problems += 1
         else:
-            print(f"  clap    {t:.3f} s")
+            print(f"  {signal:<7} {t:.3f} s")
             if t > config.CLAP_SEARCH_WINDOW_S - 1.0:
-                print(f"  WARNING clap close to the {config.CLAP_SEARCH_WINDOW_S:.0f} s search window; clap sooner")
+                print(f"  WARNING {signal} close to the {config.CLAP_SEARCH_WINDOW_S:.0f} s search window; "
+                      f"{'play it' if signal == 'chirp' else 'clap'} sooner")
 
         results.append({**info, "duration": duration, "clap": t})
 
@@ -122,7 +149,8 @@ def check(video_paths: list[str], threshold: float = 1.0) -> int:
         if max(durations) - min(durations) > MAX_DURATION_SPREAD_S:
             print(f"  WARNING lengths differ by {max(durations) - min(durations):.1f} s; "
                   f"was a phone started late or stopped early?")
-        if all(r["clap"] is not None for r in good) and len(good) == len(results):
+        # chirps are found against the known sweep, so there is nothing to cross-check
+        if signal == "clap" and all(r["clap"] is not None for r in good) and len(good) == len(results):
             try:
                 refined = sync.detect_claps(video_paths, threshold)
                 print("  claps   " + ", ".join(f"{Path(p).name} {t:.3f} s" for p, t in zip(video_paths, refined))
@@ -141,8 +169,10 @@ def main() -> None:
     parser.add_argument("videos", nargs="+", help="The videos of one take, camera 0 first.")
     parser.add_argument("--clap-threshold", type=float, default=1.0,
                         help="Multiplies how loud a clap must be against the room (0.5 accepts a clap half as strong).")
+    parser.add_argument("--sync-signal", choices=list(sync.SYNC_SIGNALS), default="clap",
+                        help="Look for the clap (default) or the sync chirp.")
     args = parser.parse_args()
-    sys.exit(check(args.videos, args.clap_threshold))
+    sys.exit(check(args.videos, args.clap_threshold, args.sync_signal))
 
 
 if __name__ == "__main__":

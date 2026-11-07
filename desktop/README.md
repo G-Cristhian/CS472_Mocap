@@ -32,7 +32,7 @@ Use the folder you cloned into if it is not your home folder. `npm start` builds
 4. **Run the pipeline**. The bar follows detection frame by frame (the pipeline prints a progress line every 30 frames when `MOCAP_PROGRESS` is set, which this app sets), then the later stages. One line per video shows waiting, detecting, done, reused or failed with the reason; a failed file does not stop the others. The log is under the bar.
 5. The result plays with a time bar, then the numbers from `out3d.metrics.json` stage by stage (per camera, per joint, jitter before and after smoothing, gaps, timing), the glance numbers coloured by the thresholds in [processing-a-take.md](../docs/procedures/processing-a-take.md). "Rerun with the other smoother" repeats the run with Resume on and the smoother switched, and a table compares the runs of the take. "Open the output folder" shows the files.
 
-A failed run shows the pipeline's own message (the same ones listed in filming.md section 11) and opens the log.
+A failed run shows the last line the pipeline wrote to stderr and opens the log. For the two-line clap and calibration messages that line is the advice; the message filming.md section 11 lists is the line before it in the log.
 
 ## Working on it
 
@@ -41,4 +41,4 @@ A failed run shows the pipeline's own message (the same ones listed in filming.m
 - `npm run typecheck` checks both the page and the main process.
 - The backend's suite checks this app against the real pipeline: `cd backend && python -m pytest tests/test_desktop_tester.py` replays what a run prints through the progress tracker and lets the app's own runner spawn the pipeline on synthetic videos (`test/harness.cjs` drives the compiled code). It needs Node and `npm install` here, and skips otherwise; `pytest -m "not desktop"` leaves it out. See [docs/procedures/testing-the-backend.md](../docs/procedures/testing-the-backend.md).
 
-Layout: `src/main` is the Electron side (window, dialogs, spawning Python; `files.ts` is the Electron-free part so the tests can load it), `src/renderer` is the page (plain TypeScript, three.js for the preview), `src/shared` is what both use: the progress parser that turns the pipeline's printed lines into the bar and the per-video states, the parser for what `check_videos` prints, and the metrics summary behind the result panel.
+Layout: `src/main` is the Electron side (window, dialogs, spawning Python; `files.ts` and `pipeline.ts` are Electron-free so the tests can load them), `src/renderer` is the page (plain TypeScript, three.js for the preview), `src/shared` is compiled for both: the progress parser that turns the pipeline's printed lines into the bar and the per-video states and the parser for what `check_videos` prints (used by the main process, and by the page only in the browser mock), and the metrics summary behind the result panel (page only).

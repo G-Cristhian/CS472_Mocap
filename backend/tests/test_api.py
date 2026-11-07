@@ -8,7 +8,6 @@ a queued take, refusing to delete a running one, the result and metrics
 routes, and the restart recovery that marks interrupted takes failed.
 """
 import json
-import os
 import threading
 import time
 from concurrent.futures import Future

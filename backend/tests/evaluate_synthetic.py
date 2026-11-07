@@ -119,7 +119,7 @@ def main() -> None:
 
     print("\nStage 2c (smoothing) on the realistic 3-camera result: error against the truth and frame-to-frame jitter\n")
     scene, _ = keep
-    raw, rig = run_stage2(scene, smoother=None)
+    raw, _ = run_stage2(scene, smoother=None)
     truth = scene.truth_in_pipeline_frame()
     for label, pose in [("raw (gaps filled, no filter)", raw)] + [
             (f"{m} ({', '.join(f'{k} {v}' for k, v in s.items())})", smooth.smooth(raw, m))
@@ -150,7 +150,7 @@ def main() -> None:
     scene, pose = keep
     rig_pos = skeleton.rig_joint_positions(pose)
     offsets = skeleton.rest_pose_offsets(skeleton.bone_lengths(rig_pos))
-    root, local = rotations.solve_rotations(rig_pos, offsets)
+    root, local, _ = rotations.solve_rotations(rig_pos, offsets)
     euler = rotations.to_euler_degrees(local, bvh_writer.ROTATION_ORDER)
     path = args.bvh
     bvh_writer.write_bvh(path, offsets, root, euler, pose.fps)

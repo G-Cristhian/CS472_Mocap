@@ -1,44 +1,38 @@
+import type { CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
-import type { Project } from '@/types'
-import { Badge } from './Badge'
+import type { Accent, Motion, Project } from '@/types'
 import { StickFigure } from './StickFigure'
 import './cards.css'
 
-export function ProjectCard({ project }: { project: Project }) {
+/** The first motion's colour and pose stand in for the project's cover. */
+function cover(motions: Motion[]): { accent: Accent; pose: Motion['pose'] } {
+  return { accent: motions[0]?.accent ?? 'purple', pose: motions[0]?.pose ?? 'stand' }
+}
+
+/** Passes the accent to the stylesheet as --accent, so the card itself stays neutral. */
+function accentStyle(accent: Accent) {
+  return { '--accent': `var(--${accent})` } as CSSProperties
+}
+
+function countLabel(count: number) {
+  return `${count} ${count === 1 ? 'motion' : 'motions'}`
+}
+
+export function ProjectCard({ project, motions }: { project: Project; motions: Motion[] }) {
+  const { accent, pose } = cover(motions)
+
   return (
-    <Link className="pcard" to={`/projects/${project.id}`}>
-      <div className={`pcard__thumb tint--${project.accent}`}>
-        <StickFigure pose={project.pose} color={`var(--${project.accent})`} size={104} />
+    <Link className="pcard" to={`/projects/${project.id}`} style={accentStyle(accent)}>
+      <div className="pcard__thumb">
+        <StickFigure pose={pose} color={`var(--${accent})`} size={104} />
       </div>
       <div className="pcard__title">
         <h3>{project.name}</h3>
-        <Badge source={project.source} />
       </div>
       <p className="pcard__meta">
-        {project.sport} · {project.clips} clips
+        {project.category} · {countLabel(motions.length)}
       </p>
-      <p className="pcard__meta">
-        Updated {project.updated.toLowerCase()} by {project.updatedBy}
-      </p>
-    </Link>
-  )
-}
-
-export function ProjectRow({ project }: { project: Project }) {
-  return (
-    <Link className={`prow tint--${project.accent}`} to={`/projects/${project.id}`}>
-      <div className={`prow__thumb solid--${project.accent}`}>
-        <StickFigure pose={project.pose} color="#fff" size={52} strokeWidth={6} />
-      </div>
-      <div>
-        <h3 className="prow__title">{project.name}</h3>
-        <p className="prow__meta">
-          {project.sport} · {project.clips} clips · updated {project.updated.toLowerCase()} by{' '}
-          {project.updatedBy}
-        </p>
-      </div>
-      <span className="spacer" />
-      <Badge source={project.source} />
+      <p className="pcard__meta">Updated {project.updated.toLowerCase()}</p>
     </Link>
   )
 }

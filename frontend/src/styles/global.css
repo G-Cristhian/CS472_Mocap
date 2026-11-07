@@ -40,7 +40,7 @@ a {
   color: var(--purple);
   text-decoration: none;
 }
-a:hover {
+a:not(.btn):hover {
   text-decoration: underline;
 }
 button,
@@ -92,16 +92,6 @@ textarea {
   text-transform: uppercase;
   color: var(--muted);
 }
-.section-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-  margin: 44px 0 18px;
-}
-.section-title {
-  font-size: calc(24px * var(--font-scale));
-}
 .row {
   display: flex;
   align-items: center;
@@ -122,7 +112,7 @@ textarea {
   align-items: center;
   justify-content: center;
   gap: 9px;
-  border: 1px solid transparent;
+  border: 1.5px solid transparent;
   border-radius: var(--r-md);
   padding: 12px 20px;
   font-weight: 700;
@@ -131,12 +121,21 @@ textarea {
   cursor: pointer;
   transition: transform 0.12s ease, background 0.15s ease, box-shadow 0.15s ease;
   white-space: nowrap;
+  text-decoration: none;
 }
 .btn:hover {
   transform: translateY(-1px);
 }
 .btn:active {
   transform: translateY(0);
+}
+/* a disabled button looks disabled: faded, no lift, no hover colour */
+.btn:disabled,
+.btn:disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 .btn--primary {
   background: var(--purple);
@@ -145,13 +144,6 @@ textarea {
 }
 .btn--primary:hover {
   background: var(--purple-strong);
-}
-.btn--blue {
-  background: var(--blue);
-  color: #fff;
-}
-.btn--blue:hover {
-  background: var(--blue-strong);
 }
 .btn--pink {
   background: var(--pink);
@@ -193,6 +185,33 @@ textarea {
   background: var(--surface);
   border-color: var(--line);
   color: var(--pink);
+}
+/* Reusable: "New recording" and "New project" buttons on any page. No default background. */
+.btn-recording {
+  color: #000;
+  background: transparent;
+  border-color: #e31c79;
+}
+.btn-recording:hover {
+  background: var(--pink-50);
+}
+.btn-recording:active {
+  background: #fbd0e4;
+}
+.btn-project {
+  color: #000;
+  background: transparent;
+  border-color: #9595b0;
+}
+.btn-project:hover {
+  background: var(--line);
+}
+.btn-project:active {
+  background: #d6d6e1;
+}
+.btn:focus-visible {
+  outline: 2px solid var(--purple);
+  outline-offset: 2px;
 }
 
 .dot {
@@ -247,8 +266,7 @@ textarea {
   font-size: calc(14px * var(--font-scale));
   cursor: pointer;
 }
-.chip[aria-pressed='true'],
-.chip--active {
+.chip[aria-pressed='true'] {
   background: var(--ink);
   border-color: var(--ink);
   color: #fff;
@@ -257,15 +275,6 @@ textarea {
   cursor: default;
 }
 
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  background: var(--purple-50);
-  border-radius: var(--r-pill);
-  padding: 10px 10px 10px 20px;
-  font-size: calc(14px * var(--font-scale));
-}
 
 /* ---------- form controls ---------- */
 .field {
@@ -285,11 +294,20 @@ textarea {
 .input,
 .select {
   width: 100%;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   border-radius: var(--r-md);
   background: var(--surface);
   padding: 12px 14px;
   margin-top: 10px;
+}
+.input:hover:not(:disabled):not([readonly]),
+.select:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+.input[readonly] {
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: default;
 }
 .select {
   appearance: none;
@@ -303,10 +321,13 @@ textarea {
 }
 .search input {
   width: 100%;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   border-radius: var(--r-md);
   padding: 13px 14px 13px 42px;
   background: var(--surface);
+}
+.search input:hover:not(:disabled):not([readonly]) {
+  border-color: var(--muted);
 }
 .search svg {
   position: absolute;
@@ -314,11 +335,6 @@ textarea {
   top: 50%;
   transform: translateY(-50%);
   color: var(--muted);
-}
-.search--focusring input:focus {
-  outline: none;
-  border-color: var(--blue);
-  box-shadow: 0 0 0 4px rgba(91, 140, 255, 0.28);
 }
 
 .check {
@@ -332,12 +348,15 @@ textarea {
   appearance: none;
   width: 20px;
   height: 20px;
-  border: 1.5px solid var(--muted-2);
+  border: 1.5px solid var(--line-control);
   border-radius: 5px;
   flex: none;
   cursor: pointer;
   display: grid;
   place-content: center;
+}
+.check input:hover:not(:disabled):not(:checked) {
+  border-color: var(--muted);
 }
 .check input:checked {
   background: var(--purple);
@@ -364,7 +383,8 @@ textarea {
   flex: 1;
   height: 6px;
   border-radius: var(--r-pill);
-  background: var(--line);
+  /* --fill comes from rangeFill() */
+  background: linear-gradient(to right, var(--purple) var(--fill, 0%), var(--line) var(--fill, 0%));
   outline-offset: 6px;
 }
 .slider input[type='range']::-webkit-slider-thumb {
@@ -391,49 +411,6 @@ textarea {
   font-family: var(--font-mono);
 }
 
-.segmented {
-  display: inline-flex;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: 4px;
-  gap: 4px;
-}
-.segmented button {
-  border: 0;
-  background: transparent;
-  border-radius: 9px;
-  padding: 8px 16px;
-  font-weight: 700;
-  font-size: calc(14px * var(--font-scale));
-  cursor: pointer;
-  color: var(--muted);
-}
-.segmented button[aria-pressed='true'] {
-  background: var(--surface);
-  color: var(--ink);
-  box-shadow: var(--shadow-sm);
-}
-
-.viewtoggle {
-  display: inline-flex;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  overflow: hidden;
-}
-.viewtoggle button {
-  border: 0;
-  background: var(--surface);
-  padding: 10px 14px;
-  cursor: pointer;
-  color: var(--muted);
-  display: grid;
-  place-items: center;
-}
-.viewtoggle button[aria-pressed='true'] {
-  background: var(--purple-50);
-  color: var(--purple-strong);
-}
 
 /* ---------- surfaces ---------- */
 .card {
@@ -478,6 +455,18 @@ textarea {
   color: var(--ink);
 }
 
+/* A button that looks like a link; it keeps the global :focus-visible outline */
+.linkbtn {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  color: var(--blue-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .alert {
   display: flex;
   align-items: center;
@@ -492,15 +481,17 @@ textarea {
   flex: none;
 }
 
-.empty {
+/* Message shown where the cards would be, e.g. "No recordings yet." Same top spacing as .grid-cards */
+.no-cards {
+  margin-top: 30px;
   border: 1px dashed var(--line);
   border-radius: var(--r-lg);
   padding: 56px 24px;
   text-align: center;
   color: var(--muted);
 }
-
 .grid-cards {
+  margin-top: 30px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 22px;
@@ -545,4 +536,13 @@ textarea {
   .page-title {
     font-size: calc(30px * var(--font-scale));
   }
+}
+
+.page-search-bar {
+  margin-top: 28px;
+}
+.page-search {
+  display: block;
+  width: 320px;
+  max-width: 100%;
 }

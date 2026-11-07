@@ -41,7 +41,7 @@ Open each run's `out3d.metrics.json` and put these side by side, per take:
 | `triangulate.views_dropped`, `joints_failed` | yes | fewer: fewer mis-detections that the other cameras had to outvote |
 | `pose_final.missing_fraction` and `_per_joint` | yes | lower: fewer frames where a joint was seen by under two cameras |
 | `rig.bone_lengths.mean_std_m` and `per_bone` | yes | lower: steadier joints over time |
-| `timing.detect.<camera>` | yes | faster, if the quality is equal |
+| `timing.detect.<camera>_s` | yes | faster, if the quality is equal |
 | `stage1.<camera>.mean_confidence` | **no** | each model scores on its own scale; RTMPose scores are clipped to 0..1 and are not probabilities[^5]. Do not rank models on this. |
 | `stage1.<camera>.no_person_fraction` | mostly | a model that loses the person in frames the other keeps is worse, unless those frames had nobody in them |
 
@@ -72,4 +72,4 @@ Keep both output folders for the takes used and the side-by-side table, so the c
 [^6]: Karashchuk et al., "Anipose: A toolkit for robust markerless 3D pose estimation", *Cell Reports* 36(13), 2021, DOI 10.1016/j.celrep.2021.109730, which evaluates its filters by reprojection error and limb-length variation. Reprojection error as a geometric quality measure: Zhang 2000, DOI 10.1109/34.888718.
 [^7]: Lineage rules in `docs/decisions/README.md`: a decision that replaces another names it with `from`, one layer deep.
 [^8]: Bazarevsky et al., "BlazePose: On-device Real-time Body Pose tracking", arXiv:2006.10204, 2020. Jiang et al., "RTMPose: Real-Time Multi-Person Pose Estimation based on MMPose", arXiv:2303.07399, 2023. Both unverified DOIs: arXiv preprints.
-[^9]: The keypoints fingerprint stores the video size and modification time and the detector name only (`run_pipeline.py`, `io.save_keypoints`); D-023 notes the missing mode and version.
+[^9]: The keypoints fingerprint stores the video size and modification time, the detector name, and RTMPose's mode and detect-every when they differ from the defaults (`run_pipeline.py`, `detector_settings`, `io.save_keypoints`); the package version is not stored.

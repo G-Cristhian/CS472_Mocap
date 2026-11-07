@@ -15,13 +15,6 @@ const base = (size: number) => ({
   'aria-hidden': true,
 })
 
-export const SearchIcon = ({ size = 18 }: IconProps) => (
-  <svg {...base(size)}>
-    <circle cx="11" cy="11" r="7" />
-    <path d="M20 20l-3.6-3.6" />
-  </svg>
-)
-
 export const HelpIcon = ({ size = 22 }: IconProps) => (
   <svg {...base(size)}>
     <circle cx="12" cy="12" r="9" />
@@ -40,21 +33,6 @@ export const GearIcon = ({ size = 22 }: IconProps) => (
 export const PlusIcon = ({ size = 18 }: IconProps) => (
   <svg {...base(size)}>
     <path d="M12 5v14M5 12h14" />
-  </svg>
-)
-
-export const GridIcon = ({ size = 18 }: IconProps) => (
-  <svg {...base(size)} strokeWidth={0} fill="currentColor">
-    <rect x="3" y="3" width="8" height="8" rx="2" />
-    <rect x="13" y="3" width="8" height="8" rx="2" />
-    <rect x="3" y="13" width="8" height="8" rx="2" />
-    <rect x="13" y="13" width="8" height="8" rx="2" />
-  </svg>
-)
-
-export const ListIcon = ({ size = 18 }: IconProps) => (
-  <svg {...base(size)} strokeWidth={2.2}>
-    <path d="M4 7h16M4 12h16M4 17h16" />
   </svg>
 )
 
@@ -133,15 +111,6 @@ export const LayoutIcon = ({ size = 18 }: IconProps) => (
   </svg>
 )
 
-export const ShareIcon = ({ size = 18 }: IconProps) => (
-  <svg {...base(size)}>
-    <circle cx="17.5" cy="6" r="2.5" />
-    <circle cx="6.5" cy="12" r="2.5" />
-    <circle cx="17.5" cy="18" r="2.5" />
-    <path d="M8.8 10.8l6.4-3.5M8.8 13.2l6.4 3.5" />
-  </svg>
-)
-
 export const ExportIcon = ({ size = 18 }: IconProps) => (
   <svg {...base(size)}>
     <path d="M12 15V4M12 4L8.2 7.8M12 4l3.8 3.8" />
@@ -149,17 +118,37 @@ export const ExportIcon = ({ size = 18 }: IconProps) => (
   </svg>
 )
 
+export const SearchIcon = ({ size = 18 }: IconProps) => (
+  <svg {...base(size)}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="M20 20l-3.6-3.6" />
+  </svg>
+)
+
+// MotionBoxPro mark: a play symbol whose corners are tracked joints, so playback is the motion.
+// Hex colours only, so public/logo.svg and public/favicon.svg match it exactly.
+export const MoreIcon = ({ size = 18 }: IconProps) => (
+  <svg {...base(size)} strokeWidth={0} fill="currentColor">
+    <circle cx="5" cy="12" r="2" />
+    <circle cx="12" cy="12" r="2" />
+    <circle cx="19" cy="12" r="2" />
+  </svg>
+)
+
 export const LogoMark = ({ size = 26 }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true">
-    <path
-      d="M16 11.5V20M9.5 16.5L16 13l6.5 3.5M11 27l5-7 5 7"
-      stroke="currentColor"
-      strokeWidth="2.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <circle cx="16" cy="7" r="3.2" fill="var(--purple)" />
-    <circle cx="8" cy="17.5" r="2.4" fill="var(--blue)" />
-    <circle cx="24" cy="17.5" r="2.4" fill="var(--pink)" />
+    <defs>
+      <linearGradient id="mbp-v5-bg" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stopColor="#6d4aff" />
+        <stop offset="1" stopColor="#e31c79" />
+      </linearGradient>
+    </defs>
+    <rect width="32" height="32" rx="9" fill="url(#mbp-v5-bg)" />
+    <path d="M5 13.5H8.5M5 18.5H8.5" stroke="#fff" strokeOpacity="0.45" strokeWidth="1.6" strokeLinecap="round" />
+    <path d="M12 9.5L23 16L12 22.5Z" fill="#fff" fillOpacity="0.15" stroke="#fff" strokeWidth="1.8" strokeLinejoin="round" />
+    <circle cx="12" cy="9.5" r="2" fill="#fff" />
+    <circle cx="23" cy="16" r="2" fill="#fff" />
+    <circle cx="12" cy="22.5" r="2" fill="#fff" />
+    <circle cx="16.5" cy="16" r="1.2" fill="#fff" fillOpacity="0.8" />
   </svg>
 )
