@@ -115,22 +115,24 @@ class RootTracker:
         if current_root is None:
             return joints_3d
 
-        # Smooth estimated root to prevent jerky camera motion
+        # Adaptive smoothing factor: fast response on real movement, smooth when standing still
+        dist_moved = float(np.linalg.norm(current_root - (self.smoothed_root if self.smoothed_root is not None else current_root)))
+        # Increase alpha during fast motion to eliminate lag
+        adaptive_alpha = min(0.85, max(0.35, dist_moved * 2.5))
+
         if self.smoothed_root is None:
             self.smoothed_root = current_root.copy()
         else:
-            self.smoothed_root = (1.0 - self.alpha) * self.smoothed_root + self.alpha * current_root
+            self.smoothed_root = (1.0 - adaptive_alpha) * self.smoothed_root + adaptive_alpha * current_root
 
         # Set initial anchor if not set
         if self.reference_pos is None:
             self.reference_pos = self.smoothed_root.copy()
 
-        # Displacement relative to rest anchor
+        # Displacement relative to rest anchor without artificial clipping
         dx = float(self.smoothed_root[0] - self.reference_pos[0])
-        # Only allow moderate Z displacement (forward/back) to prevent depth noise explosion
-        dz = float(np.clip(self.smoothed_root[2] - self.reference_pos[2], -3.0, 3.0))
-        # Keep vertical dy stable
-        dy = float(np.clip(self.smoothed_root[1] - self.reference_pos[1], -1.0, 1.0))
+        dy = float(self.smoothed_root[1] - self.reference_pos[1])
+        dz = float(self.smoothed_root[2] - self.reference_pos[2])
 
         translated_joints = []
         for j in joints_3d:

@@ -41,3 +41,7 @@ backend/output/
 
 ## Local media folder
 random_media/
+
+# Node dependencies
+node_modules/
+**/node_modules/

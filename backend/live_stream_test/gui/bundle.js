@@ -29207,6 +29207,17 @@ void main() {
   var tposeRingFill = document.getElementById("tpose-ring-fill");
   var tposeStatusText = document.getElementById("tpose-status-text");
   var btnResetTpose = document.getElementById("btn-reset-tpose");
+  var btnQuickGpu = document.getElementById("btn-quick-gpu");
+  var btnQuickCpu = document.getElementById("btn-quick-cpu");
+  var btnRecenterView = document.getElementById("btn-recenter-view");
+  var tposeGuideBanner = document.getElementById("tpose-guide-banner");
+  var tposeGuideIcon = document.getElementById("tpose-guide-icon");
+  var tposeGuideTitle = document.getElementById("tpose-guide-title");
+  var tposeGuideSub = document.getElementById("tpose-guide-sub");
+  var tposeGuideBar = document.getElementById("tpose-guide-bar");
+  var engineSwitchingOverlay = document.getElementById("engine-switching-overlay");
+  var switchingTitle = document.getElementById("switching-title");
+  var switchingSub = document.getElementById("switching-sub");
   var cameraGrid = document.getElementById("camera-grid");
   var emptyState = document.getElementById("empty-state");
   var detectedQuickList = document.getElementById("detected-quick-list");
@@ -29244,6 +29255,7 @@ void main() {
   var chkGrid = document.getElementById("chk-grid");
   var chkAxes = document.getElementById("chk-axes");
   var chkFilter = document.getElementById("chk-filter");
+  var selectFilterMode = document.getElementById("select-filter-mode");
   var modalAddCamera = document.getElementById("modal-add-camera");
   var modalCloseAdd = document.getElementById("modal-close-add");
   var btnCancelAdd = document.getElementById("btn-cancel-add");
@@ -29296,6 +29308,48 @@ void main() {
   controls.enableDamping = true;
   controls.dampingFactor = 0.05;
   controls.update();
+  function recenter3DView() {
+    controls.target.set(0, 0.9, 0);
+    camera.position.set(0, 1.2, 2.5);
+    controls.update();
+    sendWSCommand("set_root_motion", { mode: chkGlobalRoot && chkGlobalRoot.checked ? "global" : "root_locked" });
+  }
+  async function requestSwitchEngine(engineType, device = "auto", variant = null) {
+    const chosenVariant = variant || (engineType === "rtmpose" ? "balanced" : "full");
+    const chosenDevice = device || (engineType === "rtmpose" ? "dml" : "cpu");
+    if (engineSwitchingOverlay && switchingTitle && switchingSub) {
+      switchingTitle.textContent = engineType === "rtmpose" ? "\u26A1 Switching to GPU Tracking (RTMPose)..." : "\u{1F4BB} Switching to CPU Tracking (MediaPipe)...";
+      switchingSub.textContent = engineType === "rtmpose" ? "Initializing DirectML execution provider on your GPU..." : "Loading CPU MediaPipe Pose Landmarker...";
+      engineSwitchingOverlay.style.display = "flex";
+    }
+    if (btnQuickGpu) btnQuickGpu.classList.toggle("active", engineType === "rtmpose");
+    if (btnQuickCpu) btnQuickCpu.classList.toggle("active", engineType === "mediapipe");
+    if (selectModelEngine) selectModelEngine.value = engineType;
+    if (selectEngineDevice) selectEngineDevice.value = chosenDevice;
+    sendWSCommand("set_model_engine", {
+      model_type: engineType,
+      device: chosenDevice,
+      variant: chosenVariant
+    });
+    try {
+      const res = await fetch(`http://127.0.0.1:${WS_PORT}/api/model/engine`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model_type: engineType,
+          device: chosenDevice,
+          model_variant: chosenVariant
+        })
+      });
+      if (res.ok) {
+        setTimeout(() => {
+          if (engineSwitchingOverlay) engineSwitchingOverlay.style.display = "none";
+        }, 400);
+      }
+    } catch (e) {
+      console.warn("REST set_model_engine error:", e);
+    }
+  }
   var gridHelper = new GridHelper(5, 10, 54015, 1976378);
   gridHelper.position.y = 0;
   scene.add(gridHelper);
@@ -29373,7 +29427,9 @@ void main() {
     const positions = /* @__PURE__ */ new Map();
     const isGlobalMode = chkGlobalRoot ? chkGlobalRoot.checked : true;
     let groundOffset = 0;
-    if (isGlobalMode && activeCalibration && Number.isFinite(activeCalibration.floor_y)) {
+    if (source.includes("triangulated")) {
+      groundOffset = 0;
+    } else if (isGlobalMode && activeCalibration && Number.isFinite(activeCalibration.floor_y)) {
       groundOffset = -activeCalibration.floor_y;
     } else if (!isGlobalMode) {
       let hipX = 0, hipZ = 0, hipCount = 0;
@@ -29455,18 +29511,49 @@ void main() {
       tposeRingFill.style.strokeDashoffset = strokeOffset;
     }
     tposeWidget.classList.remove("holding", "calibrated");
+    if (tposeGuideBanner) {
+      tposeGuideBanner.classList.remove("holding", "calibrated");
+    }
     if (state === "holding") {
       tposeWidget.classList.add("holding");
       tposeStatusText.textContent = `Hold T-Pose (${Math.round(progress * 100)}%)`;
+      if (tposeGuideBanner) {
+        tposeGuideBanner.classList.add("holding");
+        if (tposeGuideIcon) tposeGuideIcon.textContent = "\u23F1\uFE0F";
+        if (tposeGuideTitle) tposeGuideTitle.textContent = `Holding T-Pose (${Math.round(progress * 100)}%)`;
+        if (tposeGuideSub) tposeGuideSub.textContent = "Hold steady for 1-2s to lock scale & reposition to origin";
+        if (tposeGuideBar) tposeGuideBar.style.width = `${Math.round(progress * 100)}%`;
+      }
     } else if (state === "calibrated") {
       tposeWidget.classList.add("calibrated");
       tposeStatusText.textContent = "Calibrated \u2713";
-      if (lastTPoseState !== "calibrated") {
-        showToast("T-Pose Calibrated! Rigid bone lengths & floor locked.", "success");
-        playCalibrationChime();
+      if (tposeGuideBanner) {
+        tposeGuideBanner.classList.add("calibrated");
+        if (tposeGuideIcon) tposeGuideIcon.textContent = "\u2728";
+        if (tposeGuideTitle) tposeGuideTitle.textContent = "T-Pose Calibrated!";
+        const floorStr = tpose.calibration ? tpose.calibration.floor_y : 0;
+        if (tposeGuideSub) tposeGuideSub.textContent = `Rigid bones locked \u2022 Model positioned at origin (Floor Y=${floorStr}m)`;
+        if (tposeGuideBar) tposeGuideBar.style.width = "100%";
       }
     } else {
-      tposeStatusText.textContent = "T-Pose: Idle";
+      tposeStatusText.textContent = activeCalibration ? "Calibrated \u2713" : "T-Pose: Idle";
+      if (tposeGuideBanner) {
+        if (activeCalibration) {
+          if (tposeGuideIcon) tposeGuideIcon.textContent = "\u2713";
+          if (tposeGuideTitle) tposeGuideTitle.textContent = "T-Pose Calibrated (Ready)";
+          if (tposeGuideSub) tposeGuideSub.textContent = "Floor & rigid bones locked \u2022 Hold T-Pose to recalibrate";
+          if (tposeGuideBar) tposeGuideBar.style.width = "100%";
+        } else {
+          if (tposeGuideIcon) tposeGuideIcon.textContent = "\u{1F9CD}";
+          if (tposeGuideTitle) tposeGuideTitle.textContent = "Stand in T-Pose to Calibrate";
+          if (tposeGuideSub) tposeGuideSub.textContent = "Arms horizontal \u2022 Hold 1-2s to calibrate";
+          if (tposeGuideBar) tposeGuideBar.style.width = "0%";
+        }
+      }
+    }
+    if (tpose.just_calibrated) {
+      showToast("\u2728 T-Pose Calibrated! Model repositioned to origin.", "success");
+      playCalibrationChime();
     }
     lastTPoseState = state;
     if (tpose.calibration) {
@@ -29676,8 +29763,20 @@ void main() {
         if (msg.model_variant && selectModelVariant) selectModelVariant.value = msg.model_variant;
         if (msg.root_motion_mode && chkGlobalRoot) chkGlobalRoot.checked = msg.root_motion_mode === "global";
         if (msg.tpose) updateTPoseWidget(msg.tpose);
-        if (msg.model_type && brandEngineBadge) {
-          brandEngineBadge.textContent = `${msg.model_type.toUpperCase()} (${msg.device || "auto"})`;
+        if (msg.model_type) {
+          const isRtm = msg.model_type.toLowerCase().includes("rtm");
+          if (btnQuickGpu) btnQuickGpu.classList.toggle("active", isRtm);
+          if (btnQuickCpu) btnQuickCpu.classList.toggle("active", !isRtm);
+          if (brandEngineBadge) {
+            brandEngineBadge.textContent = `${msg.model_type.toUpperCase()} (${msg.device || "auto"})`;
+          }
+        }
+        break;
+      case "engine_loading":
+        if (engineSwitchingOverlay && switchingTitle && switchingSub) {
+          switchingTitle.textContent = msg.model_type === "rtmpose" ? "\u26A1 Switching to GPU Tracking (RTMPose)..." : "\u{1F4BB} Switching to CPU Tracking (MediaPipe)...";
+          switchingSub.textContent = msg.model_type === "rtmpose" ? "Initializing DirectML execution provider on your GPU..." : "Loading CPU MediaPipe Pose Landmarker...";
+          engineSwitchingOverlay.style.display = "flex";
         }
         break;
       case "devices":
@@ -29701,14 +29800,25 @@ void main() {
       case "tpose_calibrated":
         activeCalibration = msg.calibration;
         updateCalibrationDetailsUI(msg.calibration);
-        showToast("T-Pose Calibrated!", "success");
+        showToast("\u2728 T-Pose Calibrated! Model repositioned to origin.", "success");
         playCalibrationChime();
         break;
+      case "origin_recentered":
+        showToast("Model origin repositioned", "info");
+        break;
       case "model_engine_updated":
-        showToast(`Engine updated: ${msg.model_type} (${msg.variant || ""})`, "success");
-        if (brandEngineBadge) {
-          brandEngineBadge.textContent = `${msg.model_type.toUpperCase()} (${msg.device || "auto"})`;
+        if (engineSwitchingOverlay) {
+          engineSwitchingOverlay.style.display = "none";
         }
+        if (msg.model_type) {
+          const isRtm = msg.model_type.toLowerCase().includes("rtm");
+          if (btnQuickGpu) btnQuickGpu.classList.toggle("active", isRtm);
+          if (btnQuickCpu) btnQuickCpu.classList.toggle("active", !isRtm);
+          if (brandEngineBadge) {
+            brandEngineBadge.textContent = `${msg.model_type.toUpperCase()} (${msg.device || "auto"})`;
+          }
+        }
+        showToast(`Engine updated: ${msg.model_type.toUpperCase()} (${msg.device || "auto"})`, "success");
         break;
       case "root_motion_updated":
         showToast(`Root tracking mode: ${msg.mode}`, "info");
@@ -29753,8 +29863,19 @@ void main() {
     if (msg.tpose) {
       updateTPoseWidget(msg.tpose);
     }
-    if (msg.model_engine && brandEngineBadge) {
-      brandEngineBadge.textContent = `${msg.model_engine.toUpperCase()} (${msg.device || "auto"})`;
+    if (msg.filter_preset && selectFilterMode && document.activeElement !== selectFilterMode) {
+      selectFilterMode.value = msg.filter_preset;
+      if (chkFilter && chkFilter.checked) {
+        filterStatusLabel.textContent = `1\u20AC Filter: ${msg.filter_preset.toUpperCase()}`;
+      }
+    }
+    if (msg.model_engine) {
+      const isRtm = msg.model_engine.toLowerCase().includes("rtm");
+      if (btnQuickGpu) btnQuickGpu.classList.toggle("active", isRtm);
+      if (btnQuickCpu) btnQuickCpu.classList.toggle("active", !isRtm);
+      if (brandEngineBadge) {
+        brandEngineBadge.textContent = `${msg.model_engine.toUpperCase()} (${msg.device || "auto"})`;
+      }
     }
     if (msg.recording) {
       const rec = msg.recording;
@@ -29857,15 +29978,18 @@ void main() {
   var selectedLocalDevice = null;
   async function connectCamera(camId, source, name) {
     showToast(`Connecting to ${name}...`, "info");
-    sendWSCommand("add_camera", { cam_id: camId, source, name });
-    try {
-      await fetch(`http://127.0.0.1:${WS_PORT}/api/cameras/add`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cam_id: camId, source, name })
-      });
-    } catch (e) {
-      console.warn("REST add_camera fallback failed:", e);
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      sendWSCommand("add_camera", { cam_id: camId, source, name });
+    } else {
+      try {
+        await fetch(`http://127.0.0.1:${WS_PORT}/api/cameras/add`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cam_id: camId, source, name })
+        });
+      } catch (e) {
+        console.warn("REST add_camera fallback failed:", e);
+      }
     }
   }
   window.retryCamera = (camId, source, name) => connectCamera(camId, source, name);
@@ -30014,12 +30138,24 @@ void main() {
       const engine = selectModelEngine.value;
       const device = selectEngineDevice.value;
       const variant = selectModelVariant.value;
-      sendWSCommand("set_model_engine", {
-        model_type: engine,
-        device,
-        variant
-      });
-      showToast(`Switched engine to ${engine.toUpperCase()} (${device})`, "info");
+      requestSwitchEngine(engine, device, variant);
+    });
+  }
+  if (btnQuickGpu) {
+    btnQuickGpu.addEventListener("click", () => {
+      requestSwitchEngine("rtmpose", "dml", "balanced");
+    });
+  }
+  if (btnQuickCpu) {
+    btnQuickCpu.addEventListener("click", () => {
+      requestSwitchEngine("mediapipe", "cpu", "full");
+    });
+  }
+  if (btnRecenterView) {
+    btnRecenterView.addEventListener("click", () => {
+      recenter3DView();
+      sendWSCommand("recenter_origin");
+      showToast("3D Viewport & Performer Root Recentered", "info");
     });
   }
   if (btnResetTpose) {
@@ -30077,12 +30213,26 @@ void main() {
   chkGrid.addEventListener("change", () => gridHelper.visible = chkGrid.checked);
   chkAxes.addEventListener("change", () => axesHelper.visible = chkAxes.checked);
   chkFilter.addEventListener("change", () => {
-    filterStatusLabel.textContent = `1\u20AC Filter: ${chkFilter.checked ? "ON" : "OFF"}`;
+    const mode = selectFilterMode ? selectFilterMode.value : "balanced";
+    filterStatusLabel.textContent = `1\u20AC Filter: ${chkFilter.checked ? mode.toUpperCase() : "OFF"}`;
     filterStatusLabel.classList.toggle("pill-active", chkFilter.checked);
     sendWSCommand("set_filter", {
-      enabled: chkFilter.checked
+      enabled: chkFilter.checked,
+      preset: mode
     });
   });
+  if (selectFilterMode) {
+    selectFilterMode.addEventListener("change", () => {
+      sendWSCommand("set_filter", {
+        enabled: chkFilter.checked,
+        preset: selectFilterMode.value
+      });
+      if (chkFilter.checked) {
+        filterStatusLabel.textContent = `1\u20AC Filter: ${selectFilterMode.value.toUpperCase()}`;
+      }
+      showToast(`Anti-jitter mode: ${selectFilterMode.options[selectFilterMode.selectedIndex].text}`, "info");
+    });
+  }
   function showToast(message, type = "info") {
     const container = document.getElementById("toast-container");
     if (!container) return;

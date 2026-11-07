@@ -1253,3 +1253,201 @@ body {
   color: var(--text-primary);
   background: rgba(255, 255, 255, 0.1);
 }
+
+/* ==========================================================================
+   On-The-Fly Quick Engine Switch & Live Recenter Styles
+   ========================================================================== */
+
+.engine-switch-group {
+  display: flex;
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  padding: 3px;
+  gap: 2px;
+  margin-left: 8px;
+}
+
+.engine-pill-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--radius-xl);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.engine-pill-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.engine-pill-btn.active {
+  background: linear-gradient(135deg, rgba(0, 210, 255, 0.22), rgba(58, 130, 246, 0.28));
+  color: #fff;
+  border-color: rgba(0, 210, 255, 0.45);
+  box-shadow: 0 0 12px rgba(0, 210, 255, 0.25);
+}
+
+.engine-pill-icon {
+  font-size: 13px;
+}
+
+.btn-recenter-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(0, 210, 255, 0.12);
+  border: 1px solid rgba(0, 210, 255, 0.35);
+  color: var(--accent-cyan);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-recenter-pill:hover {
+  background: rgba(0, 210, 255, 0.25);
+  box-shadow: 0 0 12px rgba(0, 210, 255, 0.35);
+  transform: translateY(-1px);
+}
+
+/* T-Pose Live Guidance Banner */
+.tpose-guide-banner {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(15, 20, 29, 0.9);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(0, 210, 255, 0.35);
+  border-radius: var(--radius-xl);
+  padding: 8px 18px;
+  box-shadow: var(--shadow-lg), 0 0 20px rgba(0, 210, 255, 0.15);
+  z-index: 5;
+  transition: all var(--transition-normal);
+  pointer-events: none;
+}
+
+.tpose-guide-icon {
+  font-size: 20px;
+}
+
+.tpose-guide-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.tpose-guide-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.2px;
+}
+
+.tpose-guide-sub {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.tpose-guide-progress {
+  width: 60px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.tpose-guide-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-cyan), var(--accent-emerald));
+  border-radius: 3px;
+  transition: width 0.1s linear;
+}
+
+.tpose-guide-banner.holding {
+  border-color: var(--accent-amber);
+  box-shadow: 0 0 25px rgba(245, 158, 11, 0.35);
+}
+
+.tpose-guide-banner.calibrated {
+  border-color: var(--accent-emerald);
+  box-shadow: 0 0 25px rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.15);
+}
+
+/* Engine Switching Overlay Modal */
+.engine-switching-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 11, 16, 0.85);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+.switching-modal {
+  background: var(--bg-card);
+  border: 1px solid rgba(0, 210, 255, 0.35);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 30px rgba(0, 210, 255, 0.2);
+  border-radius: var(--radius-lg);
+  padding: 30px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+}
+
+.switching-spinner {
+  width: 44px;
+  height: 44px;
+  border: 3px solid rgba(0, 210, 255, 0.15);
+  border-top-color: var(--accent-cyan);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+#switching-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+}
+
+#switching-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+  max-width: 320px;
+}
+
+.compact-select {
+  padding: 4px 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.compact-select:focus, .compact-select:hover {
+  border-color: var(--accent-cyan);
+}

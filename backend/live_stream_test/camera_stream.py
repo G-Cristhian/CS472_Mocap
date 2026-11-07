@@ -63,6 +63,7 @@ class CameraWorker:
 
         self._lock = threading.Lock()
         self._frame_lock = threading.Lock()
+        self._detector_lock = threading.Lock()
 
         self._cap: Optional[cv2.VideoCapture] = None
         self._detector: Optional[Any] = None
@@ -98,10 +99,24 @@ class CameraWorker:
 
     def stop(self):
         self._running = False
+        with HARDWARE_LOCK:
+            if self._cap is not None:
+                try:
+                    self._cap.release()
+                except Exception:
+                    pass
+                self._cap = None
         if self._cap_thread and self._cap_thread.is_alive():
-            self._cap_thread.join(timeout=1.5)
+            self._cap_thread.join(timeout=1.0)
         if self._proc_thread and self._proc_thread.is_alive():
-            self._proc_thread.join(timeout=1.5)
+            self._proc_thread.join(timeout=1.0)
+        with self._detector_lock:
+            if self._detector:
+                try:
+                    self._detector.close()
+                except Exception:
+                    pass
+                self._detector = None
         self.status = "stopped"
 
     def _open_capture(self) -> bool:
@@ -174,15 +189,19 @@ class CameraWorker:
         consecutive_errors = 0
 
         while self._running:
-            if not self._cap or not self._cap.isOpened():
+            with HARDWARE_LOCK:
+                cap = self._cap
+            if not cap or not cap.isOpened():
                 break
 
-            ok, frame = self._cap.read()
+            ok, frame = cap.read()
             if not ok or frame is None:
                 # If local video file, loop back to start
                 if isinstance(self.source, str) and not self.source.startswith(("rtsp://", "http://", "https://")):
-                    self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    ok, frame = self._cap.read()
+                    with HARDWARE_LOCK:
+                        if self._cap and self._cap.isOpened():
+                            self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                            ok, frame = self._cap.read()
 
                 if not ok or frame is None:
                     consecutive_errors += 1
@@ -204,31 +223,92 @@ class CameraWorker:
             # Don't spin faster than hardware capabilities
             time.sleep(0.002)
 
-        if self._cap:
-            self._cap.release()
-            self._cap = None
+        with HARDWARE_LOCK:
+            if self._cap:
+                try:
+                    self._cap.release()
+                except Exception:
+                    pass
+                self._cap = None
+
+    def switch_engine(
+        self,
+        model_type: str,
+        model_variant: Optional[str] = None,
+        device: Optional[str] = None,
+    ) -> bool:
+        """
+        Hot-swaps pose detector on the fly without stopping video capture.
+        """
+        m_type = (model_type or self.model_type).lower().strip()
+        m_variant = model_variant or ("balanced" if m_type in ("rtmpose", "rtm") else "full")
+        dev = device or ("auto" if m_type in ("rtmpose", "rtm") else "cpu")
+
+        try:
+            new_detector = create_live_detector(
+                model_type=m_type,
+                variant=m_variant,
+                device=dev,
+            )
+            detected_dev = getattr(new_detector, "device", "cpu")
+
+            with self._detector_lock:
+                old_det = self._detector
+                self._detector = new_detector
+                if old_det:
+                    try:
+                        old_det.close()
+                    except Exception:
+                        pass
+
+            self.model_type = m_type
+            self.model_variant = m_variant
+            self.device = dev
+            self.active_engine = f"{m_type} ({m_variant}, {detected_dev})"
+            self.error_message = None
+
+            # Self-healing: if threads stopped or crashed, revive them
+            if self._running:
+                if self._cap_thread is None or not self._cap_thread.is_alive():
+                    self._cap_thread = threading.Thread(target=self._capture_loop, name=f"Cap-{self.cam_id}", daemon=True)
+                    self._cap_thread.start()
+                if self._proc_thread is None or not self._proc_thread.is_alive():
+                    self._proc_thread = threading.Thread(target=self._process_loop, name=f"Proc-{self.cam_id}", daemon=True)
+                    self._proc_thread.start()
+
+            if self.status != "stopped":
+                self.status = "running"
+            return True
+        except Exception as e:
+            self.error_message = f"Failed to switch to {m_type}: {e}"
+            return False
 
     def _process_loop(self):
         """Inference & processing loop decoupled from camera capture."""
         try:
-            self._detector = create_live_detector(
-                model_type=self.model_type,
-                variant=self.model_variant,
-                device=self.device,
-            )
-            detected_device = getattr(self._detector, "device", "cpu")
-            self.active_engine = f"{self.model_type} ({self.model_variant}, {detected_device})"
+            with self._detector_lock:
+                self._detector = create_live_detector(
+                    model_type=self.model_type,
+                    variant=self.model_variant,
+                    device=self.device,
+                )
+                detected_device = getattr(self._detector, "device", "cpu")
+                self.active_engine = f"{self.model_type} ({self.model_variant}, {detected_device})"
+            self.status = "running"
         except Exception as e:
             self.status = "error"
             self.error_message = f"Failed to initialize detector {self.model_type}: {e}"
-            return
 
-        self.status = "running"
         frame_count = 0
         fps_start = time.time()
         encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality]
 
         while self._running:
+            # If detector failed to load initially, wait for switch_engine to supply one
+            if self._detector is None:
+                time.sleep(0.05)
+                continue
+
             frame = None
             f_time = 0.0
             f_id = 0
@@ -255,8 +335,10 @@ class CameraWorker:
             det_t0 = time.time()
             lm_2d, lm_3d = None, None
             try:
-                if self._detector:
-                    lm_2d, lm_3d = self._detector.detect(rgb_frame, frame_ms)
+                with self._detector_lock:
+                    det = self._detector
+                if det:
+                    lm_2d, lm_3d = det.detect(rgb_frame, frame_ms)
             except Exception:
                 pass
             det_latency = (time.time() - det_t0) * 1000.0
@@ -422,34 +504,57 @@ class CameraManager:
     ) -> bool:
         cam_id = str(cam_id)
         parsed_src = parse_source(source)
+        old_worker = None
         with self._lock:
             existing = self._cameras.get(cam_id)
-            if existing and existing.status in ("starting", "running") and existing.source == parsed_src:
+            if existing and existing.status in ("initializing", "starting", "running", "switching") and existing.source == parsed_src:
+                if (existing.model_type != model_type or
+                    existing.model_variant != model_variant or
+                    existing.device != device):
+                    existing.switch_engine(model_type, model_variant, device)
                 return True
             if existing:
-                existing.stop()
+                old_worker = self._cameras.pop(cam_id, None)
 
-            worker = CameraWorker(
-                cam_id=cam_id,
-                source=parsed_src,
-                name=name,
-                model_type=model_type,
-                model_variant=model_variant,
-                device=device,
-                recorder=self.recorder,
-            )
+        if old_worker:
+            old_worker.stop()
+
+        worker = CameraWorker(
+            cam_id=cam_id,
+            source=parsed_src,
+            name=name,
+            model_type=model_type,
+            model_variant=model_variant,
+            device=device,
+            recorder=self.recorder,
+        )
+        with self._lock:
             self._cameras[cam_id] = worker
-            worker.start()
-            return True
+        worker.start()
+        return True
+
+    def switch_all_engines(
+        self,
+        model_type: str,
+        model_variant: Optional[str] = None,
+        device: Optional[str] = None,
+    ) -> Dict[str, bool]:
+        """Hot-swaps model engine on all running camera workers."""
+        with self._lock:
+            cams = list(self._cameras.values())
+        results = {}
+        for c in cams:
+            results[c.cam_id] = c.switch_engine(model_type, model_variant, device)
+        return results
 
     def remove_camera(self, cam_id: str) -> bool:
         cam_id = str(cam_id)
         with self._lock:
-            if cam_id in self._cameras:
-                worker = self._cameras.pop(cam_id)
-                worker.stop()
-                return True
-            return False
+            worker = self._cameras.pop(cam_id, None)
+        if worker:
+            worker.stop()
+            return True
+        return False
 
     def get_camera(self, cam_id: str) -> Optional[CameraWorker]:
         with self._lock:

@@ -79,7 +79,7 @@ class JointFilter3D:
     """
     Applies independent 1-Euro filters to (x, y, z) coordinates of a 3D joint.
     """
-    def __init__(self, min_cutoff: float = 1.0, beta: float = 0.007):
+    def __init__(self, min_cutoff: float = 1.8, beta: float = 0.15):
         self.filter_x = OneEuroFilter(min_cutoff=min_cutoff, beta=beta)
         self.filter_y = OneEuroFilter(min_cutoff=min_cutoff, beta=beta)
         self.filter_z = OneEuroFilter(min_cutoff=min_cutoff, beta=beta)
@@ -99,11 +99,34 @@ class JointFilter3D:
 class PoseFilter:
     """
     Maintains a set of 3D joint filters for all MediaPipe joints.
+    Tuned for zero-lag high-speed motion tracking while eliminating stationary jitter.
     """
-    def __init__(self, min_cutoff: float = 1.2, beta: float = 0.01):
-        self.min_cutoff = min_cutoff
-        self.beta = beta
+    PRESETS = {
+        "fast": {"min_cutoff": 2.5, "beta": 0.3},       # Max responsiveness / zero lag
+        "balanced": {"min_cutoff": 1.8, "beta": 0.15},   # Balanced smoothing + rapid motion
+        "smooth": {"min_cutoff": 1.0, "beta": 0.05},     # Extra smoothing
+    }
+
+    def __init__(self, min_cutoff: float = 1.8, beta: float = 0.15):
+        self.min_cutoff = float(min_cutoff)
+        self.beta = float(beta)
+        self.mode: str = "balanced"
         self.filters: Dict[int, JointFilter3D] = {}
+
+    def set_preset(self, preset_name: str):
+        preset = self.PRESETS.get(preset_name.lower())
+        if preset:
+            self.mode = preset_name.lower()
+            self.min_cutoff = preset["min_cutoff"]
+            self.beta = preset["beta"]
+            self.reset()
+
+    def update_parameters(self, min_cutoff: Optional[float] = None, beta: Optional[float] = None):
+        if min_cutoff is not None:
+            self.min_cutoff = float(min_cutoff)
+        if beta is not None:
+            self.beta = float(beta)
+        self.reset()
 
     def filter_pose(self, landmarks_3d: List[Dict[str, Any]], timestamp_s: float) -> List[Dict[str, Any]]:
         """
@@ -126,14 +149,15 @@ class PoseFilter:
                 continue
 
             sx, sy, sz = self.filters[idx].filter(x, y, z, timestamp_s)
-            smoothed.append({
-                'x': sx,
-                'y': sy,
-                'z': sz,
-                'visibility': vis
-            })
+            item = dict(lm)
+            item['x'] = sx
+            item['y'] = sy
+            item['z'] = sz
+            item['visibility'] = vis
+            smoothed.append(item)
         return smoothed
 
     def reset(self):
         for f in self.filters.values():
             f.reset()
+        self.filters.clear()

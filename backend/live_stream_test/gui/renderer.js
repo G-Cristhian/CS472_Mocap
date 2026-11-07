@@ -60,6 +60,25 @@ const tposeRingFill = document.getElementById('tpose-ring-fill');
 const tposeStatusText = document.getElementById('tpose-status-text');
 const btnResetTpose = document.getElementById('btn-reset-tpose');
 
+// Quick engine switch buttons
+const btnQuickGpu = document.getElementById('btn-quick-gpu');
+const btnQuickCpu = document.getElementById('btn-quick-cpu');
+
+// Recenter view button
+const btnRecenterView = document.getElementById('btn-recenter-view');
+
+// T-Pose Guidance Overlay Banner
+const tposeGuideBanner = document.getElementById('tpose-guide-banner');
+const tposeGuideIcon = document.getElementById('tpose-guide-icon');
+const tposeGuideTitle = document.getElementById('tpose-guide-title');
+const tposeGuideSub = document.getElementById('tpose-guide-sub');
+const tposeGuideBar = document.getElementById('tpose-guide-bar');
+
+// Engine Switching Overlay
+const engineSwitchingOverlay = document.getElementById('engine-switching-overlay');
+const switchingTitle = document.getElementById('switching-title');
+const switchingSub = document.getElementById('switching-sub');
+
 const cameraGrid = document.getElementById('camera-grid');
 const emptyState = document.getElementById('empty-state');
 const detectedQuickList = document.getElementById('detected-quick-list');
@@ -110,6 +129,7 @@ const chkGlobalRoot = document.getElementById('chk-global-root');
 const chkGrid = document.getElementById('chk-grid');
 const chkAxes = document.getElementById('chk-axes');
 const chkFilter = document.getElementById('chk-filter');
+const selectFilterMode = document.getElementById('select-filter-mode');
 
 // Modals
 const modalAddCamera = document.getElementById('modal-add-camera');
@@ -180,6 +200,58 @@ controls.target.set(0, 0.9, 0);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 controls.update();
+
+function recenter3DView() {
+  controls.target.set(0, 0.9, 0);
+  camera.position.set(0, 1.2, 2.5);
+  controls.update();
+  sendWSCommand('set_root_motion', { mode: chkGlobalRoot && chkGlobalRoot.checked ? 'global' : 'root_locked' });
+}
+
+async function requestSwitchEngine(engineType, device = 'auto', variant = null) {
+  const chosenVariant = variant || (engineType === 'rtmpose' ? 'balanced' : 'full');
+  const chosenDevice = device || (engineType === 'rtmpose' ? 'dml' : 'cpu');
+
+  if (engineSwitchingOverlay && switchingTitle && switchingSub) {
+    switchingTitle.textContent = engineType === 'rtmpose'
+      ? '⚡ Switching to GPU Tracking (RTMPose)...'
+      : '💻 Switching to CPU Tracking (MediaPipe)...';
+    switchingSub.textContent = engineType === 'rtmpose'
+      ? 'Initializing DirectML execution provider on your GPU...'
+      : 'Loading CPU MediaPipe Pose Landmarker...';
+    engineSwitchingOverlay.style.display = 'flex';
+  }
+
+  if (btnQuickGpu) btnQuickGpu.classList.toggle('active', engineType === 'rtmpose');
+  if (btnQuickCpu) btnQuickCpu.classList.toggle('active', engineType === 'mediapipe');
+  if (selectModelEngine) selectModelEngine.value = engineType;
+  if (selectEngineDevice) selectEngineDevice.value = chosenDevice;
+
+  sendWSCommand('set_model_engine', {
+    model_type: engineType,
+    device: chosenDevice,
+    variant: chosenVariant,
+  });
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${WS_PORT}/api/model/engine`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model_type: engineType,
+        device: chosenDevice,
+        model_variant: chosenVariant,
+      })
+    });
+    if (res.ok) {
+      setTimeout(() => {
+        if (engineSwitchingOverlay) engineSwitchingOverlay.style.display = 'none';
+      }, 400);
+    }
+  } catch (e) {
+    console.warn('REST set_model_engine error:', e);
+  }
+}
 
 // Grid and Lights
 const gridHelper = new THREE.GridHelper(5, 10, 0x00d2ff, 0x1e283a);
@@ -282,7 +354,9 @@ function update3DSkeleton(pose3DData) {
   const isGlobalMode = chkGlobalRoot ? chkGlobalRoot.checked : true;
   let groundOffset = 0;
 
-  if (isGlobalMode && activeCalibration && Number.isFinite(activeCalibration.floor_y)) {
+  if (source.includes('triangulated')) {
+    groundOffset = 0;
+  } else if (isGlobalMode && activeCalibration && Number.isFinite(activeCalibration.floor_y)) {
     // Use calibrated static floor height
     groundOffset = -activeCalibration.floor_y;
   } else if (!isGlobalMode) {
@@ -385,19 +459,53 @@ function updateTPoseWidget(tpose) {
   }
 
   tposeWidget.classList.remove('holding', 'calibrated');
+  if (tposeGuideBanner) {
+    tposeGuideBanner.classList.remove('holding', 'calibrated');
+  }
 
   if (state === 'holding') {
     tposeWidget.classList.add('holding');
     tposeStatusText.textContent = `Hold T-Pose (${Math.round(progress * 100)}%)`;
+
+    if (tposeGuideBanner) {
+      tposeGuideBanner.classList.add('holding');
+      if (tposeGuideIcon) tposeGuideIcon.textContent = '⏱️';
+      if (tposeGuideTitle) tposeGuideTitle.textContent = `Holding T-Pose (${Math.round(progress * 100)}%)`;
+      if (tposeGuideSub) tposeGuideSub.textContent = 'Hold steady for 1-2s to lock scale & reposition to origin';
+      if (tposeGuideBar) tposeGuideBar.style.width = `${Math.round(progress * 100)}%`;
+    }
   } else if (state === 'calibrated') {
     tposeWidget.classList.add('calibrated');
     tposeStatusText.textContent = 'Calibrated ✓';
-    if (lastTPoseState !== 'calibrated') {
-      showToast('T-Pose Calibrated! Rigid bone lengths & floor locked.', 'success');
-      playCalibrationChime();
+
+    if (tposeGuideBanner) {
+      tposeGuideBanner.classList.add('calibrated');
+      if (tposeGuideIcon) tposeGuideIcon.textContent = '✨';
+      if (tposeGuideTitle) tposeGuideTitle.textContent = 'T-Pose Calibrated!';
+      const floorStr = tpose.calibration ? tpose.calibration.floor_y : 0;
+      if (tposeGuideSub) tposeGuideSub.textContent = `Rigid bones locked • Model positioned at origin (Floor Y=${floorStr}m)`;
+      if (tposeGuideBar) tposeGuideBar.style.width = '100%';
     }
   } else {
-    tposeStatusText.textContent = 'T-Pose: Idle';
+    tposeStatusText.textContent = activeCalibration ? 'Calibrated ✓' : 'T-Pose: Idle';
+    if (tposeGuideBanner) {
+      if (activeCalibration) {
+        if (tposeGuideIcon) tposeGuideIcon.textContent = '✓';
+        if (tposeGuideTitle) tposeGuideTitle.textContent = 'T-Pose Calibrated (Ready)';
+        if (tposeGuideSub) tposeGuideSub.textContent = 'Floor & rigid bones locked • Hold T-Pose to recalibrate';
+        if (tposeGuideBar) tposeGuideBar.style.width = '100%';
+      } else {
+        if (tposeGuideIcon) tposeGuideIcon.textContent = '🧍';
+        if (tposeGuideTitle) tposeGuideTitle.textContent = 'Stand in T-Pose to Calibrate';
+        if (tposeGuideSub) tposeGuideSub.textContent = 'Arms horizontal • Hold 1-2s to calibrate';
+        if (tposeGuideBar) tposeGuideBar.style.width = '0%';
+      }
+    }
+  }
+
+  if (tpose.just_calibrated) {
+    showToast('✨ T-Pose Calibrated! Model repositioned to origin.', 'success');
+    playCalibrationChime();
   }
 
   lastTPoseState = state;
@@ -650,8 +758,25 @@ function handleServerMessage(msg) {
       if (msg.model_variant && selectModelVariant) selectModelVariant.value = msg.model_variant;
       if (msg.root_motion_mode && chkGlobalRoot) chkGlobalRoot.checked = (msg.root_motion_mode === 'global');
       if (msg.tpose) updateTPoseWidget(msg.tpose);
-      if (msg.model_type && brandEngineBadge) {
-        brandEngineBadge.textContent = `${msg.model_type.toUpperCase()} (${msg.device || 'auto'})`;
+      if (msg.model_type) {
+        const isRtm = msg.model_type.toLowerCase().includes('rtm');
+        if (btnQuickGpu) btnQuickGpu.classList.toggle('active', isRtm);
+        if (btnQuickCpu) btnQuickCpu.classList.toggle('active', !isRtm);
+        if (brandEngineBadge) {
+          brandEngineBadge.textContent = `${msg.model_type.toUpperCase()} (${msg.device || 'auto'})`;
+        }
+      }
+      break;
+
+    case 'engine_loading':
+      if (engineSwitchingOverlay && switchingTitle && switchingSub) {
+        switchingTitle.textContent = msg.model_type === 'rtmpose'
+          ? '⚡ Switching to GPU Tracking (RTMPose)...'
+          : '💻 Switching to CPU Tracking (MediaPipe)...';
+        switchingSub.textContent = msg.model_type === 'rtmpose'
+          ? 'Initializing DirectML execution provider on your GPU...'
+          : 'Loading CPU MediaPipe Pose Landmarker...';
+        engineSwitchingOverlay.style.display = 'flex';
       }
       break;
 
@@ -681,15 +806,27 @@ function handleServerMessage(msg) {
     case 'tpose_calibrated':
       activeCalibration = msg.calibration;
       updateCalibrationDetailsUI(msg.calibration);
-      showToast('T-Pose Calibrated!', 'success');
+      showToast('✨ T-Pose Calibrated! Model repositioned to origin.', 'success');
       playCalibrationChime();
       break;
 
+    case 'origin_recentered':
+      showToast('Model origin repositioned', 'info');
+      break;
+
     case 'model_engine_updated':
-      showToast(`Engine updated: ${msg.model_type} (${msg.variant || ''})`, 'success');
-      if (brandEngineBadge) {
-        brandEngineBadge.textContent = `${msg.model_type.toUpperCase()} (${msg.device || 'auto'})`;
+      if (engineSwitchingOverlay) {
+        engineSwitchingOverlay.style.display = 'none';
       }
+      if (msg.model_type) {
+        const isRtm = msg.model_type.toLowerCase().includes('rtm');
+        if (btnQuickGpu) btnQuickGpu.classList.toggle('active', isRtm);
+        if (btnQuickCpu) btnQuickCpu.classList.toggle('active', !isRtm);
+        if (brandEngineBadge) {
+          brandEngineBadge.textContent = `${msg.model_type.toUpperCase()} (${msg.device || 'auto'})`;
+        }
+      }
+      showToast(`Engine updated: ${msg.model_type.toUpperCase()} (${msg.device || 'auto'})`, 'success');
       break;
 
     case 'root_motion_updated':
@@ -745,9 +882,22 @@ function handleStreamUpdate(msg) {
     updateTPoseWidget(msg.tpose);
   }
 
-  // Update Brand Badge
-  if (msg.model_engine && brandEngineBadge) {
-    brandEngineBadge.textContent = `${msg.model_engine.toUpperCase()} (${msg.device || 'auto'})`;
+  // Update filter mode indicator
+  if (msg.filter_preset && selectFilterMode && document.activeElement !== selectFilterMode) {
+    selectFilterMode.value = msg.filter_preset;
+    if (chkFilter && chkFilter.checked) {
+      filterStatusLabel.textContent = `1€ Filter: ${msg.filter_preset.toUpperCase()}`;
+    }
+  }
+
+  // Update Brand Badge and quick switch buttons
+  if (msg.model_engine) {
+    const isRtm = msg.model_engine.toLowerCase().includes('rtm');
+    if (btnQuickGpu) btnQuickGpu.classList.toggle('active', isRtm);
+    if (btnQuickCpu) btnQuickCpu.classList.toggle('active', !isRtm);
+    if (brandEngineBadge) {
+      brandEngineBadge.textContent = `${msg.model_engine.toUpperCase()} (${msg.device || 'auto'})`;
+    }
   }
 
   // Update recording pill
@@ -878,16 +1028,18 @@ let selectedLocalDevice = null;
 
 async function connectCamera(camId, source, name) {
   showToast(`Connecting to ${name}...`, 'info');
-  sendWSCommand('add_camera', { cam_id: camId, source, name });
-
-  try {
-    await fetch(`http://127.0.0.1:${WS_PORT}/api/cameras/add`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cam_id: camId, source, name })
-    });
-  } catch (e) {
-    console.warn('REST add_camera fallback failed:', e);
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    sendWSCommand('add_camera', { cam_id: camId, source, name });
+  } else {
+    try {
+      await fetch(`http://127.0.0.1:${WS_PORT}/api/cameras/add`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cam_id: camId, source, name })
+      });
+    } catch (e) {
+      console.warn('REST add_camera fallback failed:', e);
+    }
   }
 }
 window.retryCamera = (camId, source, name) => connectCamera(camId, source, name);
@@ -1063,12 +1215,28 @@ if (btnApplyEngine) {
     const engine = selectModelEngine.value;
     const device = selectEngineDevice.value;
     const variant = selectModelVariant.value;
-    sendWSCommand('set_model_engine', {
-      model_type: engine,
-      device: device,
-      variant: variant,
-    });
-    showToast(`Switched engine to ${engine.toUpperCase()} (${device})`, 'info');
+    requestSwitchEngine(engine, device, variant);
+  });
+}
+
+// Quick Engine Switch buttons
+if (btnQuickGpu) {
+  btnQuickGpu.addEventListener('click', () => {
+    requestSwitchEngine('rtmpose', 'dml', 'balanced');
+  });
+}
+if (btnQuickCpu) {
+  btnQuickCpu.addEventListener('click', () => {
+    requestSwitchEngine('mediapipe', 'cpu', 'full');
+  });
+}
+
+// Recenter view button
+if (btnRecenterView) {
+  btnRecenterView.addEventListener('click', () => {
+    recenter3DView();
+    sendWSCommand('recenter_origin');
+    showToast('3D Viewport & Performer Root Recentered', 'info');
   });
 }
 
@@ -1140,12 +1308,27 @@ btnViewReset.addEventListener('click', () => {
 chkGrid.addEventListener('change', () => gridHelper.visible = chkGrid.checked);
 chkAxes.addEventListener('change', () => axesHelper.visible = chkAxes.checked);
 chkFilter.addEventListener('change', () => {
-  filterStatusLabel.textContent = `1€ Filter: ${chkFilter.checked ? 'ON' : 'OFF'}`;
+  const mode = selectFilterMode ? selectFilterMode.value : 'balanced';
+  filterStatusLabel.textContent = `1€ Filter: ${chkFilter.checked ? mode.toUpperCase() : 'OFF'}`;
   filterStatusLabel.classList.toggle('pill-active', chkFilter.checked);
   sendWSCommand('set_filter', {
     enabled: chkFilter.checked,
+    preset: mode,
   });
 });
+
+if (selectFilterMode) {
+  selectFilterMode.addEventListener('change', () => {
+    sendWSCommand('set_filter', {
+      enabled: chkFilter.checked,
+      preset: selectFilterMode.value,
+    });
+    if (chkFilter.checked) {
+      filterStatusLabel.textContent = `1€ Filter: ${selectFilterMode.value.toUpperCase()}`;
+    }
+    showToast(`Anti-jitter mode: ${selectFilterMode.options[selectFilterMode.selectedIndex].text}`, 'info');
+  });
+}
 
 /* ==========================================================================
    Toast Notification Helper

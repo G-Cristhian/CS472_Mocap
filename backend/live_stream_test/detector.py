@@ -10,11 +10,17 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 import sys
+import threading
 from typing import Dict, List, Optional, Tuple, Any
 import cv2
 import numpy as np
 
 logger = logging.getLogger("live_detector")
+
+# Process-wide lock for GPU execution providers (DirectML / CUDA)
+# DirectML command queues are not thread-safe for concurrent operator dispatches
+ORT_GPU_LOCK = threading.RLock()
+_SHARED_RTMLIB_MODELS: Dict[Tuple[str, str], Any] = {}
 
 # Landmark names in MediaPipe order (0 to 32)
 LANDMARK_NAMES = [
@@ -124,7 +130,11 @@ class LivePoseDetector:
         timestamp_ms = max(int(round(frame_ms)), self._last_ms + 1)
         self._last_ms = timestamp_ms
 
-        result = self._landmarker.detect_for_video(image, timestamp_ms)
+        try:
+            result = self._landmarker.detect_for_video(image, timestamp_ms)
+        except Exception as e:
+            logger.warning(f"MediaPipe detect error: {e}")
+            return None, None
 
         if not result.pose_landmarks or len(result.pose_landmarks) == 0:
             return None, None
@@ -183,7 +193,16 @@ class LiveRTMPoseDetector:
         logger.info(f"Initializing RTMPose on device '{self.device}' (mode: {self.mode})...")
 
         from rtmlib import BodyWithFeet
-        self._model = BodyWithFeet(mode=mode, backend="onnxruntime", device=self.device)
+        cache_key = (self.mode, self.device)
+        with ORT_GPU_LOCK:
+            if cache_key not in _SHARED_RTMLIB_MODELS:
+                logger.info(f"Loading shared BodyWithFeet model for {cache_key}...")
+                _SHARED_RTMLIB_MODELS[cache_key] = BodyWithFeet(
+                    mode=self.mode,
+                    backend="onnxruntime",
+                    device=self.device,
+                )
+            self._model = _SHARED_RTMLIB_MODELS[cache_key]
 
         # Import backend helpers
         backend_dir = Path(__file__).resolve().parent.parent
@@ -202,6 +221,7 @@ class LiveRTMPoseDetector:
         self._halpe26_to_mediapipe = halpe26_to_mediapipe
 
     def close(self):
+        # Retain model instance in shared cache so other cameras or switches can reuse it
         self._model = None
 
     def detect(self, rgb_frame: np.ndarray, frame_ms: float) -> Tuple[Optional[List[Dict[str, Any]]], Optional[List[Dict[str, Any]]]]:
@@ -211,17 +231,25 @@ class LiveRTMPoseDetector:
             landmarks_2d: 33 items in MediaPipe order
             world_landmarks_3d: 33 items (reconstructed metric 3D points)
         """
+        if self._model is None:
+            return None, None
+
         height, width = rgb_frame.shape[:2]
         bgr = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
 
-        bboxes = np.asarray(self._model.det_model(bgr)).reshape(-1, 4)
-        person_idx = self._pick_person(bboxes)
-        if person_idx is None:
-            return None, None
+        with ORT_GPU_LOCK:
+            try:
+                bboxes = np.asarray(self._model.det_model(bgr)).reshape(-1, 4)
+                person_idx = self._pick_person(bboxes)
+                if person_idx is None:
+                    return None, None
 
-        keypoints, scores = self._model.pose_model(bgr, bboxes=[bboxes[person_idx]])
-        if keypoints is None or len(keypoints) == 0:
-            return None, None
+                keypoints, scores = self._model.pose_model(bgr, bboxes=[bboxes[person_idx]])
+                if keypoints is None or len(keypoints) == 0:
+                    return None, None
+            except Exception as e:
+                logger.warning(f"RTMPose inference error: {e}")
+                return None, None
 
         # Convert Halpe-26 to MediaPipe (33, 2) and confidence (33,)
         pts, conf = self._halpe26_to_mediapipe(keypoints[0], scores[0])
@@ -267,12 +295,14 @@ class LiveRTMPoseDetector:
         height: int,
     ) -> List[Dict[str, Any]]:
         """
-        Constructs normalized metric 3D skeleton from RTMPose 2D keypoints.
+        Constructs normalized metric 3D skeleton from RTMPose 2D keypoints
+        using biomechanical kinematic constraints for realistic 3D depth.
         """
-        # Find hip center
-        l_hip = next((lm for lm in landmarks_2d if lm["name"] == "LEFT_HIP"), None)
-        r_hip = next((lm for lm in landmarks_2d if lm["name"] == "RIGHT_HIP"), None)
+        by_name = {lm["name"]: lm for lm in landmarks_2d}
 
+        # Find hip center
+        l_hip = by_name.get("LEFT_HIP")
+        r_hip = by_name.get("RIGHT_HIP")
         if l_hip and r_hip and l_hip["visibility"] > 0.2 and r_hip["visibility"] > 0.2:
             hip_cx = (l_hip["px_x"] + r_hip["px_x"]) * 0.5
             hip_cy = (l_hip["px_y"] + r_hip["px_y"]) * 0.5
@@ -280,34 +310,99 @@ class LiveRTMPoseDetector:
             hip_cx, hip_cy = width * 0.5, height * 0.5
 
         # Normalization scale (performer height on screen)
-        l_ankle = next((lm for lm in landmarks_2d if lm["name"] == "LEFT_ANKLE"), None)
-        r_ankle = next((lm for lm in landmarks_2d if lm["name"] == "RIGHT_ANKLE"), None)
-        nose = next((lm for lm in landmarks_2d if lm["name"] == "NOSE"), None)
+        l_ankle = by_name.get("LEFT_ANKLE")
+        r_ankle = by_name.get("RIGHT_ANKLE")
+        l_sh = by_name.get("LEFT_SHOULDER")
+        r_sh = by_name.get("RIGHT_SHOULDER")
+        nose = by_name.get("NOSE")
 
         scale = 1.0 / max(height * 0.5, 1.0)
-        if nose and (l_ankle or r_ankle):
-            foot_y = max((l_ankle["px_y"] if l_ankle else 0.0), (r_ankle["px_y"] if r_ankle else 0.0))
+        has_feet = (l_ankle and l_ankle["visibility"] > 0.2) or (r_ankle and r_ankle["visibility"] > 0.2)
+
+        if nose and nose["visibility"] > 0.2 and has_feet:
+            foot_y = max(
+                (l_ankle["px_y"] if l_ankle and l_ankle["visibility"] > 0.2 else 0.0),
+                (r_ankle["px_y"] if r_ankle and r_ankle["visibility"] > 0.2 else 0.0),
+            )
             h_span = max(foot_y - nose["px_y"], 50.0)
-            scale = 1.75 / h_span  # Map to ~1.75 meters
+            scale = 1.75 / h_span
+        elif l_sh and r_sh and l_sh["visibility"] > 0.2 and r_sh["visibility"] > 0.2:
+            sh_cy = (l_sh["px_y"] + r_sh["px_y"]) * 0.5
+            torso_span = max(abs(hip_cy - sh_cy), 30.0)
+            scale = 0.50 / torso_span  # 0.50m nominal torso length
+        elif l_sh and r_sh:
+            sh_w = max(abs(l_sh["px_x"] - r_sh["px_x"]), 20.0)
+            scale = 0.38 / sh_w
+
+        # Compute initial XY in meters relative to hip center
+        xy_m: Dict[str, Tuple[float, float]] = {}
+        for lm in landmarks_2d:
+            rel_x = (lm["px_x"] - hip_cx) * scale
+            rel_y = -(lm["px_y"] - hip_cy) * scale
+            xy_m[lm["name"]] = (rel_x, rel_y)
+
+        # Volumetric depth without artificial forward-only clamping or length caps
+        z_m: Dict[str, float] = {k: 0.0 for k in xy_m}
+
+        # Head offset
+        for k in ("NOSE", "LEFT_EYE", "RIGHT_EYE", "MOUTH_LEFT", "MOUTH_RIGHT"):
+            if k in z_m:
+                z_m[k] = 0.05
+
+        # Torso inclination depth
+        if l_sh and r_sh and l_hip and r_hip:
+            sh_z = 0.0
+            hip_z = 0.0
+            z_m["LEFT_SHOULDER"] = sh_z
+            z_m["RIGHT_SHOULDER"] = sh_z
+            z_m["LEFT_HIP"] = hip_z
+            z_m["RIGHT_HIP"] = hip_z
+
+        # Continuous limb depth without artificial locking
+        def track_limb_z(parent_name: str, child_name: str, sign: float = 1.0):
+            if parent_name not in xy_m or child_name not in xy_m:
+                return
+            px, py = xy_m[parent_name]
+            cx, cy = xy_m[child_name]
+            d = float(np.sqrt((cx - px) ** 2 + (cy - py) ** 2))
+            # Smooth unconstrained depth variation
+            z_m[child_name] = z_m[parent_name] + sign * (d * 0.25)
+
+        track_limb_z("LEFT_SHOULDER", "LEFT_ELBOW", sign=0.5)
+        track_limb_z("LEFT_ELBOW", "LEFT_WRIST", sign=0.5)
+        track_limb_z("RIGHT_SHOULDER", "RIGHT_ELBOW", sign=0.5)
+        track_limb_z("RIGHT_ELBOW", "RIGHT_WRIST", sign=0.5)
+
+        track_limb_z("LEFT_HIP", "LEFT_KNEE", sign=0.3)
+        track_limb_z("LEFT_KNEE", "LEFT_ANKLE", sign=-0.2)
+        track_limb_z("RIGHT_HIP", "RIGHT_KNEE", sign=0.3)
+        track_limb_z("RIGHT_KNEE", "RIGHT_ANKLE", sign=-0.2)
+
+        for k in ("LEFT_HEEL", "LEFT_FOOT_INDEX"):
+            if k in z_m and "LEFT_ANKLE" in z_m:
+                z_m[k] = z_m["LEFT_ANKLE"] + (0.08 if "FOOT_INDEX" in k else -0.04)
+        for k in ("RIGHT_HEEL", "RIGHT_FOOT_INDEX"):
+            if k in z_m and "RIGHT_ANKLE" in z_m:
+                z_m[k] = z_m["RIGHT_ANKLE"] + (0.08 if "FOOT_INDEX" in k else -0.04)
 
         world_3d = []
         for lm in landmarks_2d:
-            if lm["visibility"] > 0.05:
-                # X: right, Y: up, Z: approximate depth
-                rel_x = (lm["px_x"] - hip_cx) * scale
-                rel_y = -(lm["px_y"] - hip_cy) * scale
+            name = lm["name"]
+            if lm["visibility"] > 0.05 and name in xy_m:
+                rx, ry = xy_m[name]
+                rz = z_m.get(name, 0.0)
                 world_3d.append({
                     "index": lm["index"],
-                    "name": lm["name"],
-                    "x": float(rel_x),
-                    "y": float(rel_y),
-                    "z": 0.0,
+                    "name": name,
+                    "x": float(rx),
+                    "y": float(ry),
+                    "z": float(rz),
                     "visibility": lm["visibility"],
                 })
             else:
                 world_3d.append({
                     "index": lm["index"],
-                    "name": lm["name"],
+                    "name": name,
                     "x": 0.0,
                     "y": 0.0,
                     "z": 0.0,

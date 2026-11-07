@@ -53,3 +53,15 @@ def test_set_model_engine_endpoint(client):
     data = res.json()
     assert data["model_type"] == "rtmpose"
     assert server.current_model_type == "rtmpose"
+
+
+def test_gui_static_endpoints(client):
+    res_index = client.get("/")
+    assert res_index.status_code == 200
+    assert "Mocap Live Studio" in res_index.text
+
+    res_bundle = client.get("/bundle.js")
+    assert res_bundle.status_code == 200
+
+    res_style = client.get("/style.css")
+    assert res_style.status_code == 200

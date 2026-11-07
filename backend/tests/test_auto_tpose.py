@@ -145,3 +145,62 @@ def test_reset_and_force_calibration():
     calibrator.reset()
     assert calibrator.state == "idle"
     assert calibrator.calibration_data is None
+
+
+def test_upper_body_tpose_detected_and_calibrates():
+    """Verifies that T-pose detection works even if feet/ankles/knees are out of frame."""
+    calibrator = AutoTPoseCalibrator(hold_duration_s=1.0)
+    full_joints = make_perfect_tpose_joints()
+    upper_joints = {
+        k: v for k, v in full_joints.items()
+        if k not in ("LEFT_ANKLE", "RIGHT_ANKLE", "LEFT_HEEL", "RIGHT_HEEL", "LEFT_FOOT_INDEX", "RIGHT_FOOT_INDEX", "LEFT_KNEE", "RIGHT_KNEE")
+    }
+
+    is_valid, reason = calibrator.is_tpose(upper_joints)
+    assert is_valid is True
+
+    # Advance hold to completion
+    calibrator.update(upper_joints, timestamp=50.0)
+    res = calibrator.update(upper_joints, timestamp=51.2)
+    assert res["state"] == "calibrated"
+    assert res["has_calibration"] is True
+    assert res["calibration"]["floor_y"] is not None
+    assert res["calibration"]["scale_factor"] > 0.0
+
+
+def test_repeated_calibration_without_manual_reset():
+    """Verifies that a performer can recalibrate simply by assuming a T-pose again."""
+    calibrator = AutoTPoseCalibrator(hold_duration_s=0.5)
+    joints1 = make_perfect_tpose_joints(heel_y=-0.80)
+
+    # 1. Complete first calibration
+    calibrator.update(joints1, timestamp=0.0)
+    res1 = calibrator.update(joints1, timestamp=0.6)
+    assert res1["state"] == "calibrated"
+    assert res1["just_calibrated"] is True
+    assert res1["calibration"]["floor_y"] == pytest.approx(-0.80, abs=0.05)
+
+    # 2. Next tick while still holding T-pose: state remains calibrated, just_calibrated is False
+    res1_hold = calibrator.update(joints1, timestamp=0.7)
+    assert res1_hold["state"] == "calibrated"
+    assert res1_hold["just_calibrated"] is False
+
+    # 3. Relax arms (drop arms down) -> transitions to idle, but keeps calibration
+    broken_joints = make_perfect_tpose_joints()
+    broken_joints["LEFT_WRIST"] = np.array([0.0, 0.0, 0.0])
+    res_relaxed = calibrator.update(broken_joints, timestamp=1.5)
+    assert res_relaxed["state"] == "idle"
+    assert res_relaxed["has_calibration"] is True
+    assert res_relaxed["just_calibrated"] is False
+
+    # 4. Perform second T-pose with different floor level -> should recalibrate!
+    joints2 = make_perfect_tpose_joints(heel_y=-0.95)
+    res_rehold1 = calibrator.update(joints2, timestamp=2.0)
+    assert res_rehold1["state"] == "holding"
+    assert res_rehold1["progress"] == 0.0
+
+    res_recal = calibrator.update(joints2, timestamp=2.6)
+    assert res_recal["state"] == "calibrated"
+    assert res_recal["just_calibrated"] is True
+    assert res_recal["calibration"]["floor_y"] == pytest.approx(-0.95, abs=0.05)
+

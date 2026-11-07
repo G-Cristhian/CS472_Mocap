@@ -1,7 +1,7 @@
 @echo off
 setlocal
 echo ===================================================
-echo   CS472 Mocap - MediaPipe Live Stream Studio
+echo   CS472 Mocap - Live Stream Studio
 echo ===================================================
 echo.
 

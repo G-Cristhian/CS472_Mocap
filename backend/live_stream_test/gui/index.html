@@ -25,6 +25,18 @@
           <span class="brand-title">Mocap Live Studio</span>
           <span id="brand-engine-badge" class="badge badge-accent">RTMPose / MediaPipe</span>
         </div>
+
+        <!-- On-The-Fly GPU vs CPU Tracking Switch -->
+        <div class="engine-switch-group" id="engine-switch-group">
+          <button id="btn-quick-gpu" class="engine-pill-btn active" title="Switch to RTMPose GPU (DirectML Acceleration)">
+            <span class="engine-pill-icon">⚡</span>
+            <span class="engine-pill-text">GPU (RTMPose)</span>
+          </button>
+          <button id="btn-quick-cpu" class="engine-pill-btn" title="Switch to MediaPipe CPU">
+            <span class="engine-pill-icon">💻</span>
+            <span class="engine-pill-text">CPU (MediaPipe)</span>
+          </button>
+        </div>
       </div>
 
       <div class="nav-center">
@@ -126,8 +138,20 @@
           <div class="panel-title-group">
             <h2>Live 3D Viewport</h2>
             <span id="viewport-source-badge" class="badge badge-subtle">Awaiting Pose</span>
+            <span id="floor-tilt-badge" class="badge badge-subtle" style="display: none; font-size: 11px;">Tilt: 0°</span>
           </div>
           <div class="viewport-controls">
+            <button id="btn-recenter-view" class="btn-icon btn-recenter-pill" title="Recenter View & Performer Anchor">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <circle cx="12" cy="12" r="3"></circle>
+                <line x1="12" y1="2" x2="12" y2="6"></line>
+                <line x1="12" y1="18" x2="12" y2="22"></line>
+                <line x1="2" y1="12" x2="6" y2="12"></line>
+                <line x1="18" y1="12" x2="22" y2="12"></line>
+              </svg>
+              <span>Recenter</span>
+            </button>
             <button id="btn-view-front" class="btn-icon" title="Front View">F</button>
             <button id="btn-view-side" class="btn-icon" title="Side View">S</button>
             <button id="btn-view-top" class="btn-icon" title="Top View">T</button>
@@ -157,6 +181,18 @@
               <button id="btn-reset-tpose" class="btn-micro" title="Reset T-Pose Calibration">↺</button>
             </div>
           </div>
+
+          <!-- T-Pose Live Guidance Banner -->
+          <div id="tpose-guide-banner" class="tpose-guide-banner">
+            <div class="tpose-guide-icon" id="tpose-guide-icon">🧍</div>
+            <div class="tpose-guide-body">
+              <div class="tpose-guide-title" id="tpose-guide-title">Stand in T-Pose to Calibrate</div>
+              <div class="tpose-guide-sub" id="tpose-guide-sub">Arms horizontal • Hold 1-2s to recenter</div>
+            </div>
+            <div class="tpose-guide-progress">
+              <div id="tpose-guide-bar" class="tpose-guide-bar" style="width: 0%;"></div>
+            </div>
+          </div>
         </div>
 
         <div class="viewport-footer">
@@ -175,8 +211,15 @@
             </label>
             <label class="toggle-control">
               <input type="checkbox" id="chk-filter" checked />
-              <span>Jitter Smoothing</span>
+              <span>Jitter Filter</span>
             </label>
+            <div class="filter-mode-select" title="Responsiveness: Fast has zero lag for rapid motion tracking">
+              <select id="select-filter-mode" class="compact-select">
+                <option value="fast">⚡ Fast (Zero Lag)</option>
+                <option value="balanced" selected>⚖ Balanced</option>
+                <option value="smooth">🌊 Smooth</option>
+              </select>
+            </div>
           </div>
           <div class="drag-hint">
             <span>Drag to rotate • Right-click to pan • Wheel to zoom</span>
@@ -355,6 +398,15 @@
         <div class="modal-footer" id="proc-modal-footer">
           <button id="btn-close-proc" class="btn btn-primary">Done</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Engine Switching Overlay -->
+    <div id="engine-switching-overlay" class="engine-switching-overlay" style="display: none;">
+      <div class="switching-modal">
+        <div class="switching-spinner"></div>
+        <h3 id="switching-title">Switching Tracking Engine...</h3>
+        <p id="switching-sub">Hot-swapping neural network detector without dropping camera feed</p>
       </div>
     </div>
 
