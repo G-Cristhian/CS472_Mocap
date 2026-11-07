@@ -251,7 +251,9 @@ class RTMPoseBackend(PoseBackend):
     accurate). device: "cpu" or "cuda" (needs onnxruntime-gpu). ONNX Runtime
     quietly falls back to the CPU when it cannot start the GPU (missing CUDA
     libraries, for one), so after loading, both models are checked to really
-    be on the device asked for.
+    be on the device asked for. On the CPU the ONNX Runtime threads do not
+    busy-wait unless config.RTMPOSE_THREAD_SPINNING, so several videos can be
+    detected at once.
     """
     name = "rtmpose"
     # Halpe-26 has no eye corners, mouth corners or finger points
@@ -274,6 +276,8 @@ class RTMPoseBackend(PoseBackend):
 
         self._model = BodyWithFeet(mode=mode, backend="onnxruntime", device=device)
         self._check_running_on(device)
+        if device == "cpu" and not config.RTMPOSE_THREAD_SPINNING:
+            stop_spinning(self._model)
 
     def _check_running_on(self, device: str) -> None:
         """RuntimeError if either model ended up somewhere other than `device` (ONNX Runtime's silent fallback)."""
@@ -311,6 +315,22 @@ class RTMPoseBackend(PoseBackend):
         if self._detect_every > 1:
             self._box = box_from_joints(keypoints[0], scores[0], bgr.shape[1], bgr.shape[0])
         return halpe26_to_mediapipe(keypoints[0], scores[0])
+
+
+def stop_spinning(model) -> None:
+    """
+    Rebuild rtmlib's two ONNX Runtime sessions (person detector and pose
+    model) from the same model files, with idle threads that sleep instead
+    of busy-waiting (see config.RTMPOSE_THREAD_SPINNING). rtmlib has no
+    option for it; the thread count stays ONNX Runtime's default.
+    """
+    import onnxruntime as ort
+
+    for tool in (model.det_model, model.pose_model):
+        options = ort.SessionOptions()
+        options.add_session_config_entry("session.intra_op.allow_spinning", "0")
+        tool.session = ort.InferenceSession(tool.onnx_model, sess_options=options,
+                                            providers=["CPUExecutionProvider"])
 
 
 # Detector name (what run_pipeline's --detector will take) -> backend class.
