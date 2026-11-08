@@ -233,6 +233,25 @@ def check_rtmpose_device(device: str) -> None:
             f"pip install \"onnxruntime-gpu[cuda,cudnn]\" (same version). Or run with --rtmpose-device cpu.")
 
 
+def prefetch_rtmpose_models(mode: str = config.RTMPOSE_MODE) -> list[str]:
+    """
+    Download rtmlib's person detector and pose model for `mode` into its
+    cache (~/.cache/rtmlib), in this process, before several detection
+    processes start. Otherwise each process finds them missing and downloads
+    the same files at once: rtmlib saves each download to a temporary file
+    and renames it into place, and on Windows the second rename fails with
+    FileExistsError, which stopped a run on 2026-11-07. Models already in the
+    cache are not downloaded again. Returns the two model files.
+    """
+    if mode not in RTMPOSE_MODES:
+        raise ValueError(f"RTMPose mode must be one of {RTMPOSE_MODES}, got {mode!r}")
+    from rtmlib import BodyWithFeet
+    from rtmlib.tools import file as rtmlib_file
+
+    urls = BodyWithFeet.MODE[mode]
+    return [rtmlib_file.download_checkpoint(urls["det"]), rtmlib_file.download_checkpoint(urls["pose"])]
+
+
 class RTMPoseBackend(PoseBackend):
     """
     RTMPose with the Halpe-26 (body with feet) model, through rtmlib

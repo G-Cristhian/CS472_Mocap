@@ -33,7 +33,7 @@ from pathlib import Path
 from . import config, io, metrics
 from .stage1_keypoints import detect
 from .stage1_keypoints.backends import (BACKENDS, DEFAULT_BACKEND, RTMPOSE_DEVICES, RTMPOSE_MODES,
-                                        check_rtmpose_device, joints_provided)
+                                        check_rtmpose_device, joints_provided, prefetch_rtmpose_models)
 from .stage2_reconstruct import calibrate, scale_floor, smooth, sync, triangulate
 from .stage3_rig import bvh_writer, rotations, skeleton
 from .joints import RIG_END_SITES, RIG_JOINTS, RIG_PARENTS
@@ -540,6 +540,16 @@ def _run_stages(
                   + "".join(f", {k} {v}" for k, v in options.items()) + ")")
         if at_once > 1:
             print(f"Detecting {len(todo)} videos at once, {at_once} processes")
+        if detector == "rtmpose":
+            # once, here: detection processes that each find the models missing race to save them
+            mode = options.get("mode", config.RTMPOSE_MODE)
+            try:
+                prefetch_rtmpose_models(mode)
+            except Exception as e:
+                raise SystemExit(
+                    f"Could not download RTMPose's {mode} models: {type(e).__name__}: {e}\n"
+                    f"rtmlib downloads them on first use into ~/.cache/rtmlib; check the internet "
+                    f"connection and run again.")
         with metrics.time("detect_total"):
             seconds, failures = _detect_videos(todo, model_path, detector, at_once, options=options)
         for cid, took in seconds.items():

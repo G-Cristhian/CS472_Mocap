@@ -274,3 +274,21 @@ def test_backend_stops_spinning_only_on_the_cpu_by_default(monkeypatch, device, 
 
     RTMPoseBackend(device=device)
     assert calls == (["model"] if stopped else [])
+
+
+@pytest.mark.parametrize("mode", backends.RTMPOSE_MODES)
+def test_prefetch_downloads_the_detector_and_pose_model_of_the_mode(mode, monkeypatch):
+    rtmlib = pytest.importorskip("rtmlib")
+    from rtmlib.tools import file as rtmlib_file
+
+    asked = []
+    monkeypatch.setattr(rtmlib_file, "download_checkpoint", lambda url: asked.append(url) or f"cache/{len(asked)}.onnx")
+    paths = backends.prefetch_rtmpose_models(mode)
+    urls = rtmlib.BodyWithFeet.MODE[mode]
+    assert asked == [urls["det"], urls["pose"]]
+    assert paths == ["cache/1.onnx", "cache/2.onnx"]
+
+
+def test_prefetch_refuses_an_unknown_mode():
+    with pytest.raises(ValueError, match="RTMPose mode"):
+        backends.prefetch_rtmpose_models("fastest")

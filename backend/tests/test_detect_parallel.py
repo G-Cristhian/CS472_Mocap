@@ -99,3 +99,40 @@ def test_run_reports_every_failed_file_and_keeps_the_good_ones(tmp_path, monkeyp
     assert (out.parent / "out3d.keypoints.cam0.npz").exists()      # the good one is saved for --resume
     m = metrics.load(str(out))
     assert m["run"]["status"] == "failed" and set(m["stage1"]["failed"]) == {"bad1", "bad2"}
+
+
+def rtmpose_run(tmp_path, monkeypatch, prefetch):
+    """run_pipeline.run with RTMPose and three videos, recording the prefetch and the detection, in order."""
+    events = []
+    monkeypatch.setattr(run_pipeline, "prefetch_rtmpose_models", lambda mode: events.append(("prefetch", mode)) or prefetch(mode))
+
+    def fake_detect(video_path, model_path, detector="mediapipe", options=None):
+        events.append(("detect", Path(video_path).name))
+        raise RuntimeError("stop after detection")
+
+    monkeypatch.setattr(detect, "detect_video", fake_detect)
+    videos = []
+    for name in ("cam0.mp4", "cam1.mp4", "cam2.mp4"):
+        (tmp_path / name).write_bytes(b"x")
+        videos.append(str(tmp_path / name))
+    with pytest.raises(SystemExit) as info:
+        run_pipeline.run(videos, str(tmp_path / "out" / "out3d.json"), model_path="unused", jobs=1,
+                         detector="rtmpose", rtmpose_mode="performance")
+    return events, str(info.value)
+
+
+def test_rtmpose_models_are_fetched_once_before_any_video_is_detected(tmp_path, monkeypatch):
+    events, _ = rtmpose_run(tmp_path, monkeypatch, lambda mode: ["det.onnx", "pose.onnx"])
+    assert events[0] == ("prefetch", "performance")
+    assert [e for e in events if e[0] == "prefetch"] == [("prefetch", "performance")]
+    assert [e[1] for e in events if e[0] == "detect"] == ["cam0.mp4", "cam1.mp4", "cam2.mp4"]
+
+
+def test_a_failed_model_download_stops_the_run_before_detection(tmp_path, monkeypatch):
+    def offline(mode):
+        raise OSError("no network")
+
+    events, message = rtmpose_run(tmp_path, monkeypatch, offline)
+    assert not [e for e in events if e[0] == "detect"]
+    assert message.startswith("Could not download RTMPose's performance models: OSError: no network")
+    assert "~/.cache/rtmlib" in message
