@@ -127,6 +127,9 @@ export interface LibraryRun {
 }
 
 /** What the preload script exposes to the page as window.backend. */
+/** The frame-by-frame report (report.ts) as text, or why there is none. */
+export type ReportResult = { ok: true; text: string } | { ok: false; error: string }
+
 export interface Backend {
   chooseDirectory(): Promise<string | null>
   /** a folder to write the results into, starting at `current`; may be a new folder */
@@ -143,4 +146,6 @@ export interface Backend {
   openFolder(path: string): Promise<void>
   /** every run in backend/output and in the folders this session wrote to, newest first */
   listRuns(): Promise<LibraryRun[]>
+  /** the frame-by-frame report of the run with this metrics file, built by the pipeline if needed */
+  readReport(metricsPath: string): Promise<ReportResult>
 }

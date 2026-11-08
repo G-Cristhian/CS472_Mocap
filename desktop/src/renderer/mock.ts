@@ -1,7 +1,8 @@
 /**
  * A stand-in for the Electron bridge so the page can be worked on in a plain
  * browser (`npm run preview`). It replays the lines a real run prints through
- * the same ProgressTracker, and serves the frontend's sample BVH as the result.
+ * the same ProgressTracker, and serves a synthetic run's BVH and frame-by-frame report
+ * (test/fixtures) as the result.
  */
 import { parseCheckOutput } from '../shared/check'
 import { ProgressTracker } from '../shared/progress'
@@ -197,7 +198,8 @@ export const mock: Backend = {
     return () => progressListeners.delete(cb)
   },
   async readText(file) {
-    if (file.endsWith('.bvh')) return (await fetch('./sample_take.bvh')).text()
+    // the synthetic run behind test/fixtures, so the cameras and the report match the skeleton
+    if (file.endsWith('.bvh')) return (await fetch(new URL('../../test/fixtures/synthetic.bvh', import.meta.url))).text()
     if (file.endsWith('metrics.json')) {
       const butter = lastSmoother === 'butterworth'
       return JSON.stringify({
@@ -214,6 +216,10 @@ export const mock: Backend = {
   },
   async openFolder() {
     alert('In Electron this opens the output folder.')
+  },
+  async readReport() {
+    await new Promise((r) => setTimeout(r, 400))
+    return { ok: true, text: await (await fetch(new URL('../../test/fixtures/synthetic.report.json', import.meta.url))).text() }
   },
   async listRuns() {
     return [...library].sort((a, b) => (b.started ?? '').localeCompare(a.started ?? ''))

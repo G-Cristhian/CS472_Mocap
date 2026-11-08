@@ -34,7 +34,7 @@ test('detection speed is video frames per second, and blank for a resumed run', 
 test('numbers are coloured by the processing guide thresholds', () => {
   assert.equal(col('calibration').grade(row({ summary: { calibrationWorstPx: 2 } })), 'good')
   assert.equal(col('calibration').grade(row({ summary: { calibrationWorstPx: 10.6 } })), 'bad')
-  assert.equal(col('missing').grade(row({ summary: { missingPercent: 6.4 } })), '')
+  assert.equal(col('missing').grade(row({ summary: { missingPercent: 6.4 } })), 'mid')
   assert.equal(col('bones').grade(row({ summary: { boneSpreadMm: 25.4 } })), 'bad')
 })
 

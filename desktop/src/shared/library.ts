@@ -3,7 +3,7 @@
  * filter keeps, and how each number is coloured. Pure, so it is tested on its
  * own (test/libraryTable.test.cjs); the page only draws it.
  */
-import { grade, type Grade } from './metrics'
+import { grade, LIMITS, type Grade } from './metrics'
 import type { LibraryRun } from './types'
 
 export interface Column {
@@ -76,14 +76,14 @@ export const COLUMNS: Column[] = [
     title: 'Calib. worst (px)',
     text: (r) => fix(r.summary.calibrationWorstPx, 2),
     value: (r) => r.summary.calibrationWorstPx,
-    grade: (r) => grade(r.summary.calibrationWorstPx, 3, 10),
+    grade: (r) => grade(r.summary.calibrationWorstPx, LIMITS.px.good, LIMITS.px.bad),
   },
   {
     key: 'reprojection',
     title: 'Triang. (px)',
     text: (r) => fix(r.summary.reprojectionPx, 2),
     value: (r) => r.summary.reprojectionPx,
-    grade: (r) => grade(r.summary.reprojectionPx, 3, 10),
+    grade: (r) => grade(r.summary.reprojectionPx, LIMITS.px.good, LIMITS.px.bad),
     note: 'Mean reprojection error of the 3D joints.',
   },
   {
@@ -91,14 +91,14 @@ export const COLUMNS: Column[] = [
     title: 'Bone spread (mm)',
     text: (r) => fix(r.summary.boneSpreadMm, 1),
     value: (r) => r.summary.boneSpreadMm,
-    grade: (r) => grade(r.summary.boneSpreadMm, 10, 20),
+    grade: (r) => grade(r.summary.boneSpreadMm, LIMITS.boneMm.good, LIMITS.boneMm.bad),
   },
   {
     key: 'missing',
     title: 'Missing (%)',
     text: (r) => fix(r.summary.missingPercent, 1),
     value: (r) => r.summary.missingPercent,
-    grade: (r) => grade(r.summary.missingPercent, 5, 15),
+    grade: (r) => grade(r.summary.missingPercent, LIMITS.missingPercent.good, LIMITS.missingPercent.bad),
   },
   {
     key: 'jitter',

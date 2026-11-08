@@ -4,12 +4,29 @@
  * by joint, and what smoothing did to it. Pure, so it is tested on its own.
  */
 
-export type Grade = 'good' | 'bad' | ''
+/** green, amber (between the two limits), red; '' when there is no number or no limit */
+export type Grade = 'good' | 'mid' | 'bad' | ''
 
 export interface MetricRow {
   label: string
   value: string
   grade: Grade
+  /** the limits behind the colour, for the key: "green ≤ 3 px, red ≥ 10 px" */
+  scale?: string
+}
+
+/** The processing guide's limits (processing-a-take.md step 4), shared by every panel that colours a number. */
+export const LIMITS = {
+  px: { good: 3, bad: 10 },
+  boneMm: { good: 10, bad: 20 },
+  missingPercent: { good: 5, bad: 15 },
+  upright: { good: 30, bad: 10 },
+} as const
+
+/** Millimetres per pixel at the performer, from the run's report (report.ts): per camera, and their median. */
+export interface MmScale {
+  perCamera: Record<string, number>
+  median: number | null
 }
 
 export interface MetricSection {
@@ -58,12 +75,20 @@ function numbers(m: Json, path: string): Record<string, number> {
 /** green at or past `good`, red at or past `bad`; the thresholds are processing-a-take.md step 4 */
 export function grade(value: number | null, good: number, bad: number): Grade {
   if (value === null) return ''
-  if (good < bad) return value <= good ? 'good' : value >= bad ? 'bad' : ''
-  return value >= good ? 'good' : value <= bad ? 'bad' : ''
+  if (good < bad) return value <= good ? 'good' : value >= bad ? 'bad' : 'mid'
+  return value >= good ? 'good' : value <= bad ? 'bad' : 'mid'
 }
 
 const dash = '–'
 const fix = (v: number | null, digits: number, unit = '') => (v === null ? dash : `${v.toFixed(digits)}${unit}`)
+
+/** "5.27 px (about 8 mm)": a pixel error and what it is at the performer, when the scale is known. */
+export function pxWithMm(px: number | null, mmPerPx: number | null | undefined, digits = 2): string {
+  if (px === null) return dash
+  return mmPerPx ? `${px.toFixed(digits)} px (about ${(px * mmPerPx).toFixed(0)} mm)` : `${px.toFixed(digits)} px`
+}
+
+const pxScale = `green ≤ ${LIMITS.px.good} px, red ≥ ${LIMITS.px.bad} px`
 
 /** The largest values first, as "name value, name value". */
 function worst(values: Record<string, number>, n: number, digits: number, unit: string): string {
@@ -92,8 +117,9 @@ export function summarise(m: Json): RunSummary {
   }
 }
 
-export function metricSections(m: Json): MetricSection[] {
+export function metricSections(m: Json, mm?: MmScale): MetricSection[] {
   const s = summarise(m)
+  const worstCam = Object.entries(numbers(m, 'calibrate.reprojection_error_px')).sort((a, b) => b[1] - a[1])[0]?.[0]
   const sections: MetricSection[] = []
 
   // ---- the headline, the five numbers the old panel showed ----
@@ -101,11 +127,36 @@ export function metricSections(m: Json): MetricSection[] {
   sections.push({
     title: 'At a glance',
     rows: [
-      { label: 'Calibration error, worst camera', value: fix(s.calibrationWorstPx, 2, ' px'), grade: grade(s.calibrationWorstPx, 3, 10) },
-      { label: 'Triangulation error, mean', value: fix(s.reprojectionPx, 2, ' px'), grade: grade(s.reprojectionPx, 3, 10) },
-      { label: 'Bone length spread', value: fix(s.boneSpreadMm, 1, ' mm'), grade: grade(s.boneSpreadMm, 10, 20) },
-      { label: 'Joints missing', value: fix(s.missingPercent, 1, ' %'), grade: grade(s.missingPercent, 5, 15) },
-      { label: 'Upright frames for height', value: upright === null ? dash : String(upright), grade: grade(upright, 30, 10) },
+      {
+        label: 'Calibration error, worst camera' + (worstCam ? ` (${worstCam})` : ''),
+        value: pxWithMm(s.calibrationWorstPx, worstCam ? mm?.perCamera[worstCam] : null),
+        grade: grade(s.calibrationWorstPx, LIMITS.px.good, LIMITS.px.bad),
+        scale: pxScale,
+      },
+      {
+        label: 'Triangulation error, mean',
+        value: pxWithMm(s.reprojectionPx, mm?.median),
+        grade: grade(s.reprojectionPx, LIMITS.px.good, LIMITS.px.bad),
+        scale: pxScale,
+      },
+      {
+        label: 'Bone length spread',
+        value: fix(s.boneSpreadMm, 1, ' mm'),
+        grade: grade(s.boneSpreadMm, LIMITS.boneMm.good, LIMITS.boneMm.bad),
+        scale: `green ≤ ${LIMITS.boneMm.good} mm, red ≥ ${LIMITS.boneMm.bad} mm`,
+      },
+      {
+        label: 'Joints missing',
+        value: fix(s.missingPercent, 1, ' %'),
+        grade: grade(s.missingPercent, LIMITS.missingPercent.good, LIMITS.missingPercent.bad),
+        scale: `green ≤ ${LIMITS.missingPercent.good} %, red ≥ ${LIMITS.missingPercent.bad} %`,
+      },
+      {
+        label: 'Upright frames for height',
+        value: upright === null ? dash : String(upright),
+        grade: grade(upright, LIMITS.upright.good, LIMITS.upright.bad),
+        scale: `green ≥ ${LIMITS.upright.good}, red ≤ ${LIMITS.upright.bad}`,
+      },
       { label: 'Total time', value: fix(s.totalS, 0, ' s'), grade: '' },
     ],
   })
@@ -125,7 +176,8 @@ export function metricSections(m: Json): MetricSection[] {
         value: `${cam.frames ?? dash} frames at ${typeof cam.fps_nominal === 'number' ? cam.fps_nominal.toFixed(1) : dash} fps, `
           + `nobody seen ${fix(nobody, 1, ' %')}, confidence ${fix(conf, 2)}`
           + (took === null ? '' : `, ${took.toFixed(0)} s`),
-        grade: nobody === null ? '' : nobody > 20 ? 'bad' : nobody < 5 ? 'good' : '',
+        grade: nobody === null ? '' : nobody > 20 ? 'bad' : nobody < 5 ? 'good' : 'mid',
+        scale: 'nobody seen: green under 5 %, red over 20 %',
       })
     }
     const failed = at(m, 'stage1.failed')
@@ -161,7 +213,9 @@ export function metricSections(m: Json): MetricSection[] {
         grade: '',
       })
     }
-    for (const [cid, px] of Object.entries(calib)) rows.push({ label: `${cid} reprojection error`, value: fix(px, 2, ' px'), grade: grade(px, 3, 10) })
+    for (const [cid, px] of Object.entries(calib)) {
+      rows.push({ label: `${cid} calibration error`, value: pxWithMm(px, mm?.perCamera[cid]), grade: grade(px, LIMITS.px.good, LIMITS.px.bad), scale: pxScale })
+    }
     const scale = num(m, 'scale.metres_per_unit')
     if (scale !== null) {
       rows.push({
@@ -184,7 +238,7 @@ export function metricSections(m: Json): MetricSection[] {
     sections.push({
       title: 'Stage 2c, triangulation',
       rows: [
-        { label: 'Mean reprojection error', value: fix(s.reprojectionPx, 2, ' px'), grade: grade(s.reprojectionPx, 3, 10) },
+        { label: 'Mean reprojection error', value: pxWithMm(s.reprojectionPx, mm?.median), grade: grade(s.reprojectionPx, LIMITS.px.good, LIMITS.px.bad), scale: pxScale },
         { label: 'Worst joints', value: worst(perJoint, 4, 1, ' px'), grade: '' },
         { label: 'Most often missing', value: worst(Object.fromEntries(Object.entries(missingPerJoint).map(([k, v]) => [k, v * 100])), 4, 0, ' %'), grade: '' },
         { label: 'Cameras per joint, mean', value: fix(views, 2), grade: '' },
@@ -213,7 +267,8 @@ export function metricSections(m: Json): MetricSection[] {
         {
           label: 'Jitter, raw → smoothed',
           value: `${fix(s.jitterRawMm, 1)} → ${fix(s.jitterFinalMm, 1)} mm/frame²${reduction === null ? '' : ` (${reduction.toFixed(0)} % less)`}`,
-          grade: reduction === null ? '' : reduction > 40 ? 'good' : reduction < 10 ? 'bad' : '',
+          grade: reduction === null ? '' : reduction > 40 ? 'good' : reduction < 10 ? 'bad' : 'mid',
+          scale: 'green over 40 % less, red under 10 % less',
         },
         {
           label: 'Gaps',
@@ -236,7 +291,7 @@ export function metricSections(m: Json): MetricSection[] {
     sections.push({
       title: 'Stage 3, skeleton',
       rows: [
-        { label: 'Bone length spread, mean', value: fix(s.boneSpreadMm, 1, ' mm'), grade: grade(s.boneSpreadMm, 10, 20) },
+        { label: 'Bone length spread, mean', value: fix(s.boneSpreadMm, 1, ' mm'), grade: grade(s.boneSpreadMm, LIMITS.boneMm.good, LIMITS.boneMm.bad), scale: `green ≤ ${LIMITS.boneMm.good} mm, red ≥ ${LIMITS.boneMm.bad} mm` },
         { label: 'Least rigid bones', value: worst(spread, 4, 1, ' mm'), grade: '' },
       ],
     })

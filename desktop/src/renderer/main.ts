@@ -4,9 +4,11 @@
  */
 import { parseClapTimes } from '../shared/clapTimes'
 import { COLUMNS, DEFAULT_VIEW, takes, viewRows, type LibraryView } from '../shared/library'
-import { metricSections } from '../shared/metrics'
+import { metricSections, type MmScale } from '../shared/metrics'
 import { expandMatrix, parseDetectEvery, settingsLabel, type Matrix } from '../shared/queue'
 import type { Backend, CheckResult, LibraryRun, Progress, RunOptions, RunResult, Smoother, VideoFile } from '../shared/types'
+import { cameraLines, frameAt, mmScale, parseReport, rigState, STATE_COLOURS, type Report } from '../shared/report'
+import { cameraColour, ReportPanel } from './runReport'
 import { BvhViewer } from './viewer'
 
 const backend: Backend = (window as unknown as { backend?: Backend }).backend ?? (await import('./mock')).mock
@@ -606,6 +608,21 @@ function fmt(t: number): string {
 let shownOptions: RunOptions | null = null
 let shownFolder: string | null = null
 let shownMetrics: string | null = null
+/** bumped by every showResult, so a slow report for an earlier run is dropped */
+let shownToken = 0
+let shownMetricsJson: Record<string, unknown> | null = null
+const reportPanel = new ReportPanel()
+
+function seek(t: number): void {
+  if (!viewer) return
+  viewer.pause()
+  playButton.textContent = 'Play'
+  viewer.setTime(t)
+  timeSlider.value = String(Math.round((t / (viewer.duration || 1)) * 1000))
+  clockLabel.textContent = `${fmt(t)} / ${fmt(viewer.duration)} s`
+  reportPanel.update(t)
+}
+reportPanel.onSeek = seek
 
 function showFailure(result: RunResult, job: Job): void {
   preview.hidden = false
@@ -631,6 +648,7 @@ async function showResult(
   shownOptions = options
   shownFolder = options?.outDir ?? metricsPath ?? null
   shownMetrics = metricsPath ?? null
+  const token = ++shownToken
   rerunButton.disabled = !options
   renderLibrary()
   if (!viewer) {
@@ -639,9 +657,14 @@ async function showResult(
     viewer.onTime = (t) => {
       timeSlider.value = String(Math.round((t / viewer!.duration) * 1000))
       clockLabel.textContent = `${fmt(t)} / ${fmt(viewer!.duration)} s`
+      reportPanel.update(t)
     }
   }
+  viewer.jointColour = null
+  viewer.setCameras([], null)
+  reportPanel.clear(metricsPath ? 'Reading the frame-by-frame numbers…' : '')
   await showMetrics(metricsPath ?? undefined)
+  if (metricsPath) void showReport(metricsPath, token)
   if (!bvhPath) {
     resultError.textContent = 'This run left no BVH (was --no-bvh used, or did it fail before the skeleton?).'
     return
@@ -658,8 +681,48 @@ async function showResult(
   viewer.play()
 }
 
+/** The run's frame-by-frame report: cameras in the 3D view, joint colours, 2D views, timelines, stories. */
+async function showReport(metricsPath: string, token: number): Promise<void> {
+  let report: Report
+  try {
+    const result = await backend.readReport(metricsPath)
+    if (token !== shownToken) return
+    if (!result.ok) {
+      reportPanel.clear(`No frame-by-frame view for this run: ${result.error}`)
+      return
+    }
+    report = parseReport(result.text)
+  } catch (e) {
+    if (token === shownToken) reportPanel.clear(`No frame-by-frame view for this run: ${e instanceof Error ? e.message : String(e)}`)
+    return
+  }
+  if (token !== shownToken || !viewer) return
+  const worst = cameraLines(report)[0]?.id
+  viewer.setCameras(
+    report.cameras.map((c, i) => ({
+      id: c.id,
+      position: c.position,
+      forward: c.forward,
+      up: c.up,
+      halfWidth: c.width / 2 / c.focal_px,
+      halfHeight: c.height / 2 / c.focal_px,
+      colour: cameraColour(i),
+      label: c.id + (c.id === worst && report.cameras.length > 1 ? ' (worst)' : ''),
+    })),
+    report.performer_centre.map((v) => v ?? NaN),
+  )
+  viewer.jointColour = (joint, t) => {
+    const state = rigState(report, frameAt(report, t), joint, reportPanel.mode)
+    return state ? STATE_COLOURS[state] : null
+  }
+  reportPanel.show(report, viewer.duration)
+  reportPanel.update(viewer.currentTime)
+  if (shownMetricsJson) renderMetrics(shownMetricsJson, mmScale(report))
+}
+
 async function showMetrics(metricsPath?: string): Promise<void> {
   metricsBox.replaceChildren()
+  shownMetricsJson = null
   if (!metricsPath) return
   let m: Record<string, unknown>
   try {
@@ -667,7 +730,13 @@ async function showMetrics(metricsPath?: string): Promise<void> {
   } catch {
     return
   }
-  for (const section of metricSections(m)) {
+  shownMetricsJson = m
+  renderMetrics(m)
+}
+
+function renderMetrics(m: Record<string, unknown>, mm?: MmScale): void {
+  metricsBox.replaceChildren()
+  for (const section of metricSections(m, mm)) {
     const h = document.createElement('h3')
     h.textContent = section.title
     const dl = document.createElement('dl')
@@ -680,6 +749,12 @@ async function showMetrics(metricsPath?: string): Promise<void> {
       dd.textContent = row.value
       dd.className = row.grade
       div.append(dt, dd)
+      if (row.scale) {
+        const scale = document.createElement('small')
+        scale.className = 'scale'
+        scale.textContent = row.scale
+        div.append(scale)
+      }
       dl.append(div)
     }
     const wrap = document.createElement('div')
@@ -710,11 +785,7 @@ playButton.addEventListener('click', () => {
 
 timeSlider.addEventListener('input', () => {
   if (!viewer) return
-  viewer.pause()
-  playButton.textContent = 'Play'
-  const t = (Number(timeSlider.value) / 1000) * viewer.duration
-  viewer.setTime(t)
-  clockLabel.textContent = `${fmt(t)} / ${fmt(viewer.duration)} s`
+  seek((Number(timeSlider.value) / 1000) * viewer.duration)
 })
 
 $('open-folder').addEventListener('click', () => {

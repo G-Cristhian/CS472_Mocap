@@ -150,6 +150,42 @@
           <input id="time" type="range" min="0" max="1000" value="0" aria-label="Time" />
           <span id="clock" class="mono">0.00 / 0.00 s</span>
         </div>
+        <div class="key-row">
+          <label class="inline">Skeleton colour
+            <select id="colour-mode">
+              <option value="error">How far apart the cameras are</option>
+              <option value="views">How many cameras saw it</option>
+              <option value="plain">One colour</option>
+            </select>
+          </label>
+          <ul id="colour-key" class="key"></ul>
+        </div>
+        <p class="note">The boxes in the 3D view are the cameras, where calibration put them, in the same colours as below.</p>
+        <p id="report-note" class="note"></p>
+        <div id="report-parts" class="report-parts" hidden>
+          <div class="row"><h3>What each camera saw</h3><span class="spacer"></span><label class="inline small"><input id="whole-picture" type="checkbox" /> Whole picture</label></div>
+          <p class="note">Cropped to where the performer moves; tick Whole picture for the camera's full frame. Solid, in the camera's colour: the joints its detector found. Dashed: the 3D skeleton seen from that camera. The short lines between them are the reprojection error, coloured like the skeleton key.</p>
+          <div id="cam-views" class="cam-views"></div>
+          <h3>Over time</h3>
+          <p class="note">Top: how far each camera's joints are from the 3D skeleton, in millimetres at the performer, with the guide's 3 px and 10 px limits. Bottom: joints without a 3D position. Click to jump there.</p>
+          <canvas id="timeline" class="timeline"></canvas>
+          <ul id="timeline-legend" class="key"></ul>
+          <p id="at-now" class="note mono"></p>
+          <h3>Cameras</h3>
+          <div id="camera-story" class="story"></div>
+          <h3>Joints that were hard to track</h3>
+          <div id="joint-story" class="story"></div>
+        </div>
+        <details class="glossary">
+          <summary>What the numbers mean</summary>
+          <dl id="glossary-list"></dl>
+        </details>
+        <ul class="key">
+          <li><span class="swatch" style="background: var(--ok)"></span>good</li>
+          <li><span class="swatch" style="background: var(--mid)"></span>between the limits</li>
+          <li><span class="swatch" style="background: var(--bad)"></span>poor</li>
+          <li class="muted">by the processing guide's limits, shown under each number; uncoloured numbers have none</li>
+        </ul>
         <div id="metrics" class="sections"></div>
         <div class="row">
           <button id="rerun-smoother" class="btn" title="Queues the same run with the other smoother and Resume on: only smoothing and the skeleton are redone, in seconds">Rerun with the other smoother</button>

@@ -22,6 +22,7 @@ const backend: Backend = {
   readText: (file) => ipcRenderer.invoke('read-text', file),
   openFolder: (target) => ipcRenderer.invoke('open-folder', target),
   listRuns: () => ipcRenderer.invoke('list-runs'),
+  readReport: (metricsPath) => ipcRenderer.invoke('read-report', metricsPath),
 }
 
 contextBridge.exposeInMainWorld('backend', backend)

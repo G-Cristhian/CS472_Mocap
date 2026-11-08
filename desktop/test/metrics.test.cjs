@@ -32,8 +32,10 @@ test('every stage gets a section, and bad numbers are graded bad', () => {
     ['At a glance', 'Stage 1, detection per camera', 'Stage 2a, synchronisation', 'Stage 2b, calibration', 'Stage 2c, triangulation', 'Smoothing', 'Stage 3, skeleton'],
   )
   const rows = Object.fromEntries(sections.flatMap((s) => s.rows.map((r) => [r.label, r])))
-  assert.equal(rows['Calibration error, worst camera'].value, '12.00 px')
-  assert.equal(rows['Calibration error, worst camera'].grade, 'bad')
+  assert.equal(rows['Calibration error, worst camera (cam1)'].value, '12.00 px')
+  assert.equal(rows['Calibration error, worst camera (cam1)'].grade, 'bad')
+  assert.equal(rows['Calibration error, worst camera (cam1)'].scale, 'green ≤ 3 px, red ≥ 10 px')
+  assert.equal(rows['cam0 calibration error'].grade, 'good')
   assert.equal(rows['Joints missing'].grade, 'bad')
   assert.equal(rows['Upright frames for height'].grade, 'bad')
   assert.match(rows['cam0'].value, /nobody seen 30\.0 %.*7 s/)
@@ -50,4 +52,19 @@ test('an empty metrics file still gives the glance section with dashes', () => {
   const sections = metricSections({})
   assert.equal(sections.length, 1)
   assert.ok(sections[0].rows.every((r) => r.value.startsWith('–')))
+})
+
+test('with the report scale, pixel errors also read in millimetres at the performer', () => {
+  const rows = Object.fromEntries(
+    metricSections(M, { perCamera: { cam0: 2, cam1: 1.5 }, median: 1.75 }).flatMap((s) => s.rows.map((r) => [r.label, r])),
+  )
+  assert.equal(rows['Calibration error, worst camera (cam1)'].value, '12.00 px (about 18 mm)')
+  assert.equal(rows['Triangulation error, mean'].value, '2.00 px (about 4 mm)')
+  assert.equal(rows['cam0 calibration error'].value, '1.50 px (about 3 mm)')
+})
+
+test('a number between the two limits is amber, not uncoloured', () => {
+  const rows = Object.fromEntries(metricSections({ triangulate: { mean_reprojection_px: 5 } }).flatMap((s) => s.rows.map((r) => [r.label, r])))
+  assert.equal(rows['Triangulation error, mean'].grade, 'mid')
+  assert.equal(rows['Bone length spread'].grade, '')
 })

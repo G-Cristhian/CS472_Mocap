@@ -8,7 +8,8 @@ import path from 'node:path'
 
 import { defaultOutDir, isResultFile, listVideos } from './files'
 import { listRuns, snapshotRun } from './library'
-import { BACKEND_DIR, runCheck, runPipeline, type RunHandle } from './pipeline'
+import { BACKEND_DIR, resolvePython, runCheck, runPipeline, type RunHandle } from './pipeline'
+import { loadReport } from './reportFile'
 import type { RunOptions, VideoFile } from '../shared/types'
 
 let running: RunHandle | null = null
@@ -91,6 +92,11 @@ ipcMain.handle('run', async (event, options: RunOptions) => {
 })
 
 ipcMain.handle('list-runs', () => listRuns([path.join(BACKEND_DIR, 'output')], [...sessionFolders]))
+
+ipcMain.handle('read-report', async (_event, metricsPath: string) => {
+  if (!isResultFile(metricsPath)) throw new Error('Only result files can be read')
+  return loadReport(metricsPath, resolvePython(), BACKEND_DIR)
+})
 
 ipcMain.handle('cancel', async () => {
   running?.cancel()

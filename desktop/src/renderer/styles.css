@@ -7,6 +7,7 @@
   --accent: #4c8dff;
   --ok: #3fb950;
   --bad: #f85149;
+  --mid: #d29922;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, Menlo, Consolas, monospace;
 }
@@ -108,3 +109,30 @@ label.inline { display: flex; align-items: center; gap: 6px; font-size: 12.5px; 
 .lib td.status-failed { color: var(--bad); }
 .lib td button { padding: 0 8px; line-height: 1.5; font-family: var(--font); }
 .lib tr.shown td { background: #1f2630; }
+
+/* the result panel's key, cameras' views, timeline and stories (runReport.ts) */
+.metrics dd.mid, .lib td.mid, .runs td.mid, .cam-view .mid { color: var(--mid); }
+.runs td.good, .cam-view .good { color: var(--ok); }
+.runs td.bad, .cam-view .bad { color: var(--bad); }
+.metrics .scale { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+.key-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }
+.key { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; }
+.key li { display: flex; align-items: center; gap: 6px; }
+.swatch { display: inline-block; width: 11px; height: 11px; border-radius: 50%; flex: none; }
+.swatch.line { width: 16px; height: 3px; border-radius: 2px; }
+.report-parts { display: grid; gap: 6px; }
+.note:empty { display: none; }
+.report-parts[hidden] { display: none; }
+.report-parts h3 { font-size: 13px; margin: 8px 0 0; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.cam-views { display: flex; gap: 8px; align-items: flex-start; }
+.cam-view { margin: 0; flex: 1 1 0; min-width: 0; max-width: 280px; }
+.cam-view figcaption { font-family: var(--mono); font-size: 12px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cam-view canvas { display: block; width: 100%; border: 1px solid var(--line); border-radius: 4px; background: #0e1116; }
+.timeline { display: block; width: 100%; height: 220px; background: #0e1116; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.story p { margin: 0 0 6px; font-size: 13px; line-height: 1.45; }
+.story ol.stories { margin: 0 0 6px; padding-left: 20px; font-size: 13px; line-height: 1.45; }
+.story ol.stories li { margin-bottom: 4px; }
+.story summary, .glossary summary { cursor: pointer; font-size: 12.5px; color: var(--accent); }
+.glossary dl { margin: 6px 0 0; display: grid; gap: 6px; }
+.glossary dt { font-weight: 600; font-size: 12.5px; }
+.glossary dd { margin: 0 0 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
