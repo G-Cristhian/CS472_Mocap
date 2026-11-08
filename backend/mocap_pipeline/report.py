@@ -39,7 +39,7 @@ from .joints import MEDIAPIPE_JOINTS
 from .stage2_reconstruct.sync import _resample
 
 # bump when the layout changes: the desktop tester rebuilds reports of another version
-VERSION = 2
+VERSION = 3
 
 
 def report_path(out_path: str | Path) -> Path:
@@ -71,6 +71,29 @@ def _nanmean(a: np.ndarray, axis):
         count = np.sum(np.isfinite(a), axis=axis)
         total = np.nansum(a, axis=axis)
         return np.where(count > 0, total / np.maximum(count, 1), np.nan)
+
+
+def joint_speeds(out_path: str | Path, fallback: np.ndarray, fps: float) -> np.ndarray:
+    """
+    Metres per second of every joint per frame, from the final (smoothed, gaps
+    filled) joints in the output JSON, or from `fallback` (F, J, 3) without it:
+    the distance between the frames either side over the time between them.
+    """
+    out = Path(out_path)
+    points = fallback
+    if out.exists():
+        frames = json.loads(out.read_text())
+        points = np.full((len(frames), len(MEDIAPIPE_JOINTS), 3), np.nan)
+        for f, frame in enumerate(frames):
+            for j, name in enumerate(MEDIAPIPE_JOINTS):
+                p = frame["landmarks"].get(name)
+                if p:
+                    points[f, j] = (p["x"], p["y"], p["z"])
+    speed = np.full(points.shape[:2], np.nan)
+    if len(points) >= 3:
+        speed[1:-1] = np.linalg.norm(points[2:] - points[:-2], axis=2) * fps / 2
+        speed[0], speed[-1] = speed[1], speed[-2]
+    return speed
 
 
 def build(out_path: str | Path, calibration_path: str | Path | None = None) -> dict:
@@ -154,6 +177,8 @@ def build(out_path: str | Path, calibration_path: str | Path | None = None) -> d
         centre = np.nanmedian(X.reshape(-1, 3), axis=0) if np.isfinite(X).any() else np.full(3, np.nan)
     joint_px = _nanmean(np.where(kept, err_px, np.nan), 0)[:, provided]   # (F, J)
     joint_mm = _nanmean(np.where(kept, err_mm, np.nan), 0)[:, provided]
+    speed = joint_speeds(out, X, config.TARGET_FPS)
+    speed = np.pad(speed, ((0, max(0, n_frames - len(speed))), (0, 0)), constant_values=np.nan)[:n_frames, provided]
     return {
         "version": VERSION,
         "fps": float(config.TARGET_FPS),
@@ -170,6 +195,7 @@ def build(out_path: str | Path, calibration_path: str | Path | None = None) -> d
         "joint_views": views[:, provided].tolist(),              # cameras used per joint per frame, 0 = no 3D
         "joint_error_px": _list(joint_px, 2),
         "joint_error_mm": _list(joint_mm, 1),
+        "joint_speed": _list(speed, 2),                          # metres per second, after smoothing
     }
 
 

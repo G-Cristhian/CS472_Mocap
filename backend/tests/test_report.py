@@ -88,3 +88,21 @@ def test_write_puts_the_report_next_to_the_output(tmp_path):
     path = report.write(out)
     assert path == tmp_path / "out3d.report.json"
     assert json.loads(path.read_text())["version"] == report.VERSION
+
+
+def test_joint_speed_comes_from_the_smoothed_output(tmp_path):
+    out, _, X = write_run(tmp_path)
+    # the final joints move 0.1 m per frame along x: 3 m/s at 30 fps
+    moving = X.copy()
+    moving[..., 0] += np.arange(FRAMES)[:, None] * 0.1
+    io.save_pose3d_json(Pose3D(fps=30.0, points=moving, num_views=np.ones(X.shape[:2], int)), str(out))
+    r = report.build(out)
+    speed = np.array(r["joint_speed"], dtype=float)
+    assert speed.shape == (FRAMES, len(r["joints"]))
+    np.testing.assert_allclose(speed[1:-1], 3.0, atol=0.01)
+
+
+def test_without_the_output_json_speed_falls_back_to_the_raw_joints(tmp_path):
+    out, _, _ = write_run(tmp_path)
+    r = report.build(out)
+    assert np.allclose(np.array(r["joint_speed"], dtype=float), 0.0)

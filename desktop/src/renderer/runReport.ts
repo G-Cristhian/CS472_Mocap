@@ -11,6 +11,12 @@ import {
   cameraLines,
   cameraStory,
   colourKey,
+  findFlags,
+  flagDetails,
+  flagTitle,
+  isMajor,
+  jointState,
+  type Flag,
   frameAt,
   frameCount,
   GLOSSARY,
@@ -26,6 +32,16 @@ import {
   type Point,
   type Report,
 } from '../shared/report'
+
+const CHART_LEFT = 44
+const CHART_RIGHT = 8
+const JOINT_ROW = 10
+const FLAG_STRIP = 14
+
+/** "RIGHT_FOOT_INDEX" -> "R toes", for the joint chart's narrow label column */
+function shortJoint(name: string): string {
+  return prettyJoint(name).replace(/^left /, 'L ').replace(/^right /, 'R ').replace(' eye inner', ' eye in').replace(' eye outer', ' eye out')
+}
 
 /** One colour per camera, the same in the 3D view, the 2D views and the timeline; none is a key colour. */
 export const CAMERA_COLOURS = ['#4c8dff', '#39c5cf', '#db61a2', '#e6edf3', '#bc8cff', '#f0883e']
@@ -64,6 +80,10 @@ export class ReportPanel {
   private readonly timeline = $<HTMLCanvasElement>('timeline')
   private readonly timelineLegend = $('timeline-legend')
   private readonly atNow = $('at-now')
+  private readonly jointChart = $<HTMLCanvasElement>('joint-chart')
+  private readonly flagBox = $('flags')
+  private flags: Flag[] = []
+  private flagItems: HTMLElement[] = []
   private readonly cameraStoryBox = $('camera-story')
   private readonly jointStoryBox = $('joint-story')
   private canvases: HTMLCanvasElement[] = []
@@ -77,12 +97,15 @@ export class ReportPanel {
       this.renderKey()
       this.onModeChange()
     })
-    this.timeline.addEventListener('click', (e) => {
-      if (!this.report) return
-      const box = this.timeline.getBoundingClientRect()
-      const x = (e.clientX - box.left) / box.width
-      this.onSeek(Math.max(0, Math.min(1, x)) * this.duration)
-    })
+    for (const canvas of [this.timeline, this.jointChart]) {
+      canvas.addEventListener('click', (e) => {
+        if (!this.report) return
+        const box = canvas.getBoundingClientRect()
+        // both charts plot time between a 44 px label column on the left and 8 px on the right
+        const x = (e.clientX - box.left - CHART_LEFT) / (box.width - CHART_LEFT - CHART_RIGHT)
+        this.onSeek(Math.max(0, Math.min(1, x)) * (frameCount(this.report) - 1) / this.report.fps)
+      })
+    }
     new ResizeObserver(() => this.redraw()).observe(this.parts)
     this.wholePicture.addEventListener('change', () => {
       if (!this.report) return
@@ -109,6 +132,8 @@ export class ReportPanel {
     this.note.textContent = ''
     this.parts.hidden = false
     this.lost = lostPerFrame(r)
+    this.flags = findFlags(r)
+    this.renderFlags()
     this.renderKey()
     this.buildCameraViews()
     this.renderStories()
@@ -122,14 +147,17 @@ export class ReportPanel {
     this.frame = f
     this.drawCameraViews()
     this.drawTimeline()
+    this.drawJointChart()
     this.renderNow()
   }
 
   private redraw(): void {
     if (!this.report) return
+    this.jointChart.style.height = `${this.report.joints.length * JOINT_ROW + FLAG_STRIP + 22}px`
     this.sizeCanvases()
     this.drawCameraViews()
     this.drawTimeline()
+    this.drawJointChart()
     this.renderNow()
   }
 
@@ -173,7 +201,7 @@ export class ReportPanel {
 
   private sizeCanvases(): void {
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
-    for (const c of [...this.canvases, this.timeline]) {
+    for (const c of [...this.canvases, this.timeline, this.jointChart]) {
       const w = Math.max(1, Math.round(c.clientWidth * dpr))
       const h = Math.max(1, Math.round(c.clientHeight * dpr))
       if (c.width !== w || c.height !== h) {
@@ -262,8 +290,8 @@ export class ReportPanel {
     const H = canvas.height
     const dpr = W / Math.max(1, canvas.clientWidth)
     const n = frameCount(r)
-    const left = 44 * dpr
-    const right = 8 * dpr
+    const left = CHART_LEFT * dpr
+    const right = CHART_RIGHT * dpr
     const topH = H * 0.58
     const gap = 22 * dpr
     const botTop = topH + gap
@@ -272,6 +300,7 @@ export class ReportPanel {
     ctx.clearRect(0, 0, W, H)
     ctx.font = `${11 * dpr}px system-ui, sans-serif`
     ctx.textBaseline = 'middle'
+    this.drawFlagBands(ctx, x, 0, H - 14 * dpr, dpr)
 
     // top: millimetres apart per camera, with the guide's limits drawn at the median scale
     const scale = mmScale(r).median
@@ -356,6 +385,151 @@ export class ReportPanel {
       ctx.moveTo(x(this.frame), 0)
       ctx.lineTo(x(this.frame), H - 14 * dpr)
       ctx.stroke()
+    }
+  }
+
+  /** The flags as shaded bands behind a chart, the big ones numbered like the list. */
+  private drawFlagBands(ctx: CanvasRenderingContext2D, x: (f: number) => number, top: number, bottom: number, dpr: number): void {
+    let number = 0
+    for (const flag of this.flags) {
+      const major = isMajor(flag)
+      if (major) number++
+      const colour = flag.kind === 'lost' ? STATE_COLOURS.none : STATE_COLOURS.bad
+      ctx.globalAlpha = major ? 0.16 : 0.07
+      ctx.fillStyle = colour
+      const x0 = x(flag.startFrame - 0.5)
+      const x1 = x(flag.endFrame + 0.5)
+      ctx.fillRect(x0, top, Math.max(1, x1 - x0), bottom - top)
+      ctx.globalAlpha = 1
+      if (major) {
+        ctx.fillStyle = colour
+        ctx.textAlign = 'center'
+        ctx.fillText(String(number), (x0 + x1) / 2, top + 8 * dpr)
+        ctx.textAlign = 'left'
+      }
+    }
+  }
+
+  /** Every tracked joint as a row over time: purple where it had no 3D position, red where the cameras were 10 px or more apart. */
+  private drawJointChart(): void {
+    const r = this.report
+    const canvas = this.jointChart
+    const ctx = canvas.getContext('2d')
+    if (!r || !ctx) return
+    const W = canvas.width
+    const H = canvas.height
+    const dpr = W / Math.max(1, canvas.clientWidth)
+    const n = frameCount(r)
+    const left = CHART_LEFT * dpr
+    const right = CHART_RIGHT * dpr
+    const row = JOINT_ROW * dpr
+    const x = (f: number) => left + ((W - left - right) * f) / Math.max(1, n - 1)
+    const w = Math.max(1, (W - left - right) / n)
+    const strip = FLAG_STRIP * dpr
+    ctx.clearRect(0, 0, W, H)
+    ctx.font = `${9 * dpr}px system-ui, sans-serif`
+    ctx.textBaseline = 'middle'
+    // the flags as a numbered strip on top, the big ones like the list
+    ctx.fillStyle = '#8b949e'
+    ctx.fillText('flags', 2 * dpr, strip / 2)
+    let number = 0
+    for (const flag of this.flags) {
+      const major = isMajor(flag)
+      if (major) number++
+      const x0 = x(flag.startFrame - 0.5)
+      const x1 = x(flag.endFrame + 0.5)
+      ctx.fillStyle = flag.kind === 'lost' ? STATE_COLOURS.none : STATE_COLOURS.bad
+      ctx.globalAlpha = major ? 0.9 : 0.35
+      ctx.fillRect(x0, major ? 1 * dpr : strip * 0.6, Math.max(1, x1 - x0), major ? strip - 3 * dpr : strip * 0.25)
+      ctx.globalAlpha = 1
+      if (major && x1 - x0 > 8 * dpr) {
+        ctx.fillStyle = '#0e1116'
+        ctx.textAlign = 'center'
+        ctx.fillText(String(number), (x0 + x1) / 2, strip / 2 - 1 * dpr)
+        ctx.textAlign = 'left'
+      }
+    }
+    // one row per joint: only the trouble, so it stands out
+    r.joints.forEach((name, j) => {
+      const y = strip + j * row
+      ctx.fillStyle = j % 2 ? '#14181d' : '#181c22'
+      ctx.fillRect(left, y, W - left - right, row)
+      ctx.fillStyle = '#8b949e'
+      ctx.fillText(shortJoint(name), 2 * dpr, y + row / 2)
+      for (let f = 0; f < n; f++) {
+        const state = jointState(r, f, j, 'error')
+        if (state !== 'none' && state !== 'bad') continue
+        ctx.fillStyle = STATE_COLOURS[state]
+        ctx.fillRect(x(f) - w / 2, y + 1 * dpr, w, row - 2 * dpr)
+      }
+    })
+    ctx.fillStyle = '#8b949e'
+    const seconds = n / r.fps
+    const step = seconds > 60 ? 10 : seconds > 20 ? 5 : seconds > 6 ? 2 : 1
+    ctx.font = `${11 * dpr}px system-ui, sans-serif`
+    ctx.textAlign = 'center'
+    for (let t = 0; t <= seconds; t += step) ctx.fillText(`${t} s`, x(t * r.fps), H - 8 * dpr)
+    ctx.textAlign = 'left'
+    if (this.frame >= 0) {
+      ctx.strokeStyle = '#e6e8eb'
+      ctx.lineWidth = 1 * dpr
+      ctx.beginPath()
+      ctx.moveTo(x(this.frame), 0)
+      ctx.lineTo(x(this.frame), strip + r.joints.length * row)
+      ctx.stroke()
+    }
+    // the flag the cursor is in, highlighted in the list
+    this.flagItems.forEach((item, k) => {
+      const flag = this.flags[Number(item.dataset.flag)]
+      item.classList.toggle('current', !!flag && this.frame >= flag.startFrame && this.frame <= flag.endFrame)
+      void k
+    })
+  }
+
+  private renderFlags(): void {
+    const r = this.report!
+    this.flagBox.replaceChildren()
+    this.flagItems = []
+    const major = this.flags.filter(isMajor)
+    const minor = this.flags.filter((f) => !isMajor(f))
+    const jump = (flag: Flag) => this.onSeek(flag.start)
+    if (!this.flags.length) {
+      this.flagBox.append(el('p', 'No flags: no joint was lost, or had the cameras 10 px or more apart, for 0.1 s or longer.'))
+      return
+    }
+    this.flagBox.append(
+      el('p', `${major.length} flag${major.length === 1 ? '' : 's'} worth reading, ${minor.length} smaller. `
+        + 'A flag is a stretch where joints had no 3D position or the cameras were 10 px or more apart on them, for 0.1 s or longer. Click one to jump there.', 'note'),
+    )
+    const list = el('ol', undefined, 'flags')
+    for (const flag of major) {
+      const li = el('li')
+      li.dataset.flag = String(this.flags.indexOf(flag))
+      const title = el('button', flagTitle(flag, r), 'link ' + (flag.kind === 'lost' ? 'lost' : 'spike'))
+      title.addEventListener('click', () => jump(flag))
+      const details = el('ul')
+      for (const d of flagDetails(flag)) details.append(el('li', d))
+      li.append(title, details)
+      list.append(li)
+      this.flagItems.push(li)
+    }
+    this.flagBox.append(list)
+    if (minor.length) {
+      const more = el('details')
+      more.append(el('summary', `${minor.length} smaller flag${minor.length === 1 ? '' : 's'}`))
+      const small = el('ul', undefined, 'flags small')
+      for (const flag of minor) {
+        const li = el('li')
+        li.dataset.flag = String(this.flags.indexOf(flag))
+        const title = el('button', flagTitle(flag, r), 'link ' + (flag.kind === 'lost' ? 'lost' : 'spike'))
+        title.title = flagDetails(flag).join(' ')
+        title.addEventListener('click', () => jump(flag))
+        li.append(title)
+        small.append(li)
+        this.flagItems.push(li)
+      }
+      more.append(small)
+      this.flagBox.append(more)
     }
   }
 

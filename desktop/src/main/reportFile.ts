@@ -29,7 +29,13 @@ export function runFiles(metricsPath: string) {
     metrics: path.join(folder, stem + METRICS_SUFFIX),
     out: path.join(folder, stem + '.json'),
     report: path.join(folder, stem + '.report.json'),
-    inputs: [path.join(folder, stem + '.pose.npz'), path.join(folder, stem + '.sync.json'), path.join(folder, 'calibration.json')],
+    // the smoothed output last: the speeds come from it, and a run may stop before writing it
+    inputs: [
+      path.join(folder, stem + '.pose.npz'),
+      path.join(folder, stem + '.sync.json'),
+      path.join(folder, 'calibration.json'),
+      path.join(folder, stem + '.json'),
+    ],
     keypointsPrefix: stem + '.keypoints.',
   }
 }
