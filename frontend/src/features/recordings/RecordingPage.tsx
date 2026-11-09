@@ -26,17 +26,23 @@ function clock(seconds: number) {
 export function RecordingPage() {
   const { recordingId } = useParams()
   const { user } = useAuth()
-  const { recordings, motions } = useStudio()
+  const { recordings, recordingsLoading, recordingsError, refreshRecordings, motions } = useStudio()
   const isNew = recordingId === 'new'
   const found = isNew ? undefined : recordings.find((r) => r.id === recordingId)
-  // Recordings uploaded from the Recordings page are not in the studio's list, so fetch them
+  // Fetch directly if the studio list is pending, failed, or missing a recent upload.
   const [fetched, setFetched] = useState<Recording | null>(null)
   const [fetchFailed, setFetchFailed] = useState(false)
   useEffect(() => {
+    setFetched(null)
+    setFetchFailed(false)
     if (isNew || found || !recordingId) return
-    getRecording(recordingId).then(setFetched).catch(() => setFetchFailed(true))
-  }, [isNew, found, recordingId])
-  const recording = found ?? fetched ?? undefined
+    let cancelled = false
+    getRecording(recordingId)
+      .then((result) => { if (!cancelled) setFetched(result) })
+      .catch(() => { if (!cancelled) setFetchFailed(true) })
+    return () => { cancelled = true }
+  }, [isNew, found, recordingId, user])
+  const recording = (fetched?.id === recordingId ? fetched : undefined) ?? found
   const motion = motions.find((m) => m.id === recording?.motionId)
   const camera = cameras[0]
   const accountName = user ? displayName(user) : ''
@@ -50,11 +56,31 @@ export function RecordingPage() {
     return () => window.clearInterval(id)
   }, [live])
 
+  const recordingsStatus = (
+    <>
+      {recordingsLoading && <p className="page-sub" role="status">Loading recordings…</p>}
+      {recordingsError && (
+        <p className="page-sub" role="alert">
+          {recordingsError}{' '}
+          <button type="button" className="btn btn--ghost btn--sm" onClick={() => void refreshRecordings()}>
+            Retry recordings
+          </button>
+        </p>
+      )}
+    </>
+  )
+
   if (!isNew && !recording) {
-    if (!fetchFailed) return <div className="page"><p className="page-sub">Loading recording…</p></div>
+    if (!fetchFailed) return (
+      <div className="page">
+        {recordingsStatus}
+        <p className="page-sub">Loading recording…</p>
+      </div>
+    )
 
     return (
       <div className="page">
+        {recordingsStatus}
         <h1 className="page-title">Recording not found</h1>
         <p className="page-sub">It may have been removed.</p>
         <p style={{ marginTop: 20 }}>
@@ -70,6 +96,7 @@ export function RecordingPage() {
 
   return (
     <div className="page">
+      {recordingsStatus}
       <nav className="recording__crumbs" aria-label="Breadcrumb">
         <Link to="/recordings">Recordings</Link>
         <span style={{ color: 'var(--muted-2)' }}>/</span>
@@ -88,12 +115,12 @@ export function RecordingPage() {
       <div className="recording__layout">
         <section>
           <div className="recording__screen">
-            {fetched ? (
+            {recording ? (
               <video
                 className="recording__video"
                 controls
                 crossOrigin="use-credentials"
-                src={recordingVideoUrl(fetched.id)}
+                src={recordingVideoUrl(recording.id)}
               />
             ) : (
               <StickFigure pose="stand" color="rgba(255, 255, 255, 0.85)" size={220} strokeWidth={5} />
@@ -103,7 +130,7 @@ export function RecordingPage() {
                 <span className="dot dot--rec" /> REC {clock(elapsed)}
               </span>
             )}
-            {!fetched && (
+            {!recording && (
               <span className="recording__label">
                 {camera.label} · {camera.resolution} · {camera.fps} fps
               </span>
@@ -125,12 +152,12 @@ export function RecordingPage() {
             <dd>{motion ? <Link to={`/motions/${motion.id}`}>{motion.name}</Link> : 'Not in a motion yet'}</dd>
           </dl>
 
-          {fetched && (
+          {recording && (
             <PerformerPanel
-              key={fetched.id}
-              recordingId={fetched.id}
-              performerId={fetched.performerId ?? null}
-              performerHeight={fetched.performerHeight ?? null}
+              key={recording.id}
+              recordingId={recording.id}
+              performerId={recording.performerId ?? null}
+              performerHeight={recording.performerHeight ?? null}
               accountName={accountName}
               onSaved={setFetched}
             />
