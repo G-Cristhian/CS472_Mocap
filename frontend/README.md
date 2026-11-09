@@ -1,9 +1,9 @@
 # Hybrid Mocap — frontend
 
 The web app, grown from a React prototype of the screens in `refs/Hybrid-Mocap-Screens.pdf` (the Home
-and Motion Library screens were dropped). Cameras, rig parts,
-saved devices and seed recordings are mocked in `src/lib/data.ts`. Login, projects, motions, their versions
-and uploaded recordings come from the Django API (`src/lib/auth.ts`, `projects.ts`, `motions.ts`,
+and Motion Library screens were dropped). Cameras, rig parts
+and saved devices are mocked in `src/lib/data.ts`. Login, projects, motions, their versions
+and recordings come from the Django API (`src/lib/auth.ts`, `projects.ts`, `motions.ts`,
 `recordings.ts`), at `VITE_DJANGO_URL` or http://localhost:8000. The Supabase upload code
 (`src/lib/clips.ts`) is still in the tree but nothing imports it.
 
