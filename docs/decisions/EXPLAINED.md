@@ -433,7 +433,7 @@ A reviewer's note on this group: the React app's routes (`frontend/src/app/route
 **Related rows:** to D-060; D-002 and D-040 restated; D-008 and D-013 (camera 0); D-038.
 
 ### D-055 · Finished clips were listed from a Supabase `clips` table with a `source` of ai, suit or review, a free-text duration, and a BVH in a public `clips` bucket played straight from its public URL
-**What it means for a user:** Nothing today: no routed page reads `clips`, and the files the row cited for the viewer no longer reference it [VERIFIED, `frontend/src/features/projects/ProjectDetailPage.tsx` is 66 lines with no clips code; `StudioProvider.tsx:35` holds seed recordings only; `clips.ts:11-41` remains].
+**What it means for a user:** Nothing today: no routed page reads `clips`, and the files the row cited for the viewer no longer reference it [VERIFIED, `frontend/src/features/projects/ProjectDetailPage.tsx` is 66 lines with no clips code; `StudioProvider.tsx:38` holds recordings loaded from the API only; `clips.ts:11-41` remains].
 **What it affects in the code:** `clips.sql:1-24` and `clips.ts` remain; the row's `ProjectDetailPage.tsx:131` and `StudioProvider.tsx:33` are stale (the first file is shorter than 131 lines) [VERIFIED].
 **If it were reversed:** The Django `MotionVersion` (D-074) already serves the BVH behind a login, so the public bucket is redundant.
 **What you are being asked to confirm:** Needs human research or `rejected` with D-074 as the replacement; the `source` column is the last trace of the suit idea D-061 removed.
@@ -591,7 +591,7 @@ Checked against commit 1209a02. The sweep merged on 2026-10-27/28 (`cleanup/dead
 
 Stale enough to mislead (file shorter than the cited line, constant moved to another section, or the cited file no longer holds the behaviour):
 - D-031: `desktop/src/renderer/main.ts:226` no longer holds the thresholds; they are in `desktop/src/shared/metrics.ts:103-107`. README line is `:103`, procedure lines are `:66-69`.
-- D-055: `frontend/src/features/projects/ProjectDetailPage.tsx:131` (file is 66 lines, no clips code) and `StudioProvider.tsx:33` (seed recordings only). The `clips` code survives only in `src/lib/clips.ts` and `supabase/clips.sql`, unrouted.
+- D-055: `frontend/src/features/projects/ProjectDetailPage.tsx:131` (file is 66 lines, no clips code) and `StudioProvider.tsx:33` (recordings only, no clips code). The `clips` code survives only in `src/lib/clips.ts` and `supabase/clips.sql`, unrouted.
 - D-024: "Where" says "pending"; the change was made (`config.py:22`, `run_pipeline.py:393`, `api.py:71, 456`).
 - D-047: every cited line (`run_pipeline.py:186, 204, 627, 684`) has moved; the machinery is at `:212-325`. Superseded anyway.
 - D-007 and D-022: `backends.py:159`, `:149`, `:177`, `:180` moved to `:236`, `:177`, `:189`, `:275` after PR #110 added mode, device and tracking options; D-022's "mode not exposed" is no longer true.
