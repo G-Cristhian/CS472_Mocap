@@ -1,14 +1,30 @@
 # Documentation keeper. After every push to main, Claude reads the commits
 # since the last successful run of this workflow, finds statements in the
 # docs that the change made false (flags, defaults, file names, steps,
-# messages, the backend outline's function entries), fixes them with the
-# smallest edit, and opens (or updates) one pull request for human review
-# from the branch docs/pending. Rules: .claude/agents/docs-keeper.md.
+# messages, the backend outline's function entries), and comments or
+# docstrings that are false or dead, fixes them with the smallest edit, and
+# opens (or updates) one pull request for human review from the branch
+# docs/pending. Rules: .claude/agents/docs-keeper.md.
+#
+# In code it may edit only Python comments and docstrings under backend/
+# (not backend/legacy/ or migrations). Every Python file it edits goes
+# through .github/scripts/check_comment_only.py, which compares the syntax
+# trees with docstrings removed; any file whose code changed is put back.
+# Comments in other languages are listed in the report for a human to fix.
+# It may also edit the two environment templates, frontend/.env.example and
+# backend/.env_ (variable names and comments, never a value).
+#
+# If docs/pending no longer merges into main (someone edited the same lines),
+# the run drops the branch's version, starts the range at the commit the
+# branch was based on, and the pull request is rewritten from the redone
+# fixes. Before 2026-10-28 such a conflict failed every run until the branch
+# was deleted by hand.
 #
 # The range starts at the head of this workflow's last successful run on
 # main (looked up with gh), so no marker file is needed. A push that touches
-# only docs/, .claude/ or .github/ is skipped, so a docs PR merging costs
-# nothing. Like design-decisions.yml, it runs on workflow_run after
+# only docs/, .claude/ or .github/ is skipped, and so is a range whose only
+# commits are this workflow's own merged fixes, so merging the keeper's pull
+# request costs nothing. Like design-decisions.yml, it runs on workflow_run after
 # push-to-main.yml, because the Claude action refuses the push event.
 #
 # Debugging: the full Claude transcript is printed in the job log and
@@ -59,18 +75,30 @@ jobs:
           fetch-depth: 0
 
       - name: Continue the pending docs branch, if there is one
+        id: pending
         run: |
           git config user.name "docs-upkeep workflow"
           git config user.email "workflow@users.noreply.github.com"
           if git ls-remote --exit-code --heads origin docs/pending >/dev/null 2>&1; then
             git fetch origin docs/pending
-            git merge --no-edit origin/docs/pending
+            if git merge --no-edit origin/docs/pending; then
+              echo "Merged docs/pending, so its unreviewed fixes are kept."
+            else
+              # someone edited the same lines on main while the pull request was open. Rather
+              # than stop here, drop the branch's version and redo its fixes from the commit it
+              # was based on; the pull request step then rewrites the branch from the result.
+              git merge --abort
+              since="$(git merge-base origin/docs/pending origin/main)"
+              echo "since=$since" >> "$GITHUB_OUTPUT"
+              echo "docs/pending conflicts with main; its fixes will be redone from $since."
+            fi
           fi
 
       - name: Pick the commit range
         id: range
         env:
           INPUT_RANGE: ${{ github.event.inputs.range }}
+          PENDING_SINCE: ${{ steps.pending.outputs.since }}
           GH_TOKEN: ${{ github.token }}
         run: |
           after="$(git rev-parse origin/main)"
@@ -78,8 +106,12 @@ jobs:
           if [ -n "$INPUT_RANGE" ]; then
             range="$INPUT_RANGE"
           else
-            # the head of this workflow's last successful run on main, else the previous commit
-            since="$(gh run list --workflow docs-upkeep.yml --branch main --status success --limit 1 --json headSha --jq '.[0].headSha' 2>/dev/null || true)"
+            # the commit a conflicting pending branch was based on, if there was one; else the
+            # head of this workflow's last successful run on main; else the previous commit
+            since="$PENDING_SINCE"
+            if [ -z "$since" ]; then
+              since="$(gh run list --workflow docs-upkeep.yml --branch main --status success --limit 1 --json headSha --jq '.[0].headSha' 2>/dev/null || true)"
+            fi
             if [ -z "$since" ] || ! git cat-file -e "$since" 2>/dev/null; then
               since="$(git rev-parse "$after~1")"
             fi
@@ -93,14 +125,20 @@ jobs:
             echo "Nothing new."
             exit 0
           fi
-          # commits that change something outside the docs' own machinery
-          reviewable="$(git log --format=%h "$range" -- . ':!docs' ':!.claude' ':!.github' | wc -l)"
+          # commits that change something outside the docs' own machinery, not counting
+          # this workflow's own merged fixes (which may touch Python comments)
+          reviewable="$(git log --format=%s "$range" -- . ':!docs' ':!.claude' ':!.github' \
+            | grep -cvE '^(\[AI\] docs[^:]*: kept current with|Merge .*docs/pending)' || true)"
           if [ "$reviewable" = "0" ]; then
             echo "empty=true" >> "$GITHUB_OUTPUT"
-            echo "Every commit in the range touches only docs/, .claude/ or .github/; nothing to check."
+            echo "Every commit in the range touches only docs/, .claude/ or .github/, or is the keeper's own fix; nothing to check."
           else
             echo "empty=false" >> "$GITHUB_OUTPUT"
             echo "$reviewable commit(s) touch files outside the excluded paths."
+            # a backlog (after a failed stretch, or the conflict fallback) needs more turns than one push
+            if [ "$reviewable" -gt 10 ]; then turns=150; else turns=80; fi
+            echo "turns=$turns" >> "$GITHUB_OUTPUT"
+            echo "Claude gets $turns turns."
           fi
 
       - name: Check the docs against the change
@@ -115,14 +153,15 @@ jobs:
 
             Review the commit range: ${{ steps.range.outputs.range }}
 
-            Fix every documented statement that this range made false, with the smallest
-            edit, in the files the rules allow. Do not commit. Write your final report to
+            Fix every documented statement, comment and docstring that this range made
+            false, and the dead comments in the files it touched, with the smallest edit,
+            in the files the rules allow. Never change code. Do not commit. Write your final report to
             ${{ runner.temp }}/docs-report.md. If nothing was stale, still write the report,
             with "Updated: none", and leave every file untouched.
           show_full_output: true
           claude_args: >-
-            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git rev-parse *)"
-            --max-turns 80
+            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git rev-parse *),Bash(git grep *),Bash(python3 .github/scripts/check_comment_only.py *),Bash(python .github/scripts/check_comment_only.py *)"
+            --max-turns ${{ steps.range.outputs.turns }}
 
       - name: Keep the Claude transcript
         if: always() && steps.range.outputs.empty == 'false'
@@ -132,24 +171,37 @@ jobs:
           path: ${{ runner.temp }}/claude-execution-output.json
           if-no-files-found: ignore
 
-      - name: Did any doc change?
+      - name: Did any doc or comment change?
         id: changed
         if: steps.range.outputs.empty == 'false'
         run: |
+          if [ ! -f "$RUNNER_TEMP/docs-report.md" ]; then
+            printf 'Range: %s\nUpdated: none\n(no report written)\n' "${{ steps.range.outputs.range }}" > "$RUNNER_TEMP/docs-report.md"
+          fi
           # the keeper may only touch these; anything else it changed is dropped
-          git checkout -- . ':!docs' ':!backend/mocap_pipeline/README.md' ':!desktop/README.md' ':!frontend/README.md' 2>/dev/null || true
-          git checkout -- docs/decisions/DECISIONS.md docs/decisions/.last-reviewed 2>/dev/null || true
-          if git diff --quiet -- docs backend/mocap_pipeline/README.md desktop/README.md frontend/README.md; then
+          git checkout -- . ':!docs' ':!backend/mocap_pipeline/README.md' ':!desktop/README.md' ':!frontend/README.md' ':!backend/*.py' ':!frontend/.env.example' ':!backend/.env_' 2>/dev/null || true
+          git checkout -- docs/decisions/DECISIONS.md docs/decisions/.last-reviewed backend/legacy 2>/dev/null || true
+          git checkout -- ':(glob)backend/**/migrations/**' 2>/dev/null || true
+          git clean -fq -- backend
+          # Python edits must change only comments and docstrings; any other file is put back
+          edited_py="$(git diff --name-only -- 'backend/*.py')"
+          if [ -n "$edited_py" ]; then
+            python3 .github/scripts/check_comment_only.py HEAD $edited_py > "$RUNNER_TEMP/comment-check.txt" || true
+            cat "$RUNNER_TEMP/comment-check.txt"
+            rejected="$(awk '$1 != "ok" {print $2}' "$RUNNER_TEMP/comment-check.txt")"
+            if [ -n "$rejected" ]; then
+              git checkout -- $rejected
+              printf '\nPut back by the comment-only check (the edit changed code, not just comments):\n' >> "$RUNNER_TEMP/docs-report.md"
+              awk '$1 != "ok" {print "  " $2 ": " $1}' "$RUNNER_TEMP/comment-check.txt" >> "$RUNNER_TEMP/docs-report.md"
+            fi
+          fi
+          if git diff --quiet -- docs backend/mocap_pipeline/README.md desktop/README.md frontend/README.md 'backend/*.py' frontend/.env.example backend/.env_; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            git diff --stat -- docs backend/mocap_pipeline/README.md desktop/README.md frontend/README.md
+            git diff --stat -- docs backend/mocap_pipeline/README.md desktop/README.md frontend/README.md 'backend/*.py' frontend/.env.example backend/.env_
           fi
-          if [ -f "$RUNNER_TEMP/docs-report.md" ]; then
-            cat "$RUNNER_TEMP/docs-report.md"
-          else
-            printf 'Range: %s\nUpdated: none\n(no report written)\n' "${{ steps.range.outputs.range }}" > "$RUNNER_TEMP/docs-report.md"
-          fi
+          cat "$RUNNER_TEMP/docs-report.md"
 
       - name: Open or update the review PR
         if: steps.range.outputs.empty == 'false' && steps.changed.outputs.changed == 'true' && !inputs.dry_run
@@ -157,10 +209,10 @@ jobs:
         with:
           branch: docs/pending
           base: main
-          title: "[AI] docs: kept current with ${{ steps.range.outputs.range }}"
+          title: "[AI] docs and comments: kept current with ${{ steps.range.outputs.range }}"
           body-path: ${{ runner.temp }}/docs-report.md
-          commit-message: "[AI] docs: kept current with ${{ steps.range.outputs.range }}"
+          commit-message: "[AI] docs and comments: kept current with ${{ steps.range.outputs.range }}"
           labels: documentation
           reviewers: GianniGuava
-          add-paths: docs/**,backend/mocap_pipeline/README.md,desktop/README.md,frontend/README.md
+          add-paths: docs/**,backend/mocap_pipeline/README.md,desktop/README.md,frontend/README.md,backend/**/*.py,frontend/.env.example,backend/.env_
           delete-branch: true

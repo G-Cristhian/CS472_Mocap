@@ -1,22 +1,3 @@
-.projects__filters {
-  display: flex;
-  align-items: flex-end;
-  gap: 22px;
-  margin: 30px 0 26px;
-  flex-wrap: wrap;
-}
-.projects__find {
-  width: min(470px, 100%);
-}
-.projects__count {
-  color: var(--muted);
-  font-size: calc(14px * var(--font-scale));
-}
-.projects__rows {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
 
 /* ---------- project workspace ---------- */
 .ws__bar {
@@ -36,24 +17,22 @@
 .ws__crumbs b {
   font-weight: 800;
 }
-.ws__saved {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--muted);
-  font-size: calc(14px * var(--font-scale));
-}
 .ws {
   display: grid;
   grid-template-columns: 250px 1fr 360px;
-  min-height: calc(100vh - 72px - 62px);
+  min-height: calc(100vh - var(--topnav-height, 72px) - 62px);
 }
 .ws__left {
   border-right: 1px solid var(--line);
-  padding: 22px 18px;
   display: flex;
   flex-direction: column;
   gap: 26px;
+}
+.ws__left > section {
+  padding: 10px;
+}
+.ws__left .ws__performers {
+  background: #eee;
 }
 .ws__center {
   padding: 22px;
@@ -71,7 +50,7 @@
 .takelist {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 10px;
   margin-top: 10px;
 }
 .takelist button {
@@ -93,38 +72,22 @@
   background: var(--purple-50);
   font-weight: 700;
 }
-.takelist .dur {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: calc(12.5px * var(--font-scale));
-  color: var(--muted);
+/* one recording in a takelist: its camera's device line over its name. Not clickable. */
+.takelist__row + .takelist__row {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
 }
-.performer {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: var(--purple-50);
-  border-radius: var(--r-md);
-  padding: 12px 14px;
-  margin-top: 10px;
-}
-.performer__avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  display: grid;
-  place-items: center;
-  flex: none;
-}
-.devices {
-  margin-top: 10px;
+.takelist__specs {
+  margin: 0;
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: calc(12.5px * var(--font-scale));
   line-height: 1.9;
 }
-
+.takelist__name {
+  margin: 0;
+  font-weight: 600;
+}
 .viewport {
   position: relative;
   background: var(--viewport);
@@ -213,7 +176,7 @@
   margin: 0 -22px 20px;
   padding: 0 22px;
   position: sticky;
-  top: 72px;
+  top: var(--topnav-height, 72px);
   background: var(--surface);
 }
 .tabs button {
@@ -300,10 +263,13 @@
 }
 .numinput {
   width: 110px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   border-radius: var(--r-md);
   padding: 11px 12px;
   font-family: var(--font-mono);
+}
+.numinput:hover:not(:disabled):not([readonly]) {
+  border-color: var(--muted);
 }
 
 @media (max-width: 1280px) {

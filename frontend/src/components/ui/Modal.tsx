@@ -1,16 +1,18 @@
 import { useEffect, type ReactNode } from 'react'
-import { CloseIcon } from './Icons'
 import './Modal.css'
 
 export function Modal({
   title,
   subtitle,
   onClose,
+  wide = false,
   children,
 }: {
   title: string
   subtitle?: string
   onClose: () => void
+  /** A wider box, for content like a grid of previews */
+  wide?: boolean
   children: ReactNode
 }) {
   useEffect(() => {
@@ -22,7 +24,7 @@ export function Modal({
   return (
     <div className="modal__backdrop" onClick={onClose}>
       <div
-        className="modal"
+        className={wide ? 'modal modal--wide' : 'modal'}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -32,33 +34,6 @@ export function Modal({
         {subtitle && <p className="modal__sub">{subtitle}</p>}
         {children}
       </div>
-    </div>
-  )
-}
-
-export function Toast({
-  message,
-  actionLabel,
-  onAction,
-  onClose,
-}: {
-  message: ReactNode
-  actionLabel?: string
-  onAction?: () => void
-  onClose: () => void
-}) {
-  return (
-    <div className="toast" role="status">
-      <span className="dot dot--live" />
-      <span>{message}</span>
-      {actionLabel && (
-        <button className="btn btn--sm" onClick={onAction}>
-          {actionLabel}
-        </button>
-      )}
-      <button className="iconbtn" aria-label="Dismiss" onClick={onClose}>
-        <CloseIcon size={16} />
-      </button>
     </div>
   )
 }

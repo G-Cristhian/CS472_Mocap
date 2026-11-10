@@ -1,0 +1,55 @@
+/* the recording picker: a grid of previews you tap to select or unselect */
+.pick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 14px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px;
+}
+.pick {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pick:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.pick__frame {
+  height: 110px;
+}
+.pick--on .pick__frame {
+  box-shadow: 0 0 0 3px var(--purple);
+}
+.pick__check {
+  position: absolute;
+  z-index: 1;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--purple);
+  color: #fff;
+}
+.pick__name {
+  overflow: hidden;
+  font-weight: 600;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pick-hint {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 14px;
+}

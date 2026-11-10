@@ -45,7 +45,7 @@ Settings app, then Camera:
 | Record Slo-mo | 1080p HD at 120 fps | only used in the 120 fps take set |
 | Formats, Camera Capture | Most Compatible | H.264 files open on any laptop. High Efficiency (HEVC) also works but needs the right codecs on Windows |
 
-In the Camera app on the day: **1x lens only**, never 0.5x or the telephoto. Action mode off (the running-figure icon). Press and hold on the performer's position until "AE/AF LOCK" appears, after framing and before the clap, so focus and exposure cannot drift. Airplane mode or Do Not Disturb so a call does not interrupt recording.
+In the Camera app on the day: **Video mode** (not Cinematic[^28]) and the **1x lens only**, never 0.5x or the telephoto. Action mode off (the running-figure icon). Press and hold on the performer's position until "AE/AF LOCK" appears, after framing and before the clap, so focus and exposure cannot drift. Airplane mode or Do Not Disturb so a call does not interrupt recording.
 
 Original iPhone files carry the lens focal length in their metadata and the pipeline reads it[^9] (`stage2_reconstruct/iphone_camera.py`). This is why iPhones need no field of view number and why section 8 insists on original files.
 
@@ -180,11 +180,12 @@ $videos = (Get-ChildItem ..\field_test_2026-10\take01\* -Include *.MOV, *.mp4 | 
 .venv\Scripts\python.exe -m mocap_pipeline.check_videos $videos
 ```
 
-For each video it prints the resolution, frame rate, length, whether it has audio, whether the iPhone lens metadata is there, and the time it finds the clap. Then it cross-checks the claps between cameras. Anything it flags with WARNING or FAIL is a reason to record that take again now, while that is still cheap:
+For each video it prints the resolution, frame rate, length, whether the iPhone lens metadata is there, and the time it finds the clap (a video with no audio track fails that line). Then it cross-checks the claps between cameras. Anything it flags with WARNING or FAIL is a reason to record that take again now, while that is still cheap:
 
 - no audio or no clap found: the phone was muted or the clap was too quiet;
 - frame rate not what was set, or different between phones in a take[^25]: a setting was missed;
-- "no iPhone lens metadata" on an iPhone video: the file was re-exported, copy it again;
+- ".MOV without iPhone lens metadata" on an iPhone video: the file was re-exported, copy it again;
+- "0.5x ultra wide lens", "telephoto lens" or "Cinematic mode": the file's metadata says the phone was not in Video mode at 1x;
 - clap later than 10 seconds: it will not be found; retake or note the times by hand.
 
 The full pipeline takes minutes per take and does not need to run at the venue.
@@ -211,7 +212,7 @@ On Windows, the same command on one line, with `.venv\Scripts\python.exe` in pla
 .venv\Scripts\python.exe -m mocap_pipeline.run_pipeline ..\field_test_2026-10\take01\take01_cam0_iphone16pro.MOV ..\field_test_2026-10\take01\take01_cam1_iphone15.MOV ..\field_test_2026-10\take01\take01_cam2_fold.mp4 --fov 75 --height-m 1.78 --out output\take01\out3d.json --calibration output\take01\calibration.json
 ```
 
-What to write down from the console for each take: the clap time per camera, the calibration error per camera in pixels (under 10 is accepted, under 5 is good)[^26], and whether it finished. Then open `output/take01/out3d.bvh` in the frontend viewer (`cd frontend && npm install && npm run dev`, or on Windows [windows-setup.md](windows-setup.md) step 5; open a project, "Open .bvh / .json" bottom right of the viewport) or in Blender (File, Import, Motion Capture). The skeleton should stand on the floor, face the viewer, and look like the take.
+What to write down from the console for each take: the clap time per camera, the calibration error per camera in pixels (under 10 is accepted, under 5 is good)[^26], and whether it finished. Then open `output/take01/out3d.bvh` in the frontend viewer (`cd frontend && npm install && npm run dev`, or on Windows [windows-setup.md](windows-setup.md) step 5; the Django backend must be running, [mac-setup.md](mac-setup.md) step 5; log in, open a motion, "Open .bvh / .json" bottom right of the viewport) or in Blender (File, Import, Motion Capture). The skeleton should stand on the floor, face the viewer, and look like the take.
 
 **Rerunning.** The pipeline saves every stage next to `--out`. Add `--resume` to any rerun and MediaPipe is skipped; see "Rerunning and debugging" in the pipeline README. Tuning smoothing or recalibrating takes seconds instead of minutes.
 
@@ -243,7 +244,8 @@ Messages the pipeline prints, and what they mean on the day of recording.
 | `only N frames with the performer standing upright` | height pose too short or not facing the cameras | hold the pose for 3 full seconds |
 | `feet seen in too few frames to find the floor` | feet cut off at the bottom of the frame | tilt the cameras down or move them back |
 | `error X px is above --max-error` | a phone moved, the lens switched, a wrong `--fov` | check the take log for bumps; measure the Fold's field of view; `--recalibrate` |
-| `has no focal length metadata (is it straight from an iPhone, not re-exported?)` | the file was re-encoded on the way off the phone | copy the original again (section 8); or run with `--camera webcam --fov 70` for that video as a stopgap |
+| `has no focal length metadata (is it straight from an iPhone, not re-exported?)` (printed only with `--camera iphone`; with the default `--camera auto` such a file is silently treated as a webcam, visible only in the `Cameras:` line) | the file was re-encoded on the way off the phone | copy the original again (section 8); or run with `--camera webcam --fov 70` for that video as a stopgap |
+| `has no focal length metadata, though Apple's make and model tags are there` (printed only with `--camera iphone`, as above) | not seen yet: a file with Apple's tags but no lens keys in the video track's or the movie's `meta` atom, the two places the pipeline looks | `--camera webcam --fov` with the field of view measured as for the Fold (section 3); report the iPhone model and iOS version it prints |
 | `calibration.json has 3 cameras but 2 videos were given` | reusing a calibration from a different camera set | `--recalibrate`, or a separate `--calibration` path per camera set |
 | the skeleton tracks the wrong person or jumps between people | a bystander was in frame | nothing to fix afterwards; keep the view clear |
 
@@ -270,9 +272,9 @@ Where each choice above comes from: a constant in the pipeline, a row on the des
 [^4]: `MIN_CAMERAS = 2` in `backend/mocap_pipeline/config.py`; two views are the minimum for triangulation (Hartley & Zisserman, *Multiple View Geometry in Computer Vision*, 2nd ed., Cambridge University Press, 2004, DOI 10.1017/CBO9780511811685, ch. 12; D-002). The former maximum of 4 was dropped on 2026-10-16 (D-001 rejected, D-024). "3 or 4 is the sweet spot" is team judgement: each joint needs any two cameras, and the synthetic benchmark shows 4 cameras lose fewer joints than 3 but are not more accurate per joint (`tests/evaluate_synthetic.py`).
 [^5]: The per-minute sizes iOS shows under Settings, Camera, Record Video for each format (they vary with H.264 versus HEVC); rounded up for safety.
 [^6]: Team judgement on frame rate: at auto exposure the shutter time roughly halves from 30 to 60 fps, so motion blur halves. No measurement yet; set C exists to make one.
-[^7]: MediaPipe's pose model runs on a 256 x 256 crop: Bazarevsky et al., "BlazePose: On-device Real-time Body Pose tracking", arXiv:2006.10204, 2020 (unverified). RTMPose uses 256 x 192 (`stage1_keypoints/backends.py`).
+[^7]: MediaPipe's pose model runs on a 256 x 256 crop: Bazarevsky et al., "BlazePose: On-device Real-time Body Pose tracking", arXiv:2006.10204, 2020 (unverified). RTMPose uses 256 x 192 in rtmlib's "balanced" mode, the default `RTMPOSE_MODE` in `config.py` (`--rtmpose-mode`); the size itself is set inside rtmlib.
 [^8]: The camera model is a pinhole with fixed intrinsics and no distortion (`schemas.Camera`, D-010). Stabilisation re-projects the image per frame, which that model cannot represent.
-[^9]: `stage2_reconstruct/iphone_camera.py` reads `com.apple.quicktime.camera.focal_length.35mm_equivalent` from the QuickTime `moov` atom and turns it into the focal length in pixels.
+[^9]: `stage2_reconstruct/iphone_camera.py` reads `com.apple.quicktime.camera.focal_length.35mm_equivalent` from the QuickTime `meta` atom of the video track, where files from iOS 26.6.2 and 27.0 have it, or of the movie (files from earlier iOS versions were not checked), and turns it into the focal length in pixels. Apple documents the key as "track-level metadata for video track that is associated with the camera" (AVFoundation, `AVMetadataIdentifier.quickTimeMetadataCameraFocalLength35mmEquivalent`, https://developer.apple.com/documentation/avfoundation/avmetadataidentifier/quicktimemetadatacamerafocallength35mmequivalent).
 [^10]: Team observation while writing `iphone_camera.py`: the Fold's MP4 carries no focal length key the pipeline can use. Not verified against Samsung documentation. Team judgement, no source. A candidate row for `docs/decisions/DECISIONS.md`.
 [^11]: Pinhole geometry: the horizontal field of view of a lens that sees width W at distance D (Hartley & Zisserman, *Multiple View Geometry in Computer Vision*, 2nd ed., Cambridge University Press, 2004, DOI 10.1017/CBO9780511811685, ch. 6).
 [^12]: 70 to 78 degrees is an estimate from phone main-camera specifications, not a measurement. The default 65 is `DEFAULT_HFOV_DEG` in `backend/mocap_pipeline/config.py`. `tests/test_synthetic_pipeline.py::test_wrong_field_of_view_costs_accuracy_but_still_runs` shows what a 10 degree error costs.
@@ -282,7 +284,7 @@ Where each choice above comes from: a constant in the pipeline, a row on the des
 [^16]: `schemas.py` ("Camera 0 (the first video given) is the reference camera"), `calibrate._move_origin_to`, and `scale_floor.make_metric`, which points +Z from the performer toward camera 0 (D-013).
 [^17]: MediaPipe runs with `num_poses=1`; RTMPose takes the largest detected person (`stage1_keypoints/backends.py`, D-007). Neither identifies who the performer is.
 [^18]: Height is measured heel to ear in upright frames with fixed offsets for the skull top and the heel (`scale_floor.scale_factor_from_height`, `HEAD_TOP_ABOVE_EARS_M`, `HEEL_ABOVE_FLOOR_M` in `backend/mocap_pipeline/config.py`; D-012). The rig's Neck and Head also come from the ears (`joints.RIG_JOINT_SOURCES`).
-[^19]: `CLAP_MIN_PROMINENCE = 8.0` (times the median loudness) and `CLAP_MIN_RISE = 3.0` (times the loudness 30 to 100 ms before) in `backend/mocap_pipeline/config.py`; the rise must complete within `CLAP_MAX_RISE_S = 0.025`.
+[^19]: `CLAP_MIN_PROMINENCE = 4.0` (times the median loudness) and `CLAP_MIN_RISE = 2.0` (times the loudness 30 to 100 ms before) in `backend/mocap_pipeline/config.py`; the rise must complete within `CLAP_MAX_RISE_S = 0.025`.
 [^20]: `MIN_UPRIGHT_FRAMES = 10` in `backend/mocap_pipeline/config.py` is a third of a second at 30 fps; 3 seconds is a margin for the performer settling and for frames the detector drops. The margin is team judgement.
 [^21]: `CALIB_MIN_CORRESPONDENCES = 200` distinct joint positions per camera pair, on a 1% grid of the image (`calibrate._n_distinct`), in `backend/mocap_pipeline/config.py`.
 [^22]: `scale_floor.estimate_floor` fits a plane to the lowest `FLOOR_LOWEST_FRACTION = 0.2` of heel and toe positions (`backend/mocap_pipeline/config.py`, D-013).
@@ -291,3 +293,4 @@ Where each choice above comes from: a constant in the pipeline, a row on the des
 [^25]: `check_videos.py` warns under `MIN_RECOMMENDED_FPS = 50`; the pipeline itself accepts any rate and resamples (`stage2_reconstruct/sync.py`).
 [^26]: Accepted: `CALIB_MAX_ERROR_PX = 10.0` in `backend/mocap_pipeline/config.py`. Good: the synthetic benchmark with realistic noise (1.5 px, 2% dropout, 0.5% outliers) gives about 1 to 3 px, so under 5 on real footage means the cameras and the lens model are close to right.
 [^27]: `TARGET_FPS = 30.0` in `backend/mocap_pipeline/config.py`; D-009 on `docs/decisions/DECISIONS.md`, issue #15.
+[^28]: Why not Cinematic is not established. The one Cinematic file we have, the iPhone 18 Pro's in the October 18 Chair Spin take (iOS 27.0), had the largest calibration error of the four cameras in 15 of 16 runs on the saved keypoints: 141 to 2832 px, with its field of view set from 40 to 106 degrees or taken from its lens metadata, while the other three cameras stayed under 250 px in all but one run. It is also the only iPhone 18 Pro, so Cinematic mode is not shown to be the cause, and Apple's documentation does not say whether Cinematic mode changes the field of view. `check_videos` warns when a file carries `com.apple.quicktime.cinematic-video` or Apple's `cinematic-video-intent` flag set to 1.

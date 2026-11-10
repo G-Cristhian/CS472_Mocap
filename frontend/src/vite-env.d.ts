@@ -7,6 +7,8 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL?: string
   readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string
   readonly VITE_SUPABASE_SECRET_KEY?: string
+  /** Django accounts API (src/lib/auth.ts); defaults to http://localhost:8000 */
+  readonly VITE_DJANGO_URL?: string
 }
 
 interface ImportMeta {

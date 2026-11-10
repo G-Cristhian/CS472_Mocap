@@ -40,6 +40,7 @@ __pycache__/
 backend/output/
 
 ## Local media folder
+media/
 random_media/
 
 # Node dependencies
