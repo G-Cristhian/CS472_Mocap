@@ -21,9 +21,8 @@ import {
 import { AddRecordingDialog } from './AddRecordingDialog'
 import { VersionPicker } from './VersionPicker'
 import type { Source } from '@/types'
-import { SOURCE_COLOR } from '@/features/projects/SkeletonViewport'
 import type { MotionInfo } from '@/features/viewer/MotionViewport'
-import type { ViewerState } from '@/features/viewer/viewerState'
+import { JOINT_COLORS, type ViewerState } from '@/features/viewer/viewerState'
 import '@/features/projects/projects.css'
 
 // the 3D viewer pulls in three.js, so it loads only when a motion is opened
@@ -412,13 +411,13 @@ export function MotionPage() {
                     )
                   }
                 >
-                  <i style={{ background: SOURCE_COLOR[l.source] }} />
+                  <i style={{ background: JOINT_COLORS[l.source] }} />
                   {l.label}
                 </button>
               ))}
             </div>
 
-            <Suspense fallback={<span style={{ color: 'var(--muted-2)' }}>Loading the 3D viewer…</span>}>
+            <Suspense fallback={<span style={{ color: 'var(--muted)' }}>Loading the 3D viewer…</span>}>
               <MotionViewport
                 parts={rigParts}
                 selectedId={selectedPart}
@@ -440,7 +439,7 @@ export function MotionPage() {
               <div className="viewport__frozen">
                 <span>The viewport is frozen until you press play.</span>
                 <button
-                  className="btn btn--white btn--sm"
+                  className="btn btn--primary btn--sm"
                   onClick={() => {
                     setFrozen(false)
                     setPlaying(true)
