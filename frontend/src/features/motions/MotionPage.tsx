@@ -19,6 +19,7 @@ import {
   type ApiMotionRecording,
 } from '@/lib/motions'
 import { AddRecordingDialog } from './AddRecordingDialog'
+import { PerformerDialog } from './PerformerDialog'
 import { VersionPicker } from './VersionPicker'
 import type { Source } from '@/types'
 import type { MotionInfo } from '@/features/viewer/MotionViewport'
@@ -51,6 +52,8 @@ export function MotionPage() {
   const [detail, setDetail] = useState<ApiMotion | null>(null)
   const [missing, setMissing] = useState(false)
   const [addingRecording, setAddingRecording] = useState(false)
+  // the motion recording whose performer is being set, if any
+  const [performerFor, setPerformerFor] = useState<ApiMotionRecording | null>(null)
   // processing settings for the next version; not wired to the pipeline yet
   const [source, setSource] = useState<'pipeline' | 'manual'>('pipeline')
   const [poseModel, setPoseModel] = useState('mediapipe')
@@ -269,7 +272,9 @@ export function MotionPage() {
                   <p className="takelist__specs">
                     Cam {r.camera_slot + 1} · {cameraSpec(r)}
                   </p>
-                  <p className="takelist__name">{r.name || 'Untitled recording'}</p>
+                  <p className="takelist__name">
+                    <Link to={`/recordings/${r.recording}`}>{r.name || 'Untitled recording'}</Link>
+                  </p>
                 </div>
               ))}
             </div>
@@ -308,18 +313,29 @@ export function MotionPage() {
             <p className="eyebrow">Performer height</p>
             {renderHeight === null && (
               <p style={{ color: 'var(--muted-2)', fontSize: 13, marginTop: 10 }}>
-                No height yet. Set a performer or a height on a recording.
+                No height yet. Use Set performer on a camera below to pick a performer or set a height.
               </p>
             )}
             <div className="takelist">
               {detail.recordings.map((r) => (
-                <div key={r.uuid} className="takelist__row">
-                  <p className="takelist__name">
-                    Cam {r.camera_slot + 1} · {r.performer?.full_name ?? 'No performer'}
-                  </p>
-                  <p className="takelist__specs">
-                    {r.performer_height !== null ? `${r.performer_height.toFixed(2)} m` : 'height not set'}
-                  </p>
+                <div key={r.uuid} className="takelist__row takelist__row--action">
+                  <div>
+                    <p className="takelist__name">
+                      Cam {r.camera_slot + 1} · {r.performer?.full_name ?? 'No performer'}
+                    </p>
+                    <p className="takelist__specs">
+                      {r.performer_height !== null ? `${r.performer_height.toFixed(2)} m` : 'height not set'}
+                    </p>
+                  </div>
+                  {/* stays enabled when the motion is locked: each version keeps the height it rendered with */}
+                  <button
+                    type="button"
+                    className="takelist__action"
+                    aria-label={`${r.performer || r.performer_height !== null ? 'Change' : 'Set'} performer for Cam ${r.camera_slot + 1}`}
+                    onClick={() => setPerformerFor(r)}
+                  >
+                    {r.performer || r.performer_height !== null ? 'Change' : 'Set performer'}
+                  </button>
                 </div>
               ))}
             </div>
@@ -649,6 +665,16 @@ export function MotionPage() {
           )}
         </aside>
       </div>
+
+      {performerFor && (
+        <PerformerDialog
+          key={performerFor.recording}
+          recordingId={performerFor.recording}
+          cameraLabel={`Cam ${performerFor.camera_slot + 1}`}
+          onSaved={reloadDetail}
+          onClose={() => setPerformerFor(null)}
+        />
+      )}
 
       {addingRecording && motionId && (
         <AddRecordingDialog

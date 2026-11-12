@@ -72,10 +72,28 @@
   background: var(--purple-50);
   font-weight: 700;
 }
-/* one recording in a takelist: its camera's device line over its name. Not clickable. */
+/* one recording in a takelist: its camera's device line over its name */
 .takelist__row + .takelist__row {
   padding-top: 10px;
   border-top: 1px solid var(--line);
+}
+.takelist__row--action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+/* beats `.takelist button`, which is for full-width list rows */
+.takelist button.takelist__action {
+  width: auto;
+  flex: none;
+  padding: 6px 12px;
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  font-size: calc(13px * var(--font-scale));
+  font-weight: 600;
+  white-space: nowrap;
 }
 .takelist__specs {
   margin: 0;
