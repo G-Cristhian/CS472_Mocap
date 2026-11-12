@@ -22,8 +22,8 @@
 .motionview__file {
   font-family: var(--font-mono);
   font-size: calc(12.5px * var(--font-scale));
-  color: rgba(255, 255, 255, 0.72);
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink-2);
+  background: rgba(255, 255, 255, 0.85);
   border-radius: var(--r-pill);
   padding: 6px 12px;
   white-space: nowrap;
@@ -33,6 +33,7 @@
 }
 .motionview__open {
   margin-left: auto;
+  border: 1px solid var(--line-control);
   pointer-events: auto;
   cursor: pointer;
   flex: none;
@@ -56,7 +57,7 @@
   bottom: 60px;
   background: rgba(227, 28, 121, 0.16);
   border: 1px solid var(--pink);
-  color: #fff;
+  color: var(--ink);
   border-radius: var(--r-md);
   padding: 10px 14px;
   font-size: calc(13.5px * var(--font-scale));
@@ -68,7 +69,7 @@
   display: grid;
   place-items: center;
   text-align: center;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--muted);
   font-size: calc(15px * var(--font-scale));
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -82,8 +83,8 @@
   place-items: center;
   border: 2px dashed var(--purple-soft);
   border-radius: var(--r-lg);
-  background: rgba(109, 74, 255, 0.14);
-  color: #fff;
+  background: rgba(109, 74, 255, 0.1);
+  color: var(--ink);
   font-weight: 700;
   pointer-events: none;
 }

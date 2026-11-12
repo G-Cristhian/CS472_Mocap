@@ -2,10 +2,11 @@ import { Component, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, DragEvent, ReactNode } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Grid, OrbitControls } from '@react-three/drei'
-import { Color, Mesh, MeshStandardMaterial, PerspectiveCamera, Quaternion, Vector3 } from 'three'
+import { BackSide, Color, Mesh, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, Quaternion, Vector3 } from 'three'
 import type { RigPart, Source } from '@/types'
 import { motionBounds, parseMotion, samplePositions } from './motion'
 import type { Motion } from './motion'
+import { JOINT_COLORS, MARKER_RIM } from './viewerState'
 import './viewer.css'
 
 export interface MotionInfo {
@@ -35,14 +36,6 @@ export interface MotionSource {
   url: string
   /** display name; its extension (.bvh / .json) picks the parser */
   name: string
-}
-
-const SOURCE_VAR: Record<Source, string> = { suit: '--blue', ai: '--purple-soft', review: '--amber' }
-
-/** Read a colour from the design tokens (tokens.css) so the 3D view matches the page. */
-function tokenColor(name: string, fallback: string) {
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-  return new Color(value || fallback)
 }
 
 /** True if the browser can draw 3D (WebGL); some locked-down or remote browsers can't. */
@@ -171,8 +164,10 @@ export function MotionViewport(props: Props) {
               infiniteGrid
               cellSize={0.25}
               sectionSize={1}
-              cellColor="#2a2a35"
-              sectionColor="#4a4a58"
+              cellColor="#e4e4ec"
+              sectionColor="#c4c4d0"
+              cellThickness={0.8}
+              sectionThickness={1.4}
               fadeDistance={30}
               position={[0, 0, 0]}
             />
@@ -238,12 +233,13 @@ function Skeleton3D({ motion, parts, selectedId, onSelect, hidden, playing, time
 
   const colors = useMemo(
     () => ({
-      suit: tokenColor(SOURCE_VAR.suit, '#5b8cff'),
-      ai: tokenColor(SOURCE_VAR.ai, '#8b6dff'),
-      review: tokenColor(SOURCE_VAR.review, '#f5a623'),
-      selected: tokenColor('--pink', '#e31c79'),
-      neutral: new Color('#8a8a99'),
-      bone: new Color('#4a4a58'),
+      suit: new Color(JOINT_COLORS.suit),
+      ai: new Color(JOINT_COLORS.ai),
+      review: new Color(JOINT_COLORS.review),
+      selected: new Color(JOINT_COLORS.selected),
+      neutral: new Color(JOINT_COLORS.neutral),
+      // dark charcoal, 14:1 against the white background
+      bone: new Color('#2b2b33'),
     }),
     [],
   )
@@ -252,11 +248,12 @@ function Skeleton3D({ motion, parts, selectedId, onSelect, hidden, playing, time
     () =>
       jointPart.map((part) => {
         const isSelected = part?.id === selectedId
+        const color = isSelected ? colors.selected : part ? colors[part.status] : colors.neutral
         const material = new MeshStandardMaterial({
-          color: isSelected ? colors.selected : part ? colors[part.status] : colors.neutral,
-          emissive: isSelected ? colors.selected : new Color(0x000000),
-          emissiveIntensity: isSelected ? 0.5 : 0,
-          roughness: 0.5,
+          color,
+          emissive: color,
+          emissiveIntensity: isSelected ? 0.45 : 0.35,
+          roughness: 0.35,
           transparent: true,
           opacity: part && hidden.includes(part.status) ? 0.22 : 1,
         })
@@ -270,6 +267,8 @@ function Skeleton3D({ motion, parts, selectedId, onSelect, hidden, playing, time
   )
   useEffect(() => () => jointMaterials.forEach((m) => m.dispose()), [jointMaterials])
   useEffect(() => () => boneMaterial.dispose(), [boneMaterial])
+  const rimMaterial = useMemo(() => new MeshBasicMaterial({ color: MARKER_RIM, side: BackSide }), [])
+  useEffect(() => () => rimMaterial.dispose(), [rimMaterial])
 
   // frame the camera on the take when a new one loads
   const camera = useThree((s) => s.camera) as PerspectiveCamera
@@ -372,7 +371,11 @@ function Skeleton3D({ motion, parts, selectedId, onSelect, hidden, playing, time
             }}
             name={name}
           >
-            <sphereGeometry args={[jointRadius, 16, 12]} />
+            <sphereGeometry args={[jointRadius, 24, 16]} />
+            {/* dark rim: a slightly larger sphere drawn from the inside, so only its edge shows */}
+            <mesh material={rimMaterial} scale={1.22} raycast={() => null}>
+              <sphereGeometry args={[jointRadius, 24, 16]} />
+            </mesh>
           </mesh>
         )
       })}

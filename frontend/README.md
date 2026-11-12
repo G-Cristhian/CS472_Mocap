@@ -4,8 +4,7 @@ The web app, grown from a React prototype of the screens in `refs/Hybrid-Mocap-S
 and Motion Library screens were dropped). Cameras, rig parts
 and saved devices are mocked in `src/lib/data.ts`. Login, projects, motions, their versions
 and recordings come from the Django API (`src/lib/auth.ts`, `projects.ts`, `motions.ts`,
-`recordings.ts`), at `VITE_DJANGO_URL` or http://localhost:8000. The Supabase upload code
-(`src/lib/clips.ts`) is still in the tree but nothing imports it.
+`recordings.ts`), at `VITE_DJANGO_URL` or http://localhost:8000.
 
 ## Run it
 
@@ -80,7 +79,7 @@ src/
   components/   TopNav, shared UI (buttons live in CSS, cards, icons, modal)
   features/     one folder per screen: landing, auth, projects, motions, library (recordings list),
                 recordings, streaming, settings; home holds the not-found page
-  lib/          API clients: Django (auth, projects, motions, recordings, performers), api.ts, Supabase
+  lib/          API clients: Django (auth, projects, motions, recordings, performers), api.ts
   lib/data.ts   mock cameras, rig parts, devices, seed recordings
   styles/       tokens.css (colours, radii, accessibility variables) + global.css
   types/        shared types

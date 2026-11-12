@@ -90,7 +90,8 @@
 }
 .viewport {
   position: relative;
-  background: var(--viewport);
+  background: #fff;
+  border: 1px solid var(--line);
   border-radius: var(--r-lg);
   flex: 1;
   min-height: 520px;
@@ -110,8 +111,8 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: #fff;
+  color: var(--ink);
   border-radius: 8px;
   padding: 6px 11px;
   font-size: calc(12.5px * var(--font-scale));
@@ -120,12 +121,13 @@
   cursor: pointer;
 }
 .legend[aria-pressed='true'] {
-  border-color: rgba(255, 255, 255, 0.55);
+  border-color: var(--line-control);
 }
 .legend i {
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px #2b2b33;
   display: block;
 }
 .viewport__frozen {
@@ -133,8 +135,8 @@
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgba(10, 10, 12, 0.72);
-  color: #fff;
+  background: rgba(247, 247, 250, 0.85);
+  color: var(--ink);
   font-size: calc(14px * var(--font-scale));
   gap: 12px;
 }
