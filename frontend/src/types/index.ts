@@ -45,20 +45,6 @@ export interface Recording {
   hasThumbnail?: boolean
 }
 
-/** An uploaded clip kept in Supabase. Not used by the Django app; kept with the Supabase code (lib/clips.ts). */
-export interface Clip {
-  id: string
-  name: string
-  projectId: string
-  projectName: string
-  duration: string
-  source: Source
-  accent: Accent
-  pose: Pose
-  // Where to download the BVH file
-  fileUrl?: string
-}
-
 export interface Camera {
   id: number
   label: string
