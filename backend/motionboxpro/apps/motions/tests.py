@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 from motionboxpro.apps.recordings.models import Recording
 
 from .models import Motion, MotionRecording, MotionVersion
-from .rendering import STALE_AFTER_SECONDS, _finish, fail_stale_renders, mark_failed_if_active
+from .rendering import STALE_AFTER_SECONDS, _after_render_exit, _finish, fail_stale_renders, mark_failed_if_active
 from .serializers import MAX_RENDERS_PER_USER
 
 BUSY_MESSAGE = "A render of this motion is still running. Wait until it has finished."
@@ -270,3 +270,62 @@ class StuckRenderClearedTests(TestCase):
         self.assertEqual(response.status_code, 200)
         stuck.refresh_from_db()
         self.assertEqual(stuck.status, MotionVersion.Status.FAILED)
+
+
+class RenderExitWatcherTests(TestCase):
+    """Once the render process has exited, a version still queued or running is marked failed."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(email="owner@example.com", password="unused")
+        self.motion = make_motion(self.user)
+
+    def assert_status(self, version, status, error=""):
+        version.refresh_from_db()
+        self.assertEqual(version.status, status)
+        self.assertEqual(version.error, error)
+
+    def test_running_with_exit_code_1_is_marked_failed(self):
+        version = make_version(self.motion, MotionVersion.Status.RUNNING)
+
+        _after_render_exit(version.pk, 1)
+
+        self.assert_status(
+            version, MotionVersion.Status.FAILED, "The render process stopped unexpectedly (exit code 1)."
+        )
+        self.assertIsNotNone(version.finished_at)
+
+    def test_negative_exit_code_names_the_signal(self):
+        version = make_version(self.motion, MotionVersion.Status.RUNNING)
+
+        _after_render_exit(version.pk, -9)
+
+        self.assert_status(
+            version, MotionVersion.Status.FAILED, "The render process stopped unexpectedly (killed by signal 9)."
+        )
+
+    def test_exit_code_0_while_still_running_is_marked_failed(self):
+        version = make_version(self.motion, MotionVersion.Status.RUNNING)
+
+        _after_render_exit(version.pk, 0)
+
+        self.assert_status(
+            version, MotionVersion.Status.FAILED, "The render process stopped unexpectedly (exit code 0)."
+        )
+
+    def test_queued_is_marked_failed(self):
+        # the process died before it switched the version to running
+        version = make_version(self.motion, MotionVersion.Status.QUEUED)
+
+        _after_render_exit(version.pk, 1)
+
+        self.assert_status(
+            version, MotionVersion.Status.FAILED, "The render process stopped unexpectedly (exit code 1)."
+        )
+
+    def test_done_is_left_alone(self):
+        version = make_version(self.motion, MotionVersion.Status.DONE)
+
+        _after_render_exit(version.pk, 0)
+
+        self.assert_status(version, MotionVersion.Status.DONE)
+        self.assertIsNone(version.finished_at)

@@ -11,6 +11,9 @@ the render, not when Django loads the app.
 While it runs, the render process writes a heartbeat on its version. If the process dies before
 it can save a result (killed, out of memory, a native crash, the machine sleeping or rebooting),
 the heartbeat stops, and fail_stale_renders marks the version failed so the motion can render again.
+Most of those deaths are caught at once: a thread in the web server waits for the process to exit
+and fails the version if it is still queued or running then (_after_render_exit). The heartbeat
+covers what that thread can't see, e.g. the web server itself restarting.
 """
 
 from __future__ import annotations
@@ -36,6 +39,37 @@ def start_render(version_pk: int) -> None:
     context = multiprocessing.get_context("spawn")
     process = context.Process(target=render_version, args=(version_pk,), name=f"render-version-{version_pk}")
     process.start()
+
+    threading.Thread(
+        target=_watch_render, args=(process, version_pk), name=f"render-watcher-{version_pk}", daemon=True
+    ).start()
+
+
+def _watch_render(process, version_pk: int) -> None:
+    """The watcher thread, in the web server: waits for the render process to exit, then checks its version."""
+    from django.db import connection
+
+    try:
+        process.join()
+        _after_render_exit(version_pk, process.exitcode)
+    finally:
+        # the thread has its own database connection; close it rather than leave it open in the web server
+        connection.close()
+
+
+def _after_render_exit(version_pk: int, exitcode: int) -> None:
+    """
+    Called once the render process has exited. A render that finished has saved done or failed
+    by then, so a version still queued or running means the process died first. That holds for
+    any exit code, 0 included. mark_failed_if_active leaves a finished version alone.
+    """
+    if exitcode < 0:
+        # multiprocessing reports a process killed by a signal as minus the signal number
+        message = f"The render process stopped unexpectedly (killed by signal {-exitcode})."
+    else:
+        message = f"The render process stopped unexpectedly (exit code {exitcode})."
+
+    mark_failed_if_active(version_pk, message)
 
 
 def render_version(version_pk: int) -> None:
