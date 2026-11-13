@@ -161,13 +161,17 @@ def fail_stale_renders(queryset) -> None:
 
     from motionboxpro.apps.motions.models import MotionVersion
 
-    cutoff = timezone.now() - timedelta(seconds=STALE_AFTER_SECONDS)
-    stale = queryset.filter(
+    now = timezone.now()
+    cutoff = now - timedelta(seconds=STALE_AFTER_SECONDS)
+    # one conditional update, like mark_failed_if_active: only versions still queued or running are written
+    queryset.filter(
         Q(heartbeat_at__lt=cutoff) | Q(heartbeat_at__isnull=True, created_at__lt=cutoff),
         status__in=[MotionVersion.Status.QUEUED, MotionVersion.Status.RUNNING],
+    ).update(
+        status=MotionVersion.Status.FAILED,
+        error="The render stopped unexpectedly (no sign of life for over a minute).",
+        finished_at=now,
     )
-    for pk in stale.values_list("pk", flat=True):
-        mark_failed_if_active(pk, "The render stopped unexpectedly (no sign of life for over a minute).")
 
 
 def _run_pipeline(version, folder: Path, log: io.StringIO) -> None:

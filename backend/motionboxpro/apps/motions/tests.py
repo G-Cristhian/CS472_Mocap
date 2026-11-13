@@ -142,8 +142,8 @@ class StartRenderingBusyCheckTests(TestCase):
         self.assert_started(self.start(self.motion))
 
 
-class StaleRenderTests(TestCase):
-    """A queued or running render with no sign of life for STALE_AFTER_SECONDS is marked failed."""
+class OneMotionTestCase(TestCase):
+    """One user with one motion, and a check of a version's status and error as the database has them."""
 
     def setUp(self):
         self.user = get_user_model().objects.create_user(email="owner@example.com", password="unused")
@@ -153,6 +153,10 @@ class StaleRenderTests(TestCase):
         version.refresh_from_db()
         self.assertEqual(version.status, status)
         self.assertEqual(version.error, error)
+
+
+class StaleRenderTests(OneMotionTestCase):
+    """A queued or running render with no sign of life for STALE_AFTER_SECONDS is marked failed."""
 
     def test_old_heartbeat_is_marked_failed(self):
         version = make_version(self.motion, MotionVersion.Status.RUNNING)
@@ -236,12 +240,11 @@ class StaleRenderTests(TestCase):
 
 
 @mock.patch("motionboxpro.apps.motions.views.start_render")
-class StuckRenderClearedTests(TestCase):
+class StuckRenderClearedTests(OneMotionTestCase):
     """Opening a motion clears a render whose process died, so the motion can render again."""
 
     def setUp(self):
-        self.user = get_user_model().objects.create_user(email="owner@example.com", password="unused")
-        self.motion = make_motion(self.user)
+        super().setUp()
         self.client = APIClient()
         self.client.force_authenticate(self.user)
 
@@ -272,17 +275,8 @@ class StuckRenderClearedTests(TestCase):
         self.assertEqual(stuck.status, MotionVersion.Status.FAILED)
 
 
-class RenderExitWatcherTests(TestCase):
+class RenderExitWatcherTests(OneMotionTestCase):
     """Once the render process has exited, a version still queued or running is marked failed."""
-
-    def setUp(self):
-        self.user = get_user_model().objects.create_user(email="owner@example.com", password="unused")
-        self.motion = make_motion(self.user)
-
-    def assert_status(self, version, status, error=""):
-        version.refresh_from_db()
-        self.assertEqual(version.status, status)
-        self.assertEqual(version.error, error)
 
     def test_running_with_exit_code_1_is_marked_failed(self):
         version = make_version(self.motion, MotionVersion.Status.RUNNING)
