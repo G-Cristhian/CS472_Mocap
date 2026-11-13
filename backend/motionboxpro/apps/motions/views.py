@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Motion, MotionVersion
-from .rendering import start_render
+from .rendering import fail_stale_renders, start_render
 from .serializers import (
     MotionProjectAddSerializer,
     MotionRecordingsSetSerializer,
@@ -30,11 +30,24 @@ class OwnMotionsMixin:
 class MotionListCreateView(OwnMotionsMixin, generics.ListCreateAPIView):
     """GET: the logged-in user's motions, newest first. POST: create a motion, optionally in one of their projects."""
 
+    def list(self, request, *args, **kwargs):
+        # renders whose process died show as failed, not as still running
+        fail_stale_renders(MotionVersion.objects.filter(motion__owner=request.user))
+
+        return super().list(request, *args, **kwargs)
+
 
 class MotionDetailView(OwnMotionsMixin, generics.RetrieveAPIView):
     """GET one of the logged-in user's motions, with its projects, cameras, performers and versions."""
 
     lookup_field = "uuid"
+
+    def get_object(self):
+        motion = super().get_object()
+        # a render whose process died shows as failed, so the motion can render again
+        fail_stale_renders(motion.versions.all())
+
+        return motion
 
 
 class OneMotionMixin:

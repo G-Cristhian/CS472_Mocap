@@ -2,10 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { POSE_LABEL, SOURCE_LABEL, type ApiMotionVersion } from '@/lib/motions'
 import './versions.css'
 
-/** "v2 · Pipeline · MediaPipe", with the status when the version is not finished yet. */
-function versionName(v: ApiMotionVersion) {
+/**
+ * "v2 · Pipeline · MediaPipe", with the status when the version is not finished yet. While the page has
+ * lost its connection to the server, a queued or running version shows "Lost connection" instead.
+ */
+function versionName(v: ApiMotionVersion, lost: boolean) {
   const pose = v.source === 'pipeline' && POSE_LABEL[v.pose_model] ? ` · ${POSE_LABEL[v.pose_model]}` : ''
-  const status = v.status === 'done' ? '' : ` · ${v.status}`
+  const active = v.status === 'queued' || v.status === 'running'
+  const status = lost && active ? ' · Lost connection' : v.status === 'done' ? '' : ` · ${v.status}`
 
   return `v${v.number} · ${SOURCE_LABEL[v.source] ?? v.source}${pose}${status}`
 }
@@ -17,11 +21,14 @@ function versionName(v: ApiMotionVersion) {
 export function VersionPicker({
   versions,
   current,
+  lost,
   onSelect,
   onNewVersion,
 }: {
   versions: ApiMotionVersion[]
   current: ApiMotionVersion | null
+  /** the page lost its connection to the server while a render was running */
+  lost: boolean
   onSelect: (uuid: string) => void
   /** shows the processing settings; nothing is rendered until Start rendering is pressed there */
   onNewVersion: () => void
@@ -49,7 +56,7 @@ export function VersionPicker({
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
-        {current ? versionName(current) : 'No version yet'}
+        {current ? versionName(current, lost) : 'No version yet'}
       </button>
 
       {open && (
@@ -65,7 +72,7 @@ export function VersionPicker({
                 setOpen(false)
               }}
             >
-              {versionName(v)}
+              {versionName(v, lost)}
             </button>
           ))}
           {versions.length > 0 ? (

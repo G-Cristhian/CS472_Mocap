@@ -6,10 +6,16 @@ from motionboxpro.apps.projects.models import Project, ProjectMotion
 from motionboxpro.apps.recordings.models import Recording
 
 from .models import Motion, MotionRecording, MotionVersion
+from .rendering import fail_stale_renders
 
 # Camera slots run 0 to 3, so a motion has at most four cameras (see MotionRecording.camera_slot)
 MIN_CAMERAS = 2
 MAX_CAMERAS = 4
+
+# How many renders one user can have queued or running at once, across their motions.
+# TEMPORARY and arbitrary: picked to stop one user from filling the server with render
+# processes, not from any measurement. Revisit once render load is known.
+MAX_RENDERS_PER_USER = 3
 
 
 def performer_data(performer):
@@ -212,8 +218,9 @@ class MotionProjectAddSerializer(serializers.Serializer):
 class StartRenderingSerializer(serializers.Serializer):
     """
     Renders the motion as a new version. The motion comes from the view. Checks that the
-    motion has enough cameras, that no other render is running, and that a height is
-    known; the height is what the pipeline needs.
+    motion has enough cameras, that it isn't rendering already, that the user has fewer
+    than MAX_RENDERS_PER_USER renders going, and that a height is known; the height is
+    what the pipeline needs.
     """
 
     pose_model = serializers.ChoiceField(choices=MotionVersion.PoseModel.choices, default=MotionVersion.PoseModel.MEDIAPIPE)
@@ -225,9 +232,20 @@ class StartRenderingSerializer(serializers.Serializer):
         if len(links) < MIN_CAMERAS:
             raise serializers.ValidationError(f"Add at least {MIN_CAMERAS} recordings to the motion before rendering.")
 
-        busy = MotionVersion.objects.filter(status__in=[MotionVersion.Status.QUEUED, MotionVersion.Status.RUNNING])
-        if busy.exists():
-            raise serializers.ValidationError("Another render is still running. Wait until it has finished.")
+        # one render per motion, and up to MAX_RENDERS_PER_USER across the user's motions; other users' renders
+        # don't count. Renders whose process died are failed first, across the same motions the cap counts,
+        # so a dead render on another motion doesn't use up a slot
+        fail_stale_renders(MotionVersion.objects.filter(motion__owner=motion.owner))
+        busy = MotionVersion.objects.filter(
+            motion__owner=motion.owner,
+            status__in=[MotionVersion.Status.QUEUED, MotionVersion.Status.RUNNING],
+        )
+        if busy.filter(motion=motion).exists():
+            raise serializers.ValidationError("A render of this motion is still running. Wait until it has finished.")
+        if busy.count() >= MAX_RENDERS_PER_USER:
+            raise serializers.ValidationError(
+                f"You already have {MAX_RENDERS_PER_USER} renders running. Wait until one has finished."
+            )
 
         link = render_height_link(links)
         if link is None:
