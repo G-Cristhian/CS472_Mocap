@@ -113,7 +113,11 @@ class MotionVersion(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     # Set on every save, e.g. when points are edited
     updated_at = models.DateTimeField(auto_now=True)
-    # When the pipeline finished this run (pipeline versions only). Processing time needs a started_at too (not added yet)
+    # When the render process switched this run to running (pipeline versions only)
+    started_at = models.DateTimeField(null=True, blank=True)
+    # The render process's last sign of life, written every few seconds while it runs (see rendering.py)
+    heartbeat_at = models.DateTimeField(null=True, blank=True)
+    # When this run ended, done or failed (pipeline versions only). Processing time is finished_at - started_at
     finished_at = models.DateTimeField(null=True, blank=True)
 
     # Pipeline settings and progress. A manual edit leaves these empty and uses its parent's.

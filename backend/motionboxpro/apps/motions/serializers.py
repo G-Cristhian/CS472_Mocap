@@ -6,6 +6,7 @@ from motionboxpro.apps.projects.models import Project, ProjectMotion
 from motionboxpro.apps.recordings.models import Recording
 
 from .models import Motion, MotionRecording, MotionVersion
+from .rendering import fail_stale_renders
 
 # Camera slots run 0 to 3, so a motion has at most four cameras (see MotionRecording.camera_slot)
 MIN_CAMERAS = 2
@@ -232,7 +233,9 @@ class StartRenderingSerializer(serializers.Serializer):
             raise serializers.ValidationError(f"Add at least {MIN_CAMERAS} recordings to the motion before rendering.")
 
         # one render per motion, and up to MAX_RENDERS_PER_USER across the user's motions; other users' renders
-        # don't count
+        # don't count. Renders whose process died are failed first, across the same motions the cap counts,
+        # so a dead render on another motion doesn't use up a slot
+        fail_stale_renders(MotionVersion.objects.filter(motion__owner=motion.owner))
         busy = MotionVersion.objects.filter(
             motion__owner=motion.owner,
             status__in=[MotionVersion.Status.QUEUED, MotionVersion.Status.RUNNING],

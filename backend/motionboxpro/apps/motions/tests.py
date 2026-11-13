@@ -1,17 +1,21 @@
+from datetime import timedelta
 from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from motionboxpro.apps.recordings.models import Recording
 
 from .models import Motion, MotionRecording, MotionVersion
+from .rendering import STALE_AFTER_SECONDS, _finish, fail_stale_renders, mark_failed_if_active
 from .serializers import MAX_RENDERS_PER_USER
 
 BUSY_MESSAGE = "A render of this motion is still running. Wait until it has finished."
 CAP_MESSAGE = f"You already have {MAX_RENDERS_PER_USER} renders running. Wait until one has finished."
+STALE_MESSAGE = "The render stopped unexpectedly (no sign of life for over a minute)."
 
 
 def make_motion(owner, name="Motion"):
@@ -28,6 +32,21 @@ def make_version(motion, status):
     number = motion.versions.count() + 1
 
     return MotionVersion.objects.create(motion=motion, number=number, height_m=1.8, status=status)
+
+
+def seconds_ago(seconds):
+    return timezone.now() - timedelta(seconds=seconds)
+
+
+def set_times(version, **fields):
+    """Sets timestamps with update(), since created_at can't be set through save()."""
+    MotionVersion.objects.filter(pk=version.pk).update(**fields)
+    version.refresh_from_db()
+
+
+# stale enough, and fresh enough, with room to spare either side of STALE_AFTER_SECONDS
+OLD = STALE_AFTER_SECONDS + 30
+FRESH = STALE_AFTER_SECONDS - 30
 
 
 # the render process is never started: the view only hands it the new version
@@ -114,3 +133,140 @@ class StartRenderingBusyCheckTests(TestCase):
             make_version(other, MotionVersion.Status.FAILED)
 
         self.assert_started(self.start(self.motion))
+
+    def test_dead_renders_of_other_motions_do_not_use_up_slots(self, _start_render):
+        for i in range(MAX_RENDERS_PER_USER):
+            dead = make_version(make_motion(self.user, f"Other {i}"), MotionVersion.Status.RUNNING)
+            set_times(dead, heartbeat_at=seconds_ago(OLD))
+
+        self.assert_started(self.start(self.motion))
+
+
+class StaleRenderTests(TestCase):
+    """A queued or running render with no sign of life for STALE_AFTER_SECONDS is marked failed."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(email="owner@example.com", password="unused")
+        self.motion = make_motion(self.user)
+
+    def assert_status(self, version, status, error=""):
+        version.refresh_from_db()
+        self.assertEqual(version.status, status)
+        self.assertEqual(version.error, error)
+
+    def test_old_heartbeat_is_marked_failed(self):
+        version = make_version(self.motion, MotionVersion.Status.RUNNING)
+        set_times(version, heartbeat_at=seconds_ago(OLD))
+
+        fail_stale_renders(self.motion.versions.all())
+
+        self.assert_status(version, MotionVersion.Status.FAILED, STALE_MESSAGE)
+        self.assertIsNotNone(version.finished_at)
+
+    def test_fresh_heartbeat_is_left_alone(self):
+        # created long ago, but beating: the heartbeat counts, not the creation
+        version = make_version(self.motion, MotionVersion.Status.RUNNING)
+        set_times(version, created_at=seconds_ago(OLD * 10), heartbeat_at=seconds_ago(FRESH))
+
+        fail_stale_renders(self.motion.versions.all())
+
+        self.assert_status(version, MotionVersion.Status.RUNNING)
+
+    def test_done_is_left_alone(self):
+        version = make_version(self.motion, MotionVersion.Status.DONE)
+        set_times(version, created_at=seconds_ago(OLD), heartbeat_at=seconds_ago(OLD))
+
+        fail_stale_renders(self.motion.versions.all())
+
+        self.assert_status(version, MotionVersion.Status.DONE)
+
+    def test_queued_without_heartbeat_and_old_creation_is_marked_failed(self):
+        version = make_version(self.motion, MotionVersion.Status.QUEUED)
+        set_times(version, created_at=seconds_ago(OLD))
+
+        fail_stale_renders(self.motion.versions.all())
+
+        self.assert_status(version, MotionVersion.Status.FAILED, STALE_MESSAGE)
+
+    def test_queued_without_heartbeat_and_recent_creation_is_left_alone(self):
+        version = make_version(self.motion, MotionVersion.Status.QUEUED)
+
+        fail_stale_renders(self.motion.versions.all())
+
+        self.assert_status(version, MotionVersion.Status.QUEUED)
+
+    def test_only_the_given_queryset_is_checked(self):
+        other = make_version(make_motion(self.user, "Other"), MotionVersion.Status.RUNNING)
+        set_times(other, heartbeat_at=seconds_ago(OLD))
+
+        fail_stale_renders(self.motion.versions.all())
+
+        self.assert_status(other, MotionVersion.Status.RUNNING)
+
+    def test_mark_failed_if_active_marks_queued_and_running(self):
+        queued = make_version(self.motion, MotionVersion.Status.QUEUED)
+        running = make_version(self.motion, MotionVersion.Status.RUNNING)
+
+        mark_failed_if_active(queued.pk, "gone")
+        mark_failed_if_active(running.pk, "gone")
+
+        self.assert_status(queued, MotionVersion.Status.FAILED, "gone")
+        self.assert_status(running, MotionVersion.Status.FAILED, "gone")
+
+    def test_mark_failed_if_active_leaves_done_and_failed_alone(self):
+        done = make_version(self.motion, MotionVersion.Status.DONE)
+        failed = make_version(self.motion, MotionVersion.Status.FAILED)
+        MotionVersion.objects.filter(pk=failed.pk).update(error="the pipeline's own error")
+
+        mark_failed_if_active(done.pk, "gone")
+        mark_failed_if_active(failed.pk, "gone")
+
+        self.assert_status(done, MotionVersion.Status.DONE)
+        self.assertIsNone(done.finished_at)
+        self.assert_status(failed, MotionVersion.Status.FAILED, "the pipeline's own error")
+
+    def test_finish_overwrites_failed_with_done(self):
+        # the render process holds its version from before the stale check failed it, e.g. across machine sleep
+        version = make_version(self.motion, MotionVersion.Status.RUNNING)
+        mark_failed_if_active(version.pk, STALE_MESSAGE)
+
+        _finish(version, MotionVersion.Status.DONE)
+
+        self.assert_status(version, MotionVersion.Status.DONE)
+
+
+@mock.patch("motionboxpro.apps.motions.views.start_render")
+class StuckRenderClearedTests(TestCase):
+    """Opening a motion clears a render whose process died, so the motion can render again."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(email="owner@example.com", password="unused")
+        self.motion = make_motion(self.user)
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def test_detail_view_clears_stuck_version_so_next_render_starts(self, _start_render):
+        stuck = make_version(self.motion, MotionVersion.Status.RUNNING)
+        set_times(stuck, heartbeat_at=seconds_ago(OLD))
+
+        detail = self.client.get(reverse("motion_detail", kwargs={"uuid": self.motion.uuid}))
+
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.json()["versions"][0]["status"], MotionVersion.Status.FAILED)
+        self.assertEqual(detail.json()["versions"][0]["error"], STALE_MESSAGE)
+
+        url = reverse("motion_version_start", kwargs={"motion_uuid": self.motion.uuid})
+        response = self.client.post(url, {"pose_model": "mediapipe"}, format="json")
+
+        self.assertEqual(response.status_code, 202, response.content)
+        self.assertEqual(self.motion.versions.filter(status=MotionVersion.Status.QUEUED).count(), 1)
+
+    def test_list_view_clears_stuck_versions_of_own_motions(self, _start_render):
+        stuck = make_version(self.motion, MotionVersion.Status.RUNNING)
+        set_times(stuck, heartbeat_at=seconds_ago(OLD))
+
+        response = self.client.get(reverse("motion_list"))
+
+        self.assertEqual(response.status_code, 200)
+        stuck.refresh_from_db()
+        self.assertEqual(stuck.status, MotionVersion.Status.FAILED)
