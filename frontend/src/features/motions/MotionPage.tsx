@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useSettings } from '@/app/SettingsProvider'
 import {
@@ -92,19 +92,35 @@ export function MotionPage() {
   // the motion itself, with its project and the recordings it uses
   useEffect(() => {
     if (!motionId) return
+    let cancelled = false
     setDetail(null)
     setMissing(false)
     getMotion(motionId)
-      .then(setDetail)
-      .catch(() => setMissing(true))
+      .then((d) => {
+        if (!cancelled) setDetail(d)
+      })
+      .catch(() => {
+        if (!cancelled) setMissing(true)
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [motionId])
 
-  // reloads the motion after it changes; the page stays up meanwhile
+  // reloads the motion after it changes; the page stays up meanwhile. Each reload takes the next number,
+  // and only the newest one's answer is applied, so an older reload never overwrites a newer one
+  const reloadSeq = useRef(0)
   async function reloadDetail() {
     if (!motionId) return
+    const seq = ++reloadSeq.current
     try {
-      setDetail(await getMotion(motionId))
+      const fresh = await getMotion(motionId)
+      if (seq !== reloadSeq.current) return
+      setDetail(fresh)
+      setRecordingError(null)
     } catch (err) {
+      if (seq !== reloadSeq.current) return
       setRecordingError(err instanceof Error ? err.message : 'Could not reload the motion.')
     }
   }
