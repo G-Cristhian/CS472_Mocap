@@ -212,7 +212,7 @@ class MotionProjectAddSerializer(serializers.Serializer):
 class StartRenderingSerializer(serializers.Serializer):
     """
     Renders the motion as a new version. The motion comes from the view. Checks that the
-    motion has enough cameras, that no other render is running, and that a height is
+    motion has enough cameras, that no other render of it is running, and that a height is
     known; the height is what the pipeline needs.
     """
 
@@ -225,9 +225,10 @@ class StartRenderingSerializer(serializers.Serializer):
         if len(links) < MIN_CAMERAS:
             raise serializers.ValidationError(f"Add at least {MIN_CAMERAS} recordings to the motion before rendering.")
 
-        busy = MotionVersion.objects.filter(status__in=[MotionVersion.Status.QUEUED, MotionVersion.Status.RUNNING])
+        # only this motion's versions: a render of another motion, or another user's, doesn't block this one
+        busy = motion.versions.filter(status__in=[MotionVersion.Status.QUEUED, MotionVersion.Status.RUNNING])
         if busy.exists():
-            raise serializers.ValidationError("Another render is still running. Wait until it has finished.")
+            raise serializers.ValidationError("A render of this motion is still running. Wait until it has finished.")
 
         link = render_height_link(links)
         if link is None:
