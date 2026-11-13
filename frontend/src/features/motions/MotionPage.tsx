@@ -77,6 +77,9 @@ export function MotionPage() {
   // counts as not busy and polling stops. lostVersion is the version that was running then
   const [lost, setLost] = useState(false)
   const lostVersion = useRef<string | null>(null)
+  // "Lost connection with server." in the processing panel. Start rendering clears it at once, so it never
+  // shows next to a render error
+  const [lostNotice, setLostNotice] = useState(false)
   const busy = runningUuid !== null && !lost
   const renderHeight = detail?.render_height ?? null
   // a render needs at least two cameras, a height, and no other render going
@@ -105,7 +108,10 @@ export function MotionPage() {
     let cancelled = false
     setDetail(null)
     setMissing(false)
+    // errors belong to the motion they came from
+    setRenderError(null)
     setLost(false)
+    setLostNotice(false)
     lostVersion.current = null
     getMotion(motionId)
       .then((d) => {
@@ -122,25 +128,35 @@ export function MotionPage() {
 
   // reloads the motion after it changes; the page stays up meanwhile. Each reload takes the next number,
   // and only the newest one's answer is applied, so an older reload never overwrites a newer one.
-  // A background poll fails silently; a user action shows its error under Recordings
+  // A background poll fails silently; a user action shows its error, under Recordings unless `showError`
+  // says otherwise. Returns the motion when this was the newest reload and it succeeded, otherwise null
   const reloadSeq = useRef(0)
   // when a reload last succeeded; polling counts the lost-connection window from it
   const lastSuccess = useRef(Date.now())
-  async function reloadDetail(by: 'poll' | 'user') {
-    if (!motionId) return
+  async function reloadDetail(
+    by: 'poll' | 'user',
+    showError: (message: string) => void = setRecordingError,
+  ): Promise<ApiMotion | null> {
+    if (!motionId) return null
     const seq = ++reloadSeq.current
     try {
       const fresh = await getMotion(motionId)
-      if (seq !== reloadSeq.current) return
+      if (seq !== reloadSeq.current) return null
       setDetail(fresh)
       setRecordingError(null)
       lastSuccess.current = Date.now()
       // a late answer after the cutoff brings the page back; polling resumes if the render is still busy
       setLost(false)
+      setLostNotice(false)
       lostVersion.current = null
+
+      return fresh
     } catch (err) {
-      if (seq !== reloadSeq.current || by === 'poll') return
-      setRecordingError(err instanceof Error ? err.message : 'Could not reload the motion.')
+      if (seq === reloadSeq.current && by === 'user') {
+        showError(err instanceof Error ? err.message : 'Could not reload the motion.')
+      }
+
+      return null
     }
   }
 
@@ -200,6 +216,9 @@ export function MotionPage() {
       if (Date.now() - lastSuccess.current > LOST_AFTER_MS) {
         lostVersion.current = runningUuid
         setLost(true)
+        setLostNotice(true)
+        // the lost message replaces any earlier render error, so the two never stack
+        setRenderError(null)
         return
       }
       if (pollInFlight.current) return
@@ -222,6 +241,23 @@ export function MotionPage() {
     setRendering(true)
     setRenderError(null)
     try {
+      if (lost) {
+        // after a lost connection the render that was running may still be going, or may have ended
+        // unseen: ask the server before starting another. This reload is the newest request, so a late
+        // poll answer is dropped
+        setLostNotice(false)
+        const remembered = lostVersion.current
+        const fresh = await reloadDetail('user', setRenderError)
+        // failed: its message is the render error and the button stays enabled. Or a newer reload answered
+        if (!fresh) return
+        const version = fresh.versions.find((v) => v.uuid === remembered)
+        // still queued or running: it shows again and polling resumes. Done or failed: its result shows,
+        // and another press renders anew
+        if (version && ['queued', 'running', 'done', 'failed'].includes(version.status)) {
+          setSelectedVersion(version.uuid)
+          return
+        }
+      }
       await startRendering(motionId, poseModel)
       setSelectedVersion(null)
       await reloadDetail('user')
@@ -430,7 +466,7 @@ export function MotionPage() {
                     </p>
                   )}
                   {busy && <p style={{ color: 'var(--muted-2)', fontSize: 13 }}>A render is running.</p>}
-                  {lost && (
+                  {lostNotice && (
                     <p role="alert" style={{ color: 'var(--pink)', fontSize: 13 }}>
                       Lost connection with server.
                     </p>
