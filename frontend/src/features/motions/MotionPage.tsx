@@ -45,6 +45,11 @@ function cameraSpec(r: ApiMotionRecording) {
   return `${size}${rate}`
 }
 
+// a running render is polled this often. With no successful reload for LOST_AFTER_MS the connection
+// counts as lost; matches STALE_AFTER_SECONDS in the backend's apps/motions/rendering.py
+const POLL_MS = 2000
+const LOST_AFTER_MS = 60_000
+
 export function MotionPage() {
   const { motionId } = useParams()
   const { settings } = useSettings()
@@ -66,8 +71,13 @@ export function MotionPage() {
   const [renderError, setRenderError] = useState<string | null>(null)
   const versions = detail?.versions ?? []
   const current = versions.find((v) => v.uuid === selectedVersion) ?? versions[versions.length - 1] ?? null
-  // a render is running while any version is queued or running; the server runs one at a time
-  const busy = versions.some((v) => v.status === 'queued' || v.status === 'running')
+  // the version being rendered: queued or running. The server renders one per motion at a time
+  const runningUuid = versions.find((v) => v.status === 'queued' || v.status === 'running')?.uuid ?? null
+  // no successful reload for LOST_AFTER_MS while polling: the render's progress is unknown, so the page
+  // counts as not busy and polling stops. lostVersion is the version that was running then
+  const [lost, setLost] = useState(false)
+  const lostVersion = useRef<string | null>(null)
+  const busy = runningUuid !== null && !lost
   const renderHeight = detail?.render_height ?? null
   // a render needs at least two cameras, a height, and no other render going
   const canRender = !busy && !rendering && (detail?.recordings.length ?? 0) >= 2 && renderHeight !== null
@@ -95,6 +105,8 @@ export function MotionPage() {
     let cancelled = false
     setDetail(null)
     setMissing(false)
+    setLost(false)
+    lostVersion.current = null
     getMotion(motionId)
       .then((d) => {
         if (!cancelled) setDetail(d)
@@ -109,9 +121,12 @@ export function MotionPage() {
   }, [motionId])
 
   // reloads the motion after it changes; the page stays up meanwhile. Each reload takes the next number,
-  // and only the newest one's answer is applied, so an older reload never overwrites a newer one
+  // and only the newest one's answer is applied, so an older reload never overwrites a newer one.
+  // A background poll fails silently; a user action shows its error under Recordings
   const reloadSeq = useRef(0)
-  async function reloadDetail() {
+  // when a reload last succeeded; polling counts the lost-connection window from it
+  const lastSuccess = useRef(Date.now())
+  async function reloadDetail(by: 'poll' | 'user') {
     if (!motionId) return
     const seq = ++reloadSeq.current
     try {
@@ -119,8 +134,12 @@ export function MotionPage() {
       if (seq !== reloadSeq.current) return
       setDetail(fresh)
       setRecordingError(null)
+      lastSuccess.current = Date.now()
+      // a late answer after the cutoff brings the page back; polling resumes if the render is still busy
+      setLost(false)
+      lostVersion.current = null
     } catch (err) {
-      if (seq !== reloadSeq.current) return
+      if (seq !== reloadSeq.current || by === 'poll') return
       setRecordingError(err instanceof Error ? err.message : 'Could not reload the motion.')
     }
   }
@@ -140,7 +159,9 @@ export function MotionPage() {
       return
     }
     if (currentStatus !== 'done') {
-      setViewer({ message: currentStatus === 'running' ? 'Rendering…' : 'Queued…' })
+      // with the connection lost the render's progress is unknown, so the page reads as not busy
+      if (lost) setViewer({ message: 'Start rendering to see the skeleton here.' })
+      else setViewer({ message: currentStatus === 'running' ? 'Rendering…' : 'Queued…' })
       return
     }
 
@@ -164,17 +185,32 @@ export function MotionPage() {
       cancelled = true
       if (url) URL.revokeObjectURL(url)
     }
-  }, [motionId, currentNumber, currentStatus, currentError, motionName])
+  }, [motionId, currentNumber, currentStatus, currentError, motionName, lost])
 
-  // while a render runs, the motion is asked for again until it has finished
+  // while a render runs, the motion is asked for again until it has finished. The lost-connection
+  // window is counted in time, not failures: fetch has no timeout, so a hung request never fails.
+  // A render that comes back failed needs no banner; the viewer already says "The render failed: …"
+  const pollInFlight = useRef(false)
   useEffect(() => {
-    if (!busy) return
+    if (!runningUuid || lost) return
+    // a fresh window each time polling starts or resumes
+    lastSuccess.current = Date.now()
     const id = window.setInterval(() => {
-      void reloadDetail()
-    }, 2000)
+      // checked on every tick, skipped ones too
+      if (Date.now() - lastSuccess.current > LOST_AFTER_MS) {
+        lostVersion.current = runningUuid
+        setLost(true)
+        return
+      }
+      if (pollInFlight.current) return
+      pollInFlight.current = true
+      void reloadDetail('poll').finally(() => {
+        pollInFlight.current = false
+      })
+    }, POLL_MS)
 
     return () => window.clearInterval(id)
-  }, [busy])
+  }, [runningUuid, lost])
 
   // "New version" renders nothing by itself: the pose model and the start button are in the processing panel
   function showProcessing() {
@@ -188,7 +224,7 @@ export function MotionPage() {
     try {
       await startRendering(motionId, poseModel)
       setSelectedVersion(null)
-      await reloadDetail()
+      await reloadDetail('user')
     } catch (err) {
       setRenderError(err instanceof Error ? err.message : 'Could not start the render.')
     } finally {
@@ -266,6 +302,7 @@ export function MotionPage() {
         <VersionPicker
           versions={versions}
           current={current}
+          lost={lost}
           onSelect={setSelectedVersion}
           onNewVersion={showProcessing}
         />
@@ -277,7 +314,8 @@ export function MotionPage() {
           <section>
             <p className="eyebrow">Recordings</p>
             <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 8 }}>
-              {MOTION_STATUS_LABEL[detail.status] ?? detail.status} · {detail.recording_count}{' '}
+              {lost ? 'Lost connection' : (MOTION_STATUS_LABEL[detail.status] ?? detail.status)} ·{' '}
+              {detail.recording_count}{' '}
               {detail.recording_count === 1 ? 'recording' : 'recordings'}
             </p>
             <div className="takelist">
@@ -392,6 +430,11 @@ export function MotionPage() {
                     </p>
                   )}
                   {busy && <p style={{ color: 'var(--muted-2)', fontSize: 13 }}>A render is running.</p>}
+                  {lost && (
+                    <p role="alert" style={{ color: 'var(--pink)', fontSize: 13 }}>
+                      Lost connection with server.
+                    </p>
+                  )}
                   {renderError && (
                     <p role="alert" style={{ color: 'var(--pink)', fontSize: 13 }}>
                       {renderError}
@@ -671,7 +714,7 @@ export function MotionPage() {
         <AddRecordingDialog
           motionId={motionId}
           inMotion={detail.recordings.map((r) => r.recording)}
-          onSaved={reloadDetail}
+          onSaved={() => void reloadDetail('user')}
           onClose={() => setAddingRecording(false)}
         />
       )}
