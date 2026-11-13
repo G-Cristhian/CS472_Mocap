@@ -11,6 +11,11 @@ from .models import Motion, MotionRecording, MotionVersion
 MIN_CAMERAS = 2
 MAX_CAMERAS = 4
 
+# How many renders one user can have queued or running at once, across their motions.
+# TEMPORARY and arbitrary: picked to stop one user from filling the server with render
+# processes, not from any measurement. Revisit once render load is known.
+MAX_RENDERS_PER_USER = 3
+
 
 def performer_data(performer):
     if performer is None:
@@ -212,8 +217,9 @@ class MotionProjectAddSerializer(serializers.Serializer):
 class StartRenderingSerializer(serializers.Serializer):
     """
     Renders the motion as a new version. The motion comes from the view. Checks that the
-    motion has enough cameras, that no other render of it is running, and that a height is
-    known; the height is what the pipeline needs.
+    motion has enough cameras, that it isn't rendering already, that the user has fewer
+    than MAX_RENDERS_PER_USER renders going, and that a height is known; the height is
+    what the pipeline needs.
     """
 
     pose_model = serializers.ChoiceField(choices=MotionVersion.PoseModel.choices, default=MotionVersion.PoseModel.MEDIAPIPE)
@@ -225,10 +231,18 @@ class StartRenderingSerializer(serializers.Serializer):
         if len(links) < MIN_CAMERAS:
             raise serializers.ValidationError(f"Add at least {MIN_CAMERAS} recordings to the motion before rendering.")
 
-        # only this motion's versions: a render of another motion, or another user's, doesn't block this one
-        busy = motion.versions.filter(status__in=[MotionVersion.Status.QUEUED, MotionVersion.Status.RUNNING])
-        if busy.exists():
+        # one render per motion, and up to MAX_RENDERS_PER_USER across the user's motions; other users' renders
+        # don't count
+        busy = MotionVersion.objects.filter(
+            motion__owner=motion.owner,
+            status__in=[MotionVersion.Status.QUEUED, MotionVersion.Status.RUNNING],
+        )
+        if busy.filter(motion=motion).exists():
             raise serializers.ValidationError("A render of this motion is still running. Wait until it has finished.")
+        if busy.count() >= MAX_RENDERS_PER_USER:
+            raise serializers.ValidationError(
+                f"You already have {MAX_RENDERS_PER_USER} renders running. Wait until one has finished."
+            )
 
         link = render_height_link(links)
         if link is None:

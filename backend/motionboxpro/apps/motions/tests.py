@@ -8,8 +8,10 @@ from rest_framework.test import APIClient
 from motionboxpro.apps.recordings.models import Recording
 
 from .models import Motion, MotionRecording, MotionVersion
+from .serializers import MAX_RENDERS_PER_USER
 
 BUSY_MESSAGE = "A render of this motion is still running. Wait until it has finished."
+CAP_MESSAGE = f"You already have {MAX_RENDERS_PER_USER} renders running. Wait until one has finished."
 
 
 def make_motion(owner, name="Motion"):
@@ -31,7 +33,10 @@ def make_version(motion, status):
 # the render process is never started: the view only hands it the new version
 @mock.patch("motionboxpro.apps.motions.views.start_render")
 class StartRenderingBusyCheckTests(TestCase):
-    """A render is refused only while another render of the same motion is queued or running."""
+    """
+    A render is refused while the same motion is queued or running, or while the user already has
+    MAX_RENDERS_PER_USER renders queued or running across their motions. Other users' renders don't count.
+    """
 
     def setUp(self):
         User = get_user_model()
@@ -77,12 +82,35 @@ class StartRenderingBusyCheckTests(TestCase):
         self.assertEqual(response.status_code, 202, response.content)
         self.assertEqual(self.motion.versions.count(), 3)
 
-    def test_running_version_of_another_users_motion_does_not_block(self, _start_render):
-        make_version(make_motion(self.other_user, "Theirs"), MotionVersion.Status.RUNNING)
+    def test_another_users_renders_do_not_count(self, _start_render):
+        for i in range(MAX_RENDERS_PER_USER):
+            make_version(make_motion(self.other_user, f"Theirs {i}"), MotionVersion.Status.RUNNING)
 
         self.assert_started(self.start(self.motion))
 
-    def test_running_version_of_same_users_other_motion_does_not_block(self, _start_render):
-        make_version(make_motion(self.user, "Other"), MotionVersion.Status.RUNNING)
+    def test_renders_of_other_motions_below_the_cap_do_not_block(self, _start_render):
+        # queued and running both count toward the cap
+        statuses = [MotionVersion.Status.RUNNING, MotionVersion.Status.QUEUED]
+        for i in range(MAX_RENDERS_PER_USER - 1):
+            make_version(make_motion(self.user, f"Other {i}"), statuses[i % 2])
+
+        self.assert_started(self.start(self.motion))
+
+    def test_renders_of_other_motions_at_the_cap_block(self, _start_render):
+        statuses = [MotionVersion.Status.RUNNING, MotionVersion.Status.QUEUED]
+        for i in range(MAX_RENDERS_PER_USER):
+            make_version(make_motion(self.user, f"Other {i}"), statuses[i % 2])
+
+        response = self.start(self.motion)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["non_field_errors"], [CAP_MESSAGE])
+        self.assertFalse(self.motion.versions.exists())
+
+    def test_finished_renders_of_other_motions_do_not_count(self, _start_render):
+        for i in range(MAX_RENDERS_PER_USER):
+            other = make_motion(self.user, f"Other {i}")
+            make_version(other, MotionVersion.Status.DONE)
+            make_version(other, MotionVersion.Status.FAILED)
 
         self.assert_started(self.start(self.motion))
