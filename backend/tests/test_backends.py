@@ -256,6 +256,54 @@ def test_stop_spinning_rebuilds_both_sessions_without_spinning(monkeypatch):
         assert providers == ["CPUExecutionProvider"]
 
 
+
+def identity_onnx() -> bytes:
+    """
+    A one-node ONNX model (y = Identity(x), float[1]) written as raw protobuf,
+    so the test needs onnxruntime but not the onnx package. Field numbers are
+    from onnx.proto: ModelProto ir_version 1, graph 7, opset_import 8.
+    """
+    def varint(n):
+        out = b""
+        while True:
+            byte, n = n & 0x7F, n >> 7
+            out += bytes([byte | (0x80 if n else 0)])
+            if not n:
+                return out
+
+    def field(number, payload):            # length-delimited (strings and messages)
+        return varint(number << 3 | 2) + varint(len(payload)) + payload
+
+    def number(number, value):             # varint
+        return varint(number << 3) + varint(value)
+
+    float_1 = field(1, number(1, 1) + field(2, field(1, number(1, 1))))   # TypeProto: float tensor, shape [1]
+    graph = (field(1, field(1, b"x") + field(2, b"y") + field(4, b"Identity"))   # NodeProto
+             + field(2, b"g")
+             + field(11, field(1, b"x") + field(2, float_1))
+             + field(12, field(1, b"y") + field(2, float_1)))
+    return number(1, 8) + field(7, graph) + field(8, field(1, b"") + number(2, 13))
+
+
+def test_stop_spinning_on_real_sessions(tmp_path):
+    # the fakes above would pass even if the option were set after the session was built;
+    # a real session copies its options when created, so read them back from it
+    ort = pytest.importorskip("onnxruntime")
+    path = tmp_path / "identity.onnx"
+    path.write_bytes(identity_onnx())
+    model = type("Model", (), {"det_model": FakeTool(str(path)), "pose_model": FakeTool(str(path))})()
+
+    backends.stop_spinning(model)
+
+    for tool in (model.det_model, model.pose_model):
+        options = tool.session.get_session_options()
+        assert options.get_session_config_entry("session.intra_op.allow_spinning") == "0"
+        assert options.graph_optimization_level == ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        assert options.intra_op_num_threads == 0
+        assert tool.session.get_providers() == ["CPUExecutionProvider"]
+        x = np.array([2.5], np.float32)
+        assert tool.session.run(None, {"x": x})[0] == x
+
 @pytest.mark.parametrize("device, spinning, stopped", [("cpu", False, True), ("cpu", True, False),
                                                         ("cuda", False, False)])
 def test_backend_stops_spinning_only_on_the_cpu_by_default(monkeypatch, device, spinning, stopped):
