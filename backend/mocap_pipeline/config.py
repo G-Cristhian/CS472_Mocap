@@ -14,6 +14,19 @@ POSE_MODEL_PATH = "models/pose_landmarker_heavy.task"
 # this process, as before. --jobs overrides it per run.
 DETECT_JOBS = 0
 DETECT_MAX_AUTO_JOBS = 4
+# (ours) Whether RTMPose's ONNX Runtime threads may busy-wait ("spin") between
+# jobs, ONNX Runtime's default. Each session already runs one thread per
+# physical core, so with several detection processes the spinning threads
+# starve each other's work. Measured 2026-10-20 on a Ryzen 9 7950X (16 cores,
+# 32 threads), RTMPose balanced on CPU, 1920x1080 iPhone video, frames per
+# second per process: 4 processes at once 1.2 with spinning, 4.7 without (4.6
+# and 18.8 in total); 1 process alone 9.2 with, 10.1 without. Limiting the
+# thread count instead helped less (4 threads each: 3.9) and nothing once
+# spinning was off (8 threads each: 4.7). A whole 4-phone take (Chair Spin,
+# 17,500 frames) took 18 minutes instead of 59 (part of that run shared the
+# CPU with tests), with bit-identical joints.
+# MediaPipe does not use ONNX Runtime.
+RTMPOSE_THREAD_SPINNING = False
 
 # ---- Cameras (ours) ----------------------------------------------------------
 # At least two cameras in a front arc, iPhones and webcams mixed; no upper
